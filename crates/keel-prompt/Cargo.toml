@@ -1,0 +1,8 @@
+[package]
+name = "keel-prompt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+keel-core = { path = "../keel-core" }

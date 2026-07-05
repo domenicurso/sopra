@@ -1,0 +1,7 @@
+/target
+/outputs
+/work
+.DS_Store
+.env
+.env.*
+.direnv/
