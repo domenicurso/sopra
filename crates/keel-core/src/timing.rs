@@ -11,8 +11,8 @@ impl Default for RenderConfig {
     fn default() -> Self {
         Self {
             frame_interval_ms: 16,
-            cursor_blink_ms: 1200,
-            cursor_animation_ms: 180,
+            cursor_blink_ms: 1000,
+            cursor_animation_ms: 500,
         }
     }
 }

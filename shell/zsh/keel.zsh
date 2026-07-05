@@ -147,6 +147,52 @@ function keel-read-frontend-command() {
   REPLY="$accepted"
 }
 
+function keel-prepare-tty-for-command() {
+  emulate -L zsh
+  setopt localoptions no_aliases noshwordsplit
+
+  [[ -t 0 || -t 1 || -t 2 ]] || return 0
+
+  {
+    print -rn -- $'\e[0m'
+    print -rn -- $'\e[?25h'
+    print -rn -- $'\e[?2004l'
+    print -rn -- $'\e[?1004l'
+    print -rn -- $'\e[?1000l'
+    print -rn -- $'\e[?1002l'
+    print -rn -- $'\e[?1003l'
+    print -rn -- $'\e[?1005l'
+    print -rn -- $'\e[?1006l'
+    print -rn -- $'\e[?1015l'
+  } >/dev/tty 2>/dev/null || true
+
+  stty sane >/dev/null 2>&1 || true
+}
+
+function keel-run-accepted-command() {
+  local accepted="$1"
+  local tty_state=""
+  local exit_status=0
+
+  [[ -n "$accepted" ]] || return 0
+
+  tty_state="$(stty -g 2>/dev/null || true)"
+  print -rn -- $'\r\n'
+  keel-prepare-tty-for-command
+
+  # Run against the inherited controlling tty instead of reopening /dev/tty.
+  # Bun/OpenCode rejects the separate /dev/tty stdio descriptors even though
+  # ordinary processes tolerate them.
+  eval "$accepted"
+  exit_status=$?
+
+  if [[ -n "$tty_state" ]]; then
+    stty "$tty_state" >/dev/null 2>&1 || true
+  fi
+
+  return $exit_status
+}
+
 function keel-session-loop() {
   local accepted
   local exit_status
@@ -158,10 +204,7 @@ function keel-session-loop() {
     case $exit_status in
       0)
         accepted="$REPLY"
-        print -rn -- $'\r\n'
-        if [[ -n "$accepted" ]]; then
-          eval "$accepted" </dev/tty >/dev/tty 2>/dev/tty
-        fi
+        keel-run-accepted-command "$accepted"
         ;;
       130)
         ;;
