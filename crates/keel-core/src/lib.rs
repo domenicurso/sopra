@@ -13,8 +13,9 @@ mod timing;
 pub use completion::{CompletionGroup, CompletionItem, CompletionKind, CompletionRequest, CompletionResponse};
 pub use config::SessionConfig;
 pub use frame::{
-    CursorStyle, EditorSnapshot, SelectionRange, SpanStyle, StyledSpan, SurfaceFrame, SurfaceLine,
-    VisualCursor,
+    CanvasBuffer, CanvasCell, CanvasRow, CellStyle, CommandHandoff, CursorStyle, EditorSnapshot,
+    FrontendScene, SceneCursor, SelectionRange, SpanStyle, StyledSpan, SurfaceFrame, SurfaceLine,
+    TerminalOwnershipState, TerminalRelease, VisualCursor,
 };
 pub use history::HistoryEntry;
 pub use input::{InputEvent, Key};

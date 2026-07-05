@@ -1,6 +1,9 @@
 use std::f32::consts::PI;
 
-use keel_core::{InputEvent, SessionConfig, SurfaceFrame, TerminalSize};
+use keel_core::{
+    CanvasBuffer, CommandHandoff, CursorStyle, FrontendScene, InputEvent, SceneCursor,
+    SessionConfig, TerminalOwnershipState, TerminalRelease, TerminalSize,
+};
 use keel_editor::{EditResult, EditorBuffer};
 use keel_prompt::PromptRuntime;
 use keel_render::Renderer;
@@ -28,10 +31,12 @@ impl KeelRuntime {
             renderer: Renderer,
             state: RuntimeState {
                 mode: FrontendMode::PromptEditing,
+                terminal_ownership: TerminalOwnershipState::Frontend,
                 prompt,
                 terminal_size,
                 editor: EditorBuffer::from_parts(config.initial_buffer, config.initial_cursor),
                 cursor_alpha: u8::MAX,
+                final_canvas: None,
             },
             frame_interval_ms: config.render.frame_interval_ms.max(1),
             cursor_blink_ms: config.render.cursor_blink_ms.max(1),
@@ -44,22 +49,38 @@ impl KeelRuntime {
         &self.state
     }
 
-    pub fn live_frame(&self) -> SurfaceFrame {
-        self.renderer.render_active_with_cursor(
-            &self.state.prompt.active_left,
-            &self.state.prompt.active_right,
-            &self.state.editor.snapshot(),
-            self.state.terminal_size,
-            self.state.cursor_alpha,
-        )
+    pub fn active_scene(&self) -> FrontendScene {
+        FrontendScene {
+            terminal_size: self.state.terminal_size,
+            prompt_left: self.state.prompt.active_left.clone(),
+            prompt_right: self.state.prompt.active_right.clone(),
+            editor: self.state.editor.snapshot(),
+            cursor: Some(SceneCursor {
+                style: CursorStyle::Block,
+                alpha: self.state.cursor_alpha,
+                visible: true,
+            }),
+            overlay_anchor: None,
+        }
     }
 
-    pub fn submitted_frame(&self) -> SurfaceFrame {
-        self.renderer.render_submitted(
-            &self.state.prompt.transient_left,
-            &self.state.editor.snapshot(),
-            self.state.terminal_size,
-        )
+    pub fn submitted_scene(&self) -> FrontendScene {
+        FrontendScene {
+            terminal_size: self.state.terminal_size,
+            prompt_left: self.state.prompt.transient_left.clone(),
+            prompt_right: String::new(),
+            editor: self.state.editor.snapshot(),
+            cursor: None,
+            overlay_anchor: None,
+        }
+    }
+
+    pub fn compose_active_canvas(&self) -> CanvasBuffer {
+        self.renderer.compose(&self.active_scene())
+    }
+
+    pub fn compose_submitted_canvas(&self) -> CanvasBuffer {
+        self.renderer.compose(&self.submitted_scene())
     }
 
     pub fn apply_event(&mut self, event: InputEvent) -> RuntimeStep {
@@ -71,7 +92,12 @@ impl KeelRuntime {
                 }
                 EditResult::Submit(command) => {
                     self.state.mode = FrontendMode::CommandSubmission;
-                    RuntimeStep::Accepted(command)
+                    let final_canvas = self.compose_submitted_canvas();
+                    self.state.final_canvas = Some(final_canvas);
+                    RuntimeStep::Accepted(CommandHandoff {
+                        command,
+                        terminal_release: TerminalRelease::SuspendFrontend,
+                    })
                 }
                 EditResult::Cancel => {
                     self.state.mode = FrontendMode::Cancelled;
@@ -117,6 +143,11 @@ impl KeelRuntime {
 
     pub fn prepare_command_handoff(&mut self) {
         self.state.mode = FrontendMode::CommandExecutionHandoff;
+        self.state.terminal_ownership = keel_core::TerminalOwnershipState::Suspended;
+    }
+
+    pub fn suspend(&mut self) {
+        self.state.mode = FrontendMode::Suspended;
     }
 
     pub fn begin_recovery(&mut self) {
@@ -166,7 +197,7 @@ fn pulse_alpha(elapsed_ms: u64, duration_ms: u64) -> u8 {
 mod tests {
     use super::KeelRuntime;
     use crate::{FrontendMode, RuntimeStep};
-    use keel_core::{InputEvent, Key, SessionConfig, TerminalSize};
+    use keel_core::{InputEvent, Key, SessionConfig, TerminalSize, TerminalOwnershipState};
 
     fn test_runtime() -> KeelRuntime {
         KeelRuntime::new(
@@ -196,7 +227,10 @@ mod tests {
         );
         assert_eq!(
             runtime.apply_event(InputEvent::Key(Key::Enter)),
-            RuntimeStep::Accepted("pwd".to_string())
+            RuntimeStep::Accepted(keel_core::CommandHandoff {
+                command: "pwd".to_string(),
+                terminal_release: keel_core::TerminalRelease::SuspendFrontend,
+            })
         );
         assert_eq!(runtime.state().mode, FrontendMode::CommandSubmission);
 
@@ -205,7 +239,13 @@ mod tests {
             runtime.state().mode,
             FrontendMode::CommandExecutionHandoff
         );
-        assert_eq!(runtime.submitted_frame().plain_text(), "> pwd");
+        runtime.suspend();
+        assert_eq!(runtime.state().mode, FrontendMode::Suspended);
+        assert_eq!(
+            runtime.state().terminal_ownership,
+            TerminalOwnershipState::Suspended
+        );
+        assert_eq!(runtime.compose_submitted_canvas().plain_text(), "> pwd");
     }
 
     #[test]
@@ -242,8 +282,12 @@ mod tests {
     #[test]
     fn timer_ticks_only_redraw_on_blink_boundary() {
         let mut runtime = test_runtime();
+        let ticks_until_blink_change = runtime
+            .cursor_blink_ms
+            .div_ceil(runtime.frame_interval_ms) as usize
+            + 1;
 
-        for _ in 0..75 {
+        for _ in 0..ticks_until_blink_change.saturating_sub(1) {
             assert_eq!(
                 runtime.apply_event(InputEvent::TimerTick),
                 RuntimeStep::Continue { redraw: false }
@@ -267,8 +311,12 @@ mod tests {
     #[test]
     fn editing_resets_cursor_blink_phase() {
         let mut runtime = test_runtime();
+        let ticks_until_blink_change = runtime
+            .cursor_blink_ms
+            .div_ceil(runtime.frame_interval_ms) as usize
+            + 1;
 
-        for _ in 0..76 {
+        for _ in 0..ticks_until_blink_change {
             let _ = runtime.apply_event(InputEvent::TimerTick);
         }
         assert!(runtime.state().cursor_alpha < u8::MAX);
@@ -279,7 +327,7 @@ mod tests {
         );
         assert_eq!(runtime.state().cursor_alpha, u8::MAX);
 
-        for _ in 0..75 {
+        for _ in 0..ticks_until_blink_change.saturating_sub(1) {
             assert_eq!(
                 runtime.apply_event(InputEvent::TimerTick),
                 RuntimeStep::Continue { redraw: false }

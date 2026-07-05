@@ -5,14 +5,13 @@ use std::{
 };
 
 use crossterm::{
-    cursor::{Hide, MoveDown, MoveToColumn, MoveUp, Show},
+    cursor::{Hide, MoveDown, MoveToColumn, MoveUp, RestorePosition, SavePosition, Show},
     execute, queue,
     style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
-use keel_core::{InputEvent, Key, SpanStyle, SurfaceLine, TerminalSize};
-use keel_render::{FramePatch, PatchLine};
-use unicode_width::UnicodeWidthStr;
+use keel_core::{CanvasBuffer, CanvasCell, CanvasRow, CellStyle, CursorStyle, InputEvent, Key, TerminalPoint, TerminalSize, VisualCursor};
+use keel_render::CanvasPatch;
 
 use crate::TerminalIo;
 
@@ -124,6 +123,7 @@ pub struct CrosstermTerminal {
     in_bracketed_paste: bool,
     pending_events: VecDeque<InputEvent>,
     theme: ThemeColors,
+    current_canvas: Option<CanvasBuffer>,
 }
 
 impl CrosstermTerminal {
@@ -157,6 +157,7 @@ impl CrosstermTerminal {
             in_bracketed_paste: false,
             pending_events: VecDeque::with_capacity(16),
             theme,
+            current_canvas: None,
         })
     }
 
@@ -183,10 +184,7 @@ impl CrosstermTerminal {
     }
 
     fn anchor_render_region(&mut self) -> io::Result<()> {
-        if self.cursor_row > 0 {
-            queue!(self.output, MoveUp(self.cursor_row))?;
-        }
-        queue!(self.output, MoveToColumn(0))?;
+        queue!(self.output, RestorePosition)?;
         Ok(())
     }
 
@@ -199,55 +197,116 @@ impl CrosstermTerminal {
         Ok(())
     }
 
-    fn render_line(&mut self, line: &PatchLine) -> io::Result<()> {
+    fn render_row(&mut self, row: &CanvasRow) -> io::Result<()> {
         queue!(self.output, MoveToColumn(0), Clear(ClearType::CurrentLine))?;
 
-        for span in &line.line.spans {
-            match span.style {
-                SpanStyle::Prompt => queue!(
+        for cell in &row.cells {
+            self.render_cell(cell, None)?;
+        }
+
+        Ok(())
+    }
+
+    fn render_cell(
+        &mut self,
+        cell: &CanvasCell,
+        cursor: Option<VisualCursor>,
+    ) -> io::Result<()> {
+        let symbol = if cell.symbol.is_empty() {
+            " "
+        } else {
+            cell.symbol.as_str()
+        };
+
+        if let Some(cursor) = cursor {
+            match cursor.style {
+                CursorStyle::Block => queue!(
                     self.output,
-                    SetAttribute(Attribute::Bold),
-                    Print(&span.text),
-                    SetAttribute(Attribute::Reset)
-                )?,
-                SpanStyle::Suggestion | SpanStyle::Muted => queue!(
-                    self.output,
-                    SetAttribute(Attribute::Dim),
-                    Print(&span.text),
-                    SetAttribute(Attribute::Reset)
-                )?,
-                SpanStyle::Accent => queue!(
-                    self.output,
-                    SetAttribute(Attribute::Underlined),
-                    Print(&span.text),
-                    SetAttribute(Attribute::Reset)
-                )?,
-                SpanStyle::StatusOk | SpanStyle::StatusError => queue!(
-                    self.output,
-                    SetAttribute(Attribute::Bold),
-                    Print(&span.text),
-                    SetAttribute(Attribute::Reset)
-                )?,
-                SpanStyle::CursorBlock { alpha } => queue!(
-                    self.output,
+                    SetAttribute(Attribute::Reset),
                     SetForegroundColor(self.theme.cursor_foreground()),
-                    SetBackgroundColor(self.theme.cursor_background(alpha)),
-                    Print(&span.text),
+                    SetBackgroundColor(self.theme.cursor_background(cursor.alpha)),
+                    Print(symbol),
                     SetForegroundColor(Color::Reset),
                     SetBackgroundColor(Color::Reset)
                 )?,
-                SpanStyle::CursorBeam { .. } => queue!(
+                CursorStyle::Beam => queue!(
                     self.output,
                     SetAttribute(Attribute::Underlined),
-                    Print(&span.text),
+                    Print(symbol),
                     SetAttribute(Attribute::Reset)
                 )?,
-                SpanStyle::Plain => {
-                    queue!(self.output, Print(&span.text))?
-                }
+            }
+
+            return Ok(());
+        }
+
+        match cell.style {
+            CellStyle::Prompt => queue!(
+                self.output,
+                SetAttribute(Attribute::Bold),
+                Print(symbol),
+                SetAttribute(Attribute::Reset)
+            )?,
+            CellStyle::Muted => queue!(
+                self.output,
+                SetAttribute(Attribute::Dim),
+                Print(symbol),
+                SetAttribute(Attribute::Reset)
+            )?,
+            CellStyle::Accent => queue!(
+                self.output,
+                SetAttribute(Attribute::Underlined),
+                Print(symbol),
+                SetAttribute(Attribute::Reset)
+            )?,
+            CellStyle::StatusOk | CellStyle::StatusError => queue!(
+                self.output,
+                SetAttribute(Attribute::Bold),
+                Print(symbol),
+                SetAttribute(Attribute::Reset)
+            )?,
+            CellStyle::Plain => {
+                queue!(self.output, Print(symbol))?
             }
         }
 
+        Ok(())
+    }
+
+    fn move_to_canvas_point(&mut self, point: TerminalPoint) -> io::Result<()> {
+        queue!(self.output, RestorePosition)?;
+        self.move_to_row(0, point.row)?;
+        queue!(self.output, MoveToColumn(point.column))?;
+        Ok(())
+    }
+
+    fn draw_cursor_overlay(&mut self, cursor: VisualCursor) -> io::Result<()> {
+        let Some(canvas) = self.current_canvas.as_ref() else {
+            return Ok(());
+        };
+        let row = canvas.rows.get(cursor.row as usize);
+        let symbol = row
+            .and_then(|row| row.cells.get(cursor.column as usize))
+            .map(|cell| {
+                if cell.symbol.is_empty() {
+                    " ".to_string()
+                } else {
+                    cell.symbol.clone()
+                }
+            })
+            .unwrap_or_else(|| " ".to_string());
+
+        self.move_to_canvas_point(TerminalPoint {
+            row: cursor.row,
+            column: cursor.column,
+        })?;
+        self.render_cell(
+            &CanvasCell {
+                symbol,
+                style: CellStyle::Plain,
+            },
+            Some(cursor),
+        )?;
         Ok(())
     }
 
@@ -352,6 +411,17 @@ impl TerminalIo for CrosstermTerminal {
         current_size()
     }
 
+    fn enter_frontend(&mut self) -> io::Result<()> {
+        if !self.raw_mode_active {
+            enable_raw_mode()?;
+            self.raw_mode_active = true;
+        }
+
+        queue!(self.output, SavePosition, Hide)?;
+        self.output.flush()?;
+        Ok(())
+    }
+
     fn read_event(&mut self, timeout: Duration) -> io::Result<Option<InputEvent>> {
         if let Some(event) = self.pending_events.pop_front() {
             return Ok(Some(event));
@@ -377,34 +447,49 @@ impl TerminalIo for CrosstermTerminal {
         Ok(self.pending_events.pop_front())
     }
 
-    fn apply_patch(&mut self, patch: &FramePatch) -> io::Result<()> {
+    fn draw(&mut self, patch: &CanvasPatch) -> io::Result<()> {
         self.anchor_render_region()?;
 
+        if patch.full_redraw {
+            queue!(self.output, Clear(ClearType::FromCursorDown))?;
+        }
+
+        let mut next_canvas = self
+            .current_canvas
+            .clone()
+            .unwrap_or_else(|| CanvasBuffer::blank(patch.next_size));
+        if patch.full_redraw || next_canvas.size != patch.next_size {
+            next_canvas = CanvasBuffer::blank(patch.next_size);
+        }
+        next_canvas.size = patch.next_size;
+        next_canvas.rows.resize_with(
+            patch.next_size.rows as usize,
+            || CanvasRow::blank(patch.next_size.columns),
+        );
+        for row in &mut next_canvas.rows {
+            row.cells
+                .resize(patch.next_size.columns as usize, CanvasCell::default());
+        }
+        for row in &patch.rows {
+            if let Some(slot) = next_canvas.rows.get_mut(row.row as usize) {
+                *slot = row.cells.clone();
+            }
+        }
+        next_canvas.cursor = patch.cursor;
+        self.current_canvas = Some(next_canvas);
+
         let mut current_row = 0u16;
-        for line in &patch.lines {
-            self.move_to_row(current_row, line.row)?;
-            self.render_line(line)?;
-            current_row = line.row;
+        for row in &patch.rows {
+            self.move_to_row(current_row, row.row)?;
+            self.render_row(&row.cells)?;
+            current_row = row.row;
         }
 
         if let Some(cursor) = patch.cursor {
-            self.move_to_row(current_row, cursor.row)?;
-            queue!(self.output, MoveToColumn(cursor.column), Show)?;
+            self.draw_cursor_overlay(cursor)?;
             self.cursor_row = cursor.row;
-        } else if patch.next_height > 0 {
-            let last_row = patch.next_height - 1;
-            self.move_to_row(current_row, last_row)?;
-            let last_column = patch
-                .lines
-                .iter()
-                .rev()
-                .find(|line| line.row == last_row)
-                .map(|line| visual_width_of_line(&line.line) as u16)
-                .unwrap_or(0);
-            queue!(self.output, MoveToColumn(last_column), Hide)?;
-            self.cursor_row = last_row;
         } else {
-            queue!(self.output, MoveToColumn(0), Hide)?;
+            queue!(self.output, RestorePosition, MoveToColumn(0), Hide)?;
             self.cursor_row = 0;
         }
 
@@ -412,18 +497,33 @@ impl TerminalIo for CrosstermTerminal {
         Ok(())
     }
 
-    fn clear_render_region(&mut self, previous_height: u16) -> io::Result<()> {
+    fn finalize_submission(&mut self, canvas: &CanvasBuffer, patch: &CanvasPatch) -> io::Result<()> {
+        self.draw(patch)?;
+        let final_point = canvas_tail_position(canvas);
+        self.move_to_canvas_point(final_point)?;
+        queue!(self.output, Hide)?;
+        self.cursor_row = final_point.row;
+        self.output.flush()?;
+        Ok(())
+    }
+
+    fn suspend_for_command(&mut self) -> io::Result<()> {
+        self.current_canvas = None;
+        self.restore()
+    }
+
+    fn resume_frontend(&mut self, canvas: &CanvasBuffer) -> io::Result<()> {
+        self.cursor_row = 0;
+        self.current_canvas = Some(canvas.clone());
+        self.draw(&CanvasPatch::between(None, canvas))
+    }
+
+    fn clear_frontend(&mut self, _canvas: &CanvasBuffer) -> io::Result<()> {
         self.anchor_render_region()?;
-
-        for row in 0..previous_height {
-            if row > 0 {
-                queue!(self.output, MoveDown(1))?;
-            }
-            queue!(self.output, MoveToColumn(0), Clear(ClearType::CurrentLine))?;
-        }
-
+        queue!(self.output, Clear(ClearType::FromCursorDown))?;
         queue!(self.output, MoveToColumn(0), Hide)?;
         self.cursor_row = 0;
+        self.current_canvas = None;
         self.output.flush()?;
         Ok(())
     }
@@ -585,11 +685,25 @@ fn parse_hex_component(component: &str) -> Option<u8> {
     }
 }
 
-fn visual_width_of_line(line: &SurfaceLine) -> usize {
-    line.spans
+fn canvas_tail_position(canvas: &CanvasBuffer) -> TerminalPoint {
+    let content_height = canvas.content_height();
+    if content_height == 0 {
+        return TerminalPoint { row: 0, column: 0 };
+    }
+
+    let row_index = content_height.saturating_sub(1) as usize;
+    let row = &canvas.rows[row_index];
+    let column = row
+        .cells
         .iter()
-        .map(|span| span.text.width())
-        .sum::<usize>()
+        .rposition(|cell| cell.symbol != " ")
+        .map(|index| index as u16 + 1)
+        .unwrap_or(0);
+
+    TerminalPoint {
+        row: content_height.saturating_sub(1),
+        column,
+    }
 }
 
 fn parse_escape_sequence(bytes: &[u8]) -> ParseResult {
@@ -697,10 +811,10 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BRACKETED_PASTE_END, BRACKETED_PASTE_START, ParseResult, RgbColor,
+        BRACKETED_PASTE_END, BRACKETED_PASTE_START, ParseResult, RgbColor, canvas_tail_position,
         parse_escape_sequence, parse_osc_rgb, parse_terminal_theme_bytes, parse_utf8_char,
     };
-    use keel_core::{InputEvent, Key};
+    use keel_core::{CanvasBuffer, CursorStyle, InputEvent, Key, TerminalSize, VisualCursor};
 
     #[test]
     fn parses_arrow_keys_from_csi_sequences() {
@@ -788,5 +902,27 @@ mod tests {
                 b: 127,
             })
         );
+    }
+
+    #[test]
+    fn computes_canvas_tail_from_last_non_blank_cell() {
+        let mut canvas = CanvasBuffer::blank(TerminalSize {
+            columns: 8,
+            rows: 4,
+        });
+        canvas.rows[0].cells[0].symbol = ">".to_string();
+        canvas.rows[1].cells[0].symbol = "h".to_string();
+        canvas.rows[1].cells[1].symbol = "i".to_string();
+        canvas.cursor = Some(VisualCursor {
+            row: 1,
+            column: 2,
+            style: CursorStyle::Block,
+            visible: true,
+            alpha: 255,
+        });
+
+        let point = canvas_tail_position(&canvas);
+        assert_eq!(point.row, 1);
+        assert_eq!(point.column, 2);
     }
 }

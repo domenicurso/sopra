@@ -1,7 +1,7 @@
 use std::io;
 
 use keel_core::{InputEvent, RuntimeOutcome, SessionConfig};
-use keel_render::{FramePatch, FrameScheduler, RedrawReason};
+use keel_render::{CanvasPatch, FrameScheduler, RedrawReason};
 use keel_runtime::{KeelRuntime, RuntimeStep};
 
 use crate::TerminalIo;
@@ -12,8 +12,9 @@ pub fn run_command_read_session<T: TerminalIo>(
 ) -> io::Result<RuntimeOutcome> {
     let mut scheduler = FrameScheduler::new(&config.render);
     let mut runtime = KeelRuntime::new(config, terminal.size()?);
-    let mut frame = runtime.live_frame();
-    terminal.apply_patch(&FramePatch::between(None, &frame))?;
+    let mut canvas = runtime.compose_active_canvas();
+    terminal.enter_frontend()?;
+    terminal.resume_frontend(&canvas)?;
 
     loop {
         let event = terminal
@@ -33,22 +34,28 @@ pub fn run_command_read_session<T: TerminalIo>(
                     scheduler.mark_dirty(redraw_reason);
                 }
                 if scheduler.should_render() {
-                    let next = runtime.live_frame();
-                    if next != frame {
-                        terminal.apply_patch(&FramePatch::between(Some(&frame), &next))?;
-                        frame = next;
+                    let next = runtime.compose_active_canvas();
+                    if next != canvas {
+                        terminal.draw(&CanvasPatch::between(Some(&canvas), &next))?;
+                        canvas = next;
                     }
                 }
             }
-            RuntimeStep::Accepted(command) => {
-                let next = runtime.submitted_frame();
-                terminal.apply_patch(&FramePatch::between(Some(&frame), &next))?;
+            RuntimeStep::Accepted(handoff) => {
+                let next = runtime
+                    .state()
+                    .final_canvas
+                    .clone()
+                    .unwrap_or_else(|| runtime.compose_submitted_canvas());
+                terminal.finalize_submission(&next, &CanvasPatch::between(Some(&canvas), &next))?;
                 runtime.prepare_command_handoff();
-                return Ok(RuntimeOutcome::Accepted(command));
+                terminal.suspend_for_command()?;
+                runtime.suspend();
+                return Ok(RuntimeOutcome::Accepted(handoff));
             }
             RuntimeStep::Cancelled => {
                 runtime.begin_recovery();
-                terminal.clear_render_region(frame.lines.len() as u16)?;
+                terminal.clear_frontend(&canvas)?;
                 return Ok(RuntimeOutcome::Cancelled);
             }
         }
@@ -61,14 +68,16 @@ mod tests {
 
     use super::run_command_read_session;
     use crate::TerminalIo;
-    use keel_core::{InputEvent, Key, RuntimeOutcome, SessionConfig, SurfaceLine, TerminalSize};
-    use keel_render::FramePatch;
+    use keel_core::{CanvasBuffer, InputEvent, Key, RuntimeOutcome, SessionConfig, TerminalSize};
+    use keel_render::CanvasPatch;
 
     #[derive(Debug)]
     struct StubTerminal {
         size: TerminalSize,
         events: VecDeque<InputEvent>,
-        frames: Vec<keel_core::SurfaceFrame>,
+        canvases: Vec<CanvasBuffer>,
+        entered: bool,
+        suspended: bool,
         cleared: bool,
     }
 
@@ -80,7 +89,9 @@ mod tests {
                     rows: 24,
                 },
                 events: events.into(),
-                frames: Vec::new(),
+                canvases: Vec::new(),
+                entered: false,
+                suspended: false,
                 cleared: false,
             }
         }
@@ -91,33 +102,66 @@ mod tests {
             Ok(self.size)
         }
 
+        fn enter_frontend(&mut self) -> io::Result<()> {
+            self.entered = true;
+            Ok(())
+        }
+
         fn read_event(&mut self, _timeout: std::time::Duration) -> io::Result<Option<InputEvent>> {
             Ok(self.events
                 .pop_front()
                 .or(Some(InputEvent::TimerTick)))
         }
 
-        fn apply_patch(&mut self, patch: &FramePatch) -> io::Result<()> {
-            let previous = self.frames.last().cloned().unwrap_or_default();
-            let mut next = keel_core::SurfaceFrame {
-                lines: previous.lines.clone(),
-                cursor: patch.cursor,
+        fn draw(&mut self, patch: &CanvasPatch) -> io::Result<()> {
+            let previous = self
+                .canvases
+                .last()
+                .cloned()
+                .unwrap_or_else(|| CanvasBuffer::blank(self.size));
+            let mut next = if patch.full_redraw {
+                CanvasBuffer::blank(patch.next_size)
+            } else {
+                previous
             };
+            next.size = patch.next_size;
+            next.rows.resize_with(
+                patch.next_size.rows as usize,
+                || keel_core::CanvasRow::blank(patch.next_size.columns),
+            );
+            for row in &mut next.rows {
+                row.cells.resize(
+                    patch.next_size.columns as usize,
+                    keel_core::CanvasCell::default(),
+                );
+            }
 
-            next.lines
-                .resize(patch.next_height as usize, SurfaceLine::default());
-
-            for line in &patch.lines {
-                if let Some(slot) = next.lines.get_mut(line.row as usize) {
-                    *slot = line.line.clone();
+            for row in &patch.rows {
+                if let Some(slot) = next.rows.get_mut(row.row as usize) {
+                    *slot = row.cells.clone();
                 }
             }
 
-            self.frames.push(next);
+            next.cursor = patch.cursor;
+            self.canvases.push(next);
             Ok(())
         }
 
-        fn clear_render_region(&mut self, _previous_height: u16) -> io::Result<()> {
+        fn finalize_submission(&mut self, _canvas: &CanvasBuffer, patch: &CanvasPatch) -> io::Result<()> {
+            self.draw(patch)
+        }
+
+        fn suspend_for_command(&mut self) -> io::Result<()> {
+            self.suspended = true;
+            Ok(())
+        }
+
+        fn resume_frontend(&mut self, canvas: &CanvasBuffer) -> io::Result<()> {
+            self.canvases.push(canvas.clone());
+            Ok(())
+        }
+
+        fn clear_frontend(&mut self, _canvas: &CanvasBuffer) -> io::Result<()> {
             self.cleared = true;
             Ok(())
         }
@@ -134,11 +178,16 @@ mod tests {
 
         let outcome = run_command_read_session(&mut terminal, SessionConfig::default()).unwrap();
 
-        assert_eq!(outcome, RuntimeOutcome::Accepted("pwd".to_string()));
+        let RuntimeOutcome::Accepted(handoff) = outcome else {
+            panic!("expected accepted outcome");
+        };
+        assert_eq!(handoff.command, "pwd".to_string());
         assert_eq!(
-            terminal.frames.last().unwrap().plain_text(),
+            terminal.canvases.last().unwrap().plain_text(),
             "> pwd".to_string()
         );
+        assert!(terminal.entered);
+        assert!(terminal.suspended);
         assert!(!terminal.cleared);
     }
 

@@ -1,7 +1,10 @@
-mod diff;
-mod renderer;
+mod buffer;
+mod compositor;
+mod cursor;
+mod layout;
+mod patch;
 mod scheduler;
 
-pub use diff::{FramePatch, PatchLine};
-pub use renderer::Renderer;
+pub use compositor::Renderer;
+pub use patch::{BufferRowPatch, CanvasPatch};
 pub use scheduler::{FrameScheduler, RedrawReason};

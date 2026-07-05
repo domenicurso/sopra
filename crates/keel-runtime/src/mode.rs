@@ -3,6 +3,7 @@ pub enum FrontendMode {
     PromptEditing,
     CommandSubmission,
     CommandExecutionHandoff,
+    Suspended,
     Cancelled,
     Recovery,
 }

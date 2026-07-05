@@ -69,8 +69,8 @@ impl CliOptions {
 
 fn main() -> ExitCode {
     match try_main() {
-        Ok(RuntimeOutcome::Accepted(command)) => {
-            println!("{command}");
+        Ok(RuntimeOutcome::Accepted(handoff)) => {
+            println!("{}", handoff.command);
             ExitCode::SUCCESS
         }
         Ok(RuntimeOutcome::Cancelled) => ExitCode::from(130),

@@ -159,10 +159,10 @@ pub extern "C" fn keel_bridge_read_command(
     }));
 
     match outcome {
-        Ok(Ok(RuntimeOutcome::Accepted(command))) => {
+        Ok(Ok(RuntimeOutcome::Accepted(handoff))) => {
             clear_last_error();
             set_status(status_out, KeelStatusCode::Ok);
-            sanitize_cstring(command).into_raw()
+            sanitize_cstring(handoff.command).into_raw()
         }
         Ok(Ok(RuntimeOutcome::Cancelled)) => {
             clear_last_error();
