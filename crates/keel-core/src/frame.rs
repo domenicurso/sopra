@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{TerminalPoint, TerminalSize};
+use crate::{PromptSurface, TerminalPoint, TerminalSize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditorSnapshot {
@@ -177,8 +177,8 @@ pub struct SceneCursor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrontendScene {
     pub terminal_size: TerminalSize,
-    pub prompt_left: String,
-    pub prompt_right: String,
+    pub prompt_left: PromptSurface,
+    pub prompt_right: PromptSurface,
     pub editor: EditorSnapshot,
     pub cursor: Option<SceneCursor>,
     pub overlay_anchor: Option<TerminalPoint>,

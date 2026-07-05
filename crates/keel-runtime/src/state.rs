@@ -1,5 +1,6 @@
 use keel_core::{CanvasBuffer, TerminalOwnershipState, TerminalSize};
 use keel_editor::EditorBuffer;
+use keel_core::PromptSurface;
 use keel_prompt::PromptLayout;
 
 use crate::FrontendMode;
@@ -21,9 +22,9 @@ impl Default for RuntimeState {
             mode: FrontendMode::PromptEditing,
             terminal_ownership: TerminalOwnershipState::Frontend,
             prompt: PromptLayout {
-                active_left: String::new(),
-                active_right: String::new(),
-                transient_left: String::new(),
+                active_left: PromptSurface::default(),
+                active_right: PromptSurface::default(),
+                transient_left: PromptSurface::default(),
             },
             terminal_size: TerminalSize::default(),
             editor: EditorBuffer::default(),

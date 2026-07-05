@@ -11,3 +11,8 @@ keel-render = { path = "../keel-render" }
 keel-runtime = { path = "../keel-runtime" }
 libc = "0.2"
 unicode-width.workspace = true
+
+[dev-dependencies]
+portable-pty = "0.8"
+serial_test = "3.2"
+vt100 = "0.15"

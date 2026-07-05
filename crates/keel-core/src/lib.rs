@@ -20,7 +20,7 @@ pub use frame::{
 pub use history::HistoryEntry;
 pub use input::{InputEvent, Key};
 pub use outcome::RuntimeOutcome;
-pub use prompt::{PromptConfig, PromptToken};
+pub use prompt::{PromptConfig, PromptSpan, PromptSpanStyle, PromptSurface, PromptToken};
 pub use provider::{
     ProviderCapability, ProviderCompletionPayload, ProviderHighlightPayload, ProviderOverlayPayload,
     ProviderPromptPayload, ProviderRequest, ProviderResponse, ProviderSuggestionPayload,

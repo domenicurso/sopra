@@ -68,7 +68,7 @@ impl KeelRuntime {
         FrontendScene {
             terminal_size: self.state.terminal_size,
             prompt_left: self.state.prompt.transient_left.clone(),
-            prompt_right: String::new(),
+            prompt_right: keel_core::PromptSurface::default(),
             editor: self.state.editor.snapshot(),
             cursor: None,
             overlay_anchor: None,

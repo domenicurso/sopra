@@ -1,10 +1,10 @@
-use keel_core::{PromptConfig, PromptToken, ShellSnapshot};
+use keel_core::{PromptConfig, PromptSpanStyle, PromptSurface, PromptToken, ShellSnapshot};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptLayout {
-    pub active_left: String,
-    pub active_right: String,
-    pub transient_left: String,
+    pub active_left: PromptSurface,
+    pub active_right: PromptSurface,
+    pub transient_left: PromptSurface,
 }
 
 #[derive(Debug, Default)]
@@ -13,33 +13,46 @@ pub struct PromptRuntime;
 impl PromptRuntime {
     pub fn layout(&self, config: &PromptConfig, shell: &ShellSnapshot) -> PromptLayout {
         PromptLayout {
-            active_left: self.render_tokens(&config.active_left, shell),
-            active_right: self.render_tokens(&config.active_right, shell),
-            transient_left: self.render_tokens(&config.transient_left, shell),
+            active_left: self.render_tokens(&config.active_left, shell, PromptSpanStyle::Prompt),
+            active_right: self.render_tokens(&config.active_right, shell, PromptSpanStyle::Muted),
+            transient_left: self.render_tokens(
+                &config.transient_left,
+                shell,
+                PromptSpanStyle::Prompt,
+            ),
         }
     }
 
-    fn render_tokens(&self, tokens: &[PromptToken], shell: &ShellSnapshot) -> String {
-        let mut rendered = String::new();
+    fn render_tokens(
+        &self,
+        tokens: &[PromptToken],
+        shell: &ShellSnapshot,
+        default_style: PromptSpanStyle,
+    ) -> PromptSurface {
+        let mut rendered = PromptSurface::default();
 
         for token in tokens {
             match token {
-                PromptToken::Literal(text) => rendered.push_str(text),
-                PromptToken::CurrentDirectory => rendered.push_str(&shell.cwd),
+                PromptToken::Literal(text) => rendered.push(text.clone(), default_style),
+                PromptToken::CurrentDirectory => rendered.push(shell.cwd.clone(), default_style),
                 PromptToken::ExitStatus => {
                     if shell.last_status != 0 {
-                        rendered.push_str(&format!("[{}]", shell.last_status));
+                        rendered.push(
+                            format!("[{}]", shell.last_status),
+                            PromptSpanStyle::StatusError,
+                        );
                     }
                 }
                 PromptToken::CommandDuration => {
                     if let Some(duration_ms) = shell.last_duration_ms {
-                        rendered.push_str(&format!(" {}ms", duration_ms));
+                        rendered.push(
+                            format!(" {}ms", duration_ms),
+                            PromptSpanStyle::Muted,
+                        );
                     }
                 }
                 PromptToken::Widget(name) => {
-                    rendered.push('{');
-                    rendered.push_str(name);
-                    rendered.push('}');
+                    rendered.push(format!("{{{name}}}"), PromptSpanStyle::Accent);
                 }
             }
         }
@@ -75,8 +88,12 @@ mod tests {
             },
         );
 
-        assert_eq!(layout.active_left, "/tmp/demo > ");
-        assert_eq!(layout.active_right, "[7]");
-        assert_eq!(layout.transient_left, "$ ");
+        assert_eq!(layout.active_left.plain_text(), "/tmp/demo > ");
+        assert_eq!(layout.active_right.plain_text(), "[7]");
+        assert_eq!(layout.transient_left.plain_text(), "$ ");
+        assert_eq!(
+            layout.active_right.spans[0].style,
+            keel_core::PromptSpanStyle::StatusError
+        );
     }
 }

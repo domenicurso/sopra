@@ -1,4 +1,4 @@
-use keel_core::{CanvasBuffer, CellStyle, FrontendScene, TerminalPoint};
+use keel_core::{CanvasBuffer, CellStyle, FrontendScene, PromptSpanStyle, PromptSurface, TerminalPoint};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -16,12 +16,7 @@ impl Renderer {
         let mut buffer = CanvasBuffer::blank(scene.terminal_size);
         let mut write_cursor = WriteCursor::at(TerminalPoint { row: 0, column: 0 });
 
-        write_text(
-            &mut buffer,
-            &mut write_cursor,
-            &scene.prompt_left,
-            CellStyle::Prompt,
-        );
+        write_prompt_surface(&mut buffer, &mut write_cursor, &scene.prompt_left);
         let prompt_end = write_cursor.point();
 
         let buffer_graphemes = UnicodeSegmentation::graphemes(scene.editor.buffer.as_str(), true)
@@ -60,8 +55,8 @@ impl Renderer {
             return;
         }
 
-        let current_width = scene.prompt_left.width() + scene.editor.buffer.width();
-        let right_width = scene.prompt_right.width();
+        let current_width = scene.prompt_left.plain_text().width() + scene.editor.buffer.width();
+        let right_width = scene.prompt_right.plain_text().width();
         let Some(regions) = right_prompt_regions(scene.terminal_size, right_width) else {
             return;
         };
@@ -76,14 +71,38 @@ impl Renderer {
             row: 0,
             column: regions.right_origin as u16,
         };
-        write_text(buffer, &mut cursor, &scene.prompt_right, CellStyle::Muted);
+        write_prompt_surface(buffer, &mut cursor, &scene.prompt_right);
+    }
+}
+
+fn write_prompt_surface(
+    buffer: &mut CanvasBuffer,
+    cursor: &mut WriteCursor,
+    surface: &PromptSurface,
+) {
+    for span in &surface.spans {
+        write_text(buffer, cursor, &span.text, map_prompt_style(span.style));
+    }
+}
+
+fn map_prompt_style(style: PromptSpanStyle) -> CellStyle {
+    match style {
+        PromptSpanStyle::Plain => CellStyle::Plain,
+        PromptSpanStyle::Prompt => CellStyle::Prompt,
+        PromptSpanStyle::Muted => CellStyle::Muted,
+        PromptSpanStyle::Accent => CellStyle::Accent,
+        PromptSpanStyle::StatusOk => CellStyle::StatusOk,
+        PromptSpanStyle::StatusError => CellStyle::StatusError,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Renderer;
-    use keel_core::{CursorStyle, EditorSnapshot, FrontendScene, SceneCursor, TerminalSize};
+    use keel_core::{
+        CursorStyle, EditorSnapshot, FrontendScene, PromptSpan, PromptSpanStyle, PromptSurface,
+        SceneCursor, TerminalSize,
+    };
 
     #[test]
     fn composes_active_prompt_into_a_canvas() {
@@ -93,8 +112,13 @@ mod tests {
                 columns: 16,
                 rows: 6,
             },
-            prompt_left: "keel> ".to_string(),
-            prompt_right: String::new(),
+            prompt_left: PromptSurface {
+                spans: vec![PromptSpan {
+                    text: "keel> ".to_string(),
+                    style: PromptSpanStyle::Prompt,
+                }],
+            },
+            prompt_right: PromptSurface::default(),
             editor: EditorSnapshot {
                 buffer: "echo hi".to_string(),
                 cursor: 7,
@@ -120,8 +144,13 @@ mod tests {
                 columns: 12,
                 rows: 6,
             },
-            prompt_left: "keel> ".to_string(),
-            prompt_right: String::new(),
+            prompt_left: PromptSurface {
+                spans: vec![PromptSpan {
+                    text: "keel> ".to_string(),
+                    style: PromptSpanStyle::Prompt,
+                }],
+            },
+            prompt_right: PromptSurface::default(),
             editor: EditorSnapshot {
                 buffer: "abcdefghijklmnop".to_string(),
                 cursor: 16,
