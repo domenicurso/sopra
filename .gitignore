@@ -1,7 +1,2 @@
-/target
-/outputs
-/work
+/target/
 .DS_Store
-.env
-.env.*
-.direnv/

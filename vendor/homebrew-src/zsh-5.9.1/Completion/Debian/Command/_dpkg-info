@@ -1,3 +1,0 @@
-#compdef dpkg-info
-
-_deb_packages avail

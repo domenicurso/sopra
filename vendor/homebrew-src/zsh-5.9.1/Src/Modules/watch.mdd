@@ -1,7 +1,0 @@
-name=zsh/watch
-link=dynamic
-load=yes
-
-autofeatures="b:log p:WATCH p:watch"
-
-objects="watch.o"

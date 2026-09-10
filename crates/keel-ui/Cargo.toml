@@ -1,8 +1,9 @@
 [package]
-name = "keel-core"
+name = "keel-ui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ratatui.workspace = true
 unicode-width.workspace = true
