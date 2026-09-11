@@ -1,27 +1,63 @@
-# Prototype Architecture
+# Augmentation Architecture
 
 Keel augments a live zsh prompt instead of becoming a second terminal
 application. ZLE remains the only owner of interactive line editing and
-terminal redisplay, which means standard typing, cursor movement, wrapping,
-resize, Ctrl-C, Enter, history, and command execution keep their existing
-semantics.
+terminal redisplay, so standard typing, cursor movement, wrapping, resize,
+Ctrl-C, Enter, history, and command execution keep their existing semantics.
 
-The Rust boundary starts with a `HostSnapshot` containing the observable ZLE
-line and terminal dimensions. Rust derives UI data from that snapshot, but it
-does not copy the line into an authoritative editor buffer. This avoids two
-editors competing for ownership of the same cursor.
+The shell boundary is a single persistent renderer process:
 
-The prototype calls the Rust binary from `line-pre-redraw` and from small
-delegates around common built-in edit widgets. Each delegate invokes the
-original ZLE widget before requesting a prompt reset, so it observes the new
-line without implementing editing itself. Rust composes a generic `keel-ui`
-component tree with ratatui widgets into an offscreen `Buffer`.
-`keel-renderer` serializes that one-line buffer into a zsh prompt fragment,
-wrapping control sequences in `%{...%}` so zsh's width accounting stays
-correct. The shell assigns the fragment to `RPROMPT` and allows the normal
-redisplay to proceed.
+```text
+line-pre-redraw / precmd / preexec
+                |
+                v
+      tab-delimited HostSnapshot
+                |
+                v
+      keel-augment --server
+        keel-core -> keel-ui -> ratatui Buffer -> keel-renderer
+                |
+                v
+      zsh host decoration plan
+       /                  \
+ RPROMPT          cursor style/highlight
+```
 
-The process boundary is intentionally replaceable. A future native module can
-keep the same snapshot and fragment contracts while moving the renderer into
-the zsh process; it must still avoid direct tty writes and broad widget
-replacement.
+HostSnapshot contains the observable ZLE buffer, cursor, terminal dimensions,
+keymap, and last command status. Rust treats that data as input to the
+augmentation scene; it does not copy the line into a competing editor. The
+long-lived process keeps its renderer, previous frame, scheduler clock, and
+statistics between requests, which removes process startup from the keypress
+path and makes unchanged snapshots cheap cache hits.
+
+keel-ui owns a generic component tree. Text, Paragraph, InputLine, Row,
+Column, Align, Spacer, and Panel are convenience components, and
+ratatui_component adapts cloneable ratatui Widget values directly. Each component
+measures itself under constraints and renders into the same offscreen
+ratatui Buffer; keel-renderer then finds the used content bounds, serializes
+styles into ANSI controls, and wraps controls with zsh %{...%} markers so
+zsh's width accounting remains correct.
+
+The shell adapter installs only line-pre-redraw, line-finish, precmd, and
+preexec hooks. It never wraps built-in ZLE widgets or mutates BUFFER or CURSOR.
+When the returned fragment changes, it asks ZLE for its normal prompt refresh;
+a re-entry guard prevents the refresh from recursively triggering another
+refresh loop. The only direct terminal sequence is an optional zero-width
+cursor-style change such as blink-block or bar. It does not move the cursor or
+write screen cells, so it cannot desynchronise ZLE's coordinate model.
+
+The optional `KEEL_AUGMENT_CURSOR_MODE=highlight` path adds one
+`region_highlight` span for the grapheme under the cursor. The span is removed
+before each replacement and on disable, which lets other zsh highlighters keep
+their own entries. This is the practical cursor-relative layer: Rust computes
+the decoration, while zsh applies it through the host's own redisplay API.
+
+Raw cursor movement remains intentionally outside the production contract.
+An ANSI transaction that saves the cursor, paints cells, and restores it can
+be added later for a narrowly scoped widget, but putting that transaction in
+`RPROMPT` would make prompt-width accounting and ZLE redisplay undefined.
+
+The process boundary is deliberately replaceable. A future native module may
+move the same HostSnapshot, component, and rendered-fragment contracts into
+the zsh process, but it must keep zsh as the owner of editing and terminal
+semantics unless a later design proves a narrower ownership transfer is safe.

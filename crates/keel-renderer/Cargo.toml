@@ -7,3 +7,5 @@ license.workspace = true
 [dependencies]
 keel-ui = { path = "../keel-ui" }
 ratatui.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true

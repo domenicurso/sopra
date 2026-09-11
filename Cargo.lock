@@ -167,13 +167,17 @@ version = "0.1.0"
 dependencies = [
  "keel-core",
  "keel-renderer",
+ "keel-scheduler",
  "keel-ui",
+ "ratatui",
+ "unicode-segmentation",
 ]
 
 [[package]]
 name = "keel-core"
 version = "0.1.0"
 dependencies = [
+ "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
 
@@ -183,13 +187,20 @@ version = "0.1.0"
 dependencies = [
  "keel-ui",
  "ratatui",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
 ]
+
+[[package]]
+name = "keel-scheduler"
+version = "0.1.0"
 
 [[package]]
 name = "keel-ui"
 version = "0.1.0"
 dependencies = [
  "ratatui",
+ "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
 

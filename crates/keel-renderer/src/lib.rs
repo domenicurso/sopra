@@ -1,15 +1,34 @@
-use keel_ui::{Scene, Size};
 use ratatui::{
-    buffer::Buffer,
+    buffer::{Buffer, Cell},
     layout::Rect,
     style::{Color, Modifier, Style},
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+use keel_ui::{Scene, Size};
 
 #[derive(Debug)]
 pub struct RenderedFrame {
     pub area: Rect,
     pub used_size: Size,
     pub buffer: Buffer,
+    pub content_area: Rect,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameDiff {
+    pub changed_cells: usize,
+    pub changed_rows: Vec<u16>,
+    pub previous_area: Rect,
+    pub next_area: Rect,
+    pub cleared_rows: u16,
+}
+
+impl FrameDiff {
+    pub fn changed(&self) -> bool {
+        self.changed_cells > 0 || self.cleared_rows > 0 || self.previous_area != self.next_area
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -17,49 +36,156 @@ pub struct Renderer;
 
 impl Renderer {
     pub fn render(&self, scene: &Scene, max_width: u16) -> RenderedFrame {
-        let used_size = scene.measure(max_width.max(1));
-        let area = Rect::new(0, 0, used_size.width.max(1), used_size.height.max(1));
+        self.render_in_width(scene, scene.measure(max_width.max(1)).width.max(1))
+    }
+
+    pub fn render_in_width(&self, scene: &Scene, width: u16) -> RenderedFrame {
+        let width = width.max(1);
+        let used_size = scene.measure(width);
+        let area = Rect::new(0, 0, width, used_size.height.max(1));
         let mut buffer = Buffer::empty(area);
         scene.render(area, &mut buffer);
+        let content_area = content_area(&buffer, area);
         RenderedFrame {
             area,
             used_size,
             buffer,
+            content_area,
+        }
+    }
+
+    pub fn diff(&self, previous: Option<&RenderedFrame>, next: &RenderedFrame) -> FrameDiff {
+        let previous_area = previous.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
+        let width = previous_area.width.max(next.area.width);
+        let height = previous_area.height.max(next.area.height);
+        let mut changed_cells = 0;
+        let mut changed_rows = Vec::new();
+        let empty = Cell::EMPTY;
+
+        for y in 0..height {
+            let mut row_changed = false;
+            for x in 0..width {
+                let previous_cell = previous
+                    .and_then(|frame| cell_at(&frame.buffer, frame.area, x, y))
+                    .unwrap_or(&empty);
+                let next_cell = cell_at(&next.buffer, next.area, x, y).unwrap_or(&empty);
+                if previous_cell != next_cell {
+                    changed_cells += 1;
+                    row_changed = true;
+                }
+            }
+            if row_changed {
+                changed_rows.push(y);
+            }
+        }
+
+        FrameDiff {
+            changed_cells,
+            changed_rows,
+            previous_area,
+            next_area: next.area,
+            cleared_rows: previous_area.height.saturating_sub(next.area.height),
         }
     }
 
     pub fn to_zsh_prompt(&self, frame: &RenderedFrame) -> String {
-        serialize_buffer(&frame.buffer, frame.area)
+        serialize_buffer(&frame.buffer, frame.content_area, true)
+    }
+
+    pub fn to_ansi(&self, frame: &RenderedFrame) -> String {
+        serialize_buffer(&frame.buffer, frame.content_area, false)
     }
 }
 
-fn serialize_buffer(buffer: &Buffer, area: Rect) -> String {
+pub fn truncate_to_width(text: &str, max_width: u16) -> String {
+    let max_width = max_width as usize;
+    let mut used: usize = 0;
     let mut output = String::new();
-    let mut current_style = None;
-
-    for column in 0..area.width {
-        let cell = &buffer[(column, 0)];
-        let style = cell.style();
-        if current_style != Some(style) {
-            if current_style.is_some() {
-                push_control(&mut output, "\x1b[0m");
-            }
-            push_control(&mut output, &style_to_ansi(style));
-            current_style = Some(style);
+    for grapheme in text.graphemes(true) {
+        let width = UnicodeWidthStr::width(grapheme);
+        if used.saturating_add(width) > max_width {
+            break;
         }
-        output.push_str(cell.symbol());
-    }
-
-    if current_style.is_some() {
-        push_control(&mut output, "\x1b[0m");
+        output.push_str(grapheme);
+        used += width;
     }
     output
 }
 
-fn push_control(output: &mut String, sequence: &str) {
-    output.push_str("%{");
-    output.push_str(sequence);
-    output.push_str("%}");
+fn content_area(buffer: &Buffer, area: Rect) -> Rect {
+    let mut min_x = area.width;
+    let mut min_y = area.height;
+    let mut max_x = 0;
+    let mut max_y = 0;
+    let mut has_content = false;
+
+    for y in 0..area.height {
+        for x in 0..area.width {
+            let cell = &buffer[(x, y)];
+            if cell == &Cell::EMPTY {
+                continue;
+            }
+            has_content = true;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x + 1);
+            max_y = max_y.max(y + 1);
+        }
+    }
+
+    if has_content {
+        Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    } else {
+        Rect::new(0, 0, 0, 0)
+    }
+}
+
+fn cell_at(buffer: &Buffer, area: Rect, x: u16, y: u16) -> Option<&Cell> {
+    if x < area.width && y < area.height {
+        Some(&buffer[(x, y)])
+    } else {
+        None
+    }
+}
+
+fn serialize_buffer(buffer: &Buffer, area: Rect, zsh_wrapped: bool) -> String {
+    if area.width == 0 || area.height == 0 {
+        return String::new();
+    }
+
+    let mut output = String::new();
+    for row in area.y..area.y + area.height {
+        if row > area.y {
+            output.push('\n');
+        }
+        let mut current_style = None;
+        for column in area.x..area.x + area.width {
+            let cell = &buffer[(column, row)];
+            let style = cell.style();
+            if current_style != Some(style) {
+                if current_style.is_some() {
+                    push_control(&mut output, "\x1b[0m", zsh_wrapped);
+                }
+                push_control(&mut output, &style_to_ansi(style), zsh_wrapped);
+                current_style = Some(style);
+            }
+            output.push_str(cell.symbol());
+        }
+        if current_style.is_some() {
+            push_control(&mut output, "\x1b[0m", zsh_wrapped);
+        }
+    }
+    output
+}
+
+fn push_control(output: &mut String, sequence: &str, zsh_wrapped: bool) {
+    if zsh_wrapped {
+        output.push_str("%{");
+        output.push_str(sequence);
+        output.push_str("%}");
+    } else {
+        output.push_str(sequence);
+    }
 }
 
 fn style_to_ansi(style: Style) -> String {
@@ -107,9 +233,14 @@ fn color_to_ansi(color: Option<Color>, background: bool) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use keel_ui::badge_scene;
+    use keel_ui::{Paragraph, Scene, Text, Theme, badge_scene};
+    use ratatui::{
+        buffer::Buffer,
+        layout::Rect,
+        style::{Color, Style},
+    };
 
-    use super::Renderer;
+    use super::{FrameDiff, Renderer};
 
     #[test]
     fn renders_ratatui_styling_as_a_zsh_fragment() {
@@ -130,5 +261,46 @@ mod tests {
 
         assert!(frame.used_size.width <= 8);
         assert_eq!(frame.used_size.height, 1);
+    }
+
+    #[test]
+    fn diff_reports_changed_cells_and_row_cleanup() {
+        let renderer = Renderer;
+        let first = renderer.render(
+            &Scene::new(Paragraph::new("one\ntwo").style(Style::default().fg(Color::Red))),
+            10,
+        );
+        let second = renderer.render(&Scene::new(Text::new("one")), 10);
+
+        let diff = renderer.diff(Some(&first), &second);
+        assert!(diff.changed());
+        assert!(diff.changed_cells > 0);
+        assert_eq!(diff.cleared_rows, 1);
+    }
+
+    #[test]
+    fn empty_buffer_has_no_prompt_fragment() {
+        let renderer = Renderer;
+        let frame = renderer.render(&Scene::new(Text::new("")), 10);
+        assert_eq!(renderer.to_zsh_prompt(&frame), "");
+    }
+
+    #[test]
+    fn keeps_wide_graphemes_whole_when_truncating() {
+        assert_eq!(super::truncate_to_width("ab界c", 3), "ab");
+        assert_eq!(super::truncate_to_width("ab界c", 4), "ab界");
+    }
+
+    #[allow(dead_code)]
+    fn _buffer_type_is_ratatuified() {
+        let _ = Buffer::empty(Rect::new(0, 0, 1, 1));
+        let _ = Theme::default();
+        let _ = FrameDiff {
+            changed_cells: 0,
+            changed_rows: vec![],
+            previous_area: Rect::default(),
+            next_area: Rect::default(),
+            cleared_rows: 0,
+        };
     }
 }

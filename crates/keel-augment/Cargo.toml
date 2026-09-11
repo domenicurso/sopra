@@ -7,7 +7,10 @@ license.workspace = true
 [dependencies]
 keel-core = { path = "../keel-core" }
 keel-renderer = { path = "../keel-renderer" }
+keel-scheduler = { path = "../keel-scheduler" }
 keel-ui = { path = "../keel-ui" }
+ratatui.workspace = true
+unicode-segmentation.workspace = true
 
 [[bin]]
 name = "keel-augment"

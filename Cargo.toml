@@ -4,6 +4,7 @@ members = [
     "crates/keel-ui",
     "crates/keel-renderer",
     "crates/keel-augment",
+    "crates/keel-scheduler",
 ]
 resolver = "2"
 
@@ -14,4 +15,5 @@ version = "0.1.0"
 
 [workspace.dependencies]
 ratatui = { version = "0.29", default-features = false }
+unicode-segmentation = "1.12"
 unicode-width = "0.2"
