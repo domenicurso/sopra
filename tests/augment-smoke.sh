@@ -9,8 +9,8 @@ zsh -n "$repo_root/zsh/keel-augment.zsh"
 
 server_output="$({
   printf 'ping\n'
-  printf 'render\techo\\nhi\\tthere\t2\t80\t24\tmain\t0\n'
-  printf 'render\techo\\nhi\\tthere\t2\t80\t24\tmain\t0\n'
+  printf 'render\techo\\nhi\\tthere\t2\t80\t24\tmain\t0\t/Users/dom/Projects/keel\n'
+  printf 'render\techo\\nhi\\tthere\t2\t80\t24\tmain\t0\t/Users/dom/Projects/keel\n'
   printf 'stats\nshutdown\n'
 } | "$repo_root/target/debug/keel-augment" --server)"
 [[ "$server_output" == *pong* ]]
@@ -34,6 +34,7 @@ zsh -dfc '
   keel-augment-enable
   [[ $_KEEL_AUGMENT_ACTIVE -eq 1 ]]
   [[ "$ZLE_RPROMPT_INDENT" == 0 ]]
+  [[ "$PROMPT" == '%F{cyan}'* ]]
   _keel-augment-pre-redraw
   [[ "$RPROMPT" == *Keel* ]]
   keel-augment-disable
@@ -63,4 +64,31 @@ zsh -dfc '
   keel-augment-disable
   [[ "${region_highlight[1]}" == "0 1 fg=red" ]]
   [[ "$#region_highlight" == 1 ]]
+'
+
+KEEL_AUGMENT_ROOT="$repo_root" \
+KEEL_AUGMENT_BINARY="$repo_root/target/debug/keel-augment" \
+KEEL_AUGMENT_POC=dashboard \
+KEEL_AUGMENT_CURSOR_MODE=highlight \
+KEEL_AUGMENT_CURSOR_STYLE=bar \
+zsh -dfc '
+  PROMPT="base %# "
+  BUFFER="git --version"
+  CURSOR=2
+  COLUMNS=80
+  LINES=24
+  KEYMAP=main
+  typeset -ga region_highlight
+  source "$KEEL_AUGMENT_ROOT/zsh/keel-augment.zsh"
+  keel-augment-enable
+  _keel-augment-pre-redraw
+  [[ "$_KEEL_AUGMENT_PROMPT_MODE" == rust ]]
+  [[ "$PROMPT" == *Keel* ]]
+  [[ "$PROMPT" == *"> "* ]]
+  [[ "$RPROMPT" == *Keel* ]]
+  [[ "$#region_highlight" -ge 2 ]]
+  [[ "$_KEEL_AUGMENT_CURSOR_STYLE" == bar ]]
+  keel-augment-disable
+  [[ "$PROMPT" == "base %# " ]]
+  [[ "$#region_highlight" == 0 ]]
 '

@@ -9,6 +9,7 @@ pub struct HostSnapshot {
     pub rows: u16,
     pub keymap: String,
     pub last_status: i32,
+    pub cwd: String,
 }
 
 impl Default for HostSnapshot {
@@ -20,6 +21,7 @@ impl Default for HostSnapshot {
             rows: 24,
             keymap: "main".to_string(),
             last_status: 0,
+            cwd: "~".to_string(),
         }
     }
 }
@@ -38,6 +40,11 @@ impl HostSnapshot {
                 self.keymap.clone()
             },
             last_status: self.last_status,
+            cwd: if self.cwd.is_empty() {
+                "~".to_string()
+            } else {
+                self.cwd.clone()
+            },
         }
     }
 
@@ -322,6 +329,7 @@ mod tests {
             rows: 0,
             keymap: String::new(),
             last_status: 0,
+            cwd: String::new(),
         }
         .sanitized();
 

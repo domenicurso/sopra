@@ -13,12 +13,20 @@ typeset -g _KEEL_AUGMENT_SERVER_PID=''
 typeset -g _KEEL_AUGMENT_SERVER_DIR=''
 typeset -g _KEEL_AUGMENT_SERVER_IN_FD=''
 typeset -g _KEEL_AUGMENT_SERVER_OUT_FD=''
+typeset -g _KEEL_AUGMENT_BASE_PROMPT=''
 typeset -g _KEEL_AUGMENT_BASE_RPROMPT=''
 typeset -g _KEEL_AUGMENT_BASE_RPROMPT_INDENT=1
 typeset -g _KEEL_AUGMENT_LAST_FRAGMENT=''
-typeset -g _KEEL_AUGMENT_LAST_HIGHLIGHT=''
+typeset -ga _KEEL_AUGMENT_LAST_HIGHLIGHTS=()
 typeset -g _KEEL_AUGMENT_CURSOR_MODE="${KEEL_AUGMENT_CURSOR_MODE:-native}"
 typeset -g _KEEL_AUGMENT_CURSOR_STYLE='default'
+typeset -g _KEEL_AUGMENT_POC="${KEEL_AUGMENT_POC:-status}"
+typeset -g _KEEL_AUGMENT_PROMPT_MODE="${KEEL_AUGMENT_PROMPT_MODE:-base}"
+if [[ -z "${KEEL_AUGMENT_PROMPT_MODE:-}" ]]; then
+  case "$_KEEL_AUGMENT_POC" in
+    prompt|dashboard|all) _KEEL_AUGMENT_PROMPT_MODE=rust ;;
+  esac
+fi
 typeset -g _KEEL_AUGMENT_IN_REDRAW=0
 typeset -g _KEEL_AUGMENT_LAST_STATUS=0
 typeset -g _KEEL_AUGMENT_LAST_COMMAND=''
@@ -120,6 +128,7 @@ function _keel-augment-request() {
   local rows="$4"
   local keymap="$5"
   local exit_status="$6"
+  local cwd="${PWD:-~}"
   local tab=$'\t'
   local encoded_buffer
   local encoded_keymap
@@ -129,8 +138,10 @@ function _keel-augment-request() {
   encoded_buffer="$REPLY"
   _keel-augment-escape "$keymap"
   encoded_keymap="$REPLY"
+  _keel-augment-escape "$cwd"
+  local encoded_cwd="$REPLY"
 
-  print -r -u "$_KEEL_AUGMENT_SERVER_IN_FD" -- "render${tab}${encoded_buffer}${tab}${cursor}${tab}${columns}${tab}${rows}${tab}${encoded_keymap}${tab}${exit_status}" 2>/dev/null || return 1
+  print -r -u "$_KEEL_AUGMENT_SERVER_IN_FD" -- "render${tab}${encoded_buffer}${tab}${cursor}${tab}${columns}${tab}${rows}${tab}${encoded_keymap}${tab}${exit_status}${tab}${encoded_cwd}" 2>/dev/null || return 1
   read -r -t 1 -u "$_KEEL_AUGMENT_SERVER_OUT_FD" response 2>/dev/null || return 1
   REPLY="$response"
 }
@@ -144,25 +155,40 @@ function _keel-augment-unescape() {
 }
 
 function _keel-augment-remove-highlight() {
-  [[ -n "$_KEEL_AUGMENT_LAST_HIGHLIGHT" ]] || return 0
+  (( ${#_KEEL_AUGMENT_LAST_HIGHLIGHTS} )) || return 0
   local -a next=()
-  local item
+  local item owned previous_entry
   for item in "${region_highlight[@]}"; do
-    [[ "$item" == "$_KEEL_AUGMENT_LAST_HIGHLIGHT" ]] || next+=("$item")
+    owned=0
+    for previous_entry in "${_KEEL_AUGMENT_LAST_HIGHLIGHTS[@]}"; do
+      if [[ "$item" == "$previous_entry" ]]; then
+        owned=1
+        break
+      fi
+    done
+    (( owned )) || next+=("$item")
   done
   region_highlight=("${next[@]}")
-  _KEEL_AUGMENT_LAST_HIGHLIGHT=''
+  _KEEL_AUGMENT_LAST_HIGHLIGHTS=()
 }
 
-function _keel-augment-apply-highlight() {
-  local start="$1"
-  local end="$2"
-  local style="$3"
+function _keel-augment-apply-highlights() {
+  local payload="$1"
   _keel-augment-remove-highlight
-  [[ "$_KEEL_AUGMENT_CURSOR_MODE" == highlight ]] || return 0
-  [[ "$start" == <-> && "$end" == <-> && "$start" -lt "$end" ]] || return 0
-  _KEEL_AUGMENT_LAST_HIGHLIGHT="$start $end $style"
-  region_highlight+=("$_KEEL_AUGMENT_LAST_HIGHLIGHT")
+  [[ -n "$payload" ]] || return 0
+
+  local -a encoded=()
+  encoded=("${(@s:;:)payload}")
+  local item start end style rest
+  for item in "${encoded[@]}"; do
+    start="${item%%,*}"
+    rest="${item#*,}"
+    end="${rest%%,*}"
+    style="${rest#*,}"
+    [[ "$start" == <-> && "$end" == <-> && "$start" -lt "$end" ]] || continue
+    _KEEL_AUGMENT_LAST_HIGHLIGHTS+=("$start $end $style")
+    region_highlight+=("$start $end $style")
+  done
 }
 
 function _keel-augment-apply-cursor-style() {
@@ -191,6 +217,7 @@ function _keel-augment-apply-cursor-style() {
 function _keel-augment-render() {
   local response
   _keel-augment-request "${1:-}" "${2:-0}" "${3:-80}" "${4:-24}" "${5:-main}" "${6:-0}" || {
+    PROMPT="$_KEEL_AUGMENT_BASE_PROMPT"
     RPROMPT="$_KEEL_AUGMENT_BASE_RPROMPT"
     _KEEL_AUGMENT_LAST_FRAGMENT=''
     _keel-augment-remove-highlight
@@ -202,31 +229,35 @@ function _keel-augment-render() {
   response="$REPLY"
   local -a fields
   fields=("${(@ps:\t:)response}")
-  (( ${#fields} >= 5 )) || return 1
+  (( ${#fields} >= 4 )) || return 1
 
-  local fragment
+  local prompt_fragment right_fragment
   _keel-augment-unescape "${fields[1]}"
-  fragment="$REPLY"
-  local cursor_style="${fields[2]}"
-  local highlight_start="${fields[3]}"
-  local highlight_end="${fields[4]}"
-  local highlight_style
-  _keel-augment-unescape "${fields[5]}"
-  highlight_style="$REPLY"
+  prompt_fragment="$REPLY"
+  _keel-augment-unescape "${fields[2]}"
+  right_fragment="$REPLY"
+  local cursor_style="${fields[3]}"
+  local highlight_payload="${fields[4]}"
 
-  RPROMPT="${_KEEL_AUGMENT_BASE_RPROMPT}${fragment}"
-  _KEEL_AUGMENT_LAST_FRAGMENT="$fragment"
-  _keel-augment-apply-highlight "$highlight_start" "$highlight_end" "$highlight_style"
+  if [[ "$_KEEL_AUGMENT_PROMPT_MODE" == rust ]]; then
+    PROMPT="${prompt_fragment} "
+  else
+    PROMPT="$_KEEL_AUGMENT_BASE_PROMPT"
+  fi
+  RPROMPT="${_KEEL_AUGMENT_BASE_RPROMPT}${right_fragment}"
+  _KEEL_AUGMENT_LAST_FRAGMENT="$right_fragment"
+  _keel-augment-apply-highlights "$highlight_payload"
   _keel-augment-apply-cursor-style "$cursor_style"
 }
 
 function _keel-augment-pre-redraw() {
   (( _KEEL_AUGMENT_ACTIVE )) || return 0
   (( _KEEL_AUGMENT_IN_REDRAW )) && return 0
+  local previous_prompt="$PROMPT"
   local previous_rprompt="$RPROMPT"
   _KEEL_AUGMENT_IN_REDRAW=1
   _keel-augment-render "${BUFFER:-}" "${CURSOR:-0}" "${COLUMNS:-80}" "${LINES:-24}" "${KEYMAP:-main}" "${_KEEL_AUGMENT_LAST_STATUS:-0}"
-  if [[ "$RPROMPT" != "$previous_rprompt" ]]; then
+  if [[ "$PROMPT" != "$previous_prompt" || "$RPROMPT" != "$previous_rprompt" ]]; then
     zle reset-prompt 2>/dev/null || true
   fi
   _KEEL_AUGMENT_IN_REDRAW=0
@@ -267,6 +298,7 @@ function keel-augment-enable() {
 
   zmodload -i zsh/zle
   autoload -Uz add-zle-hook-widget add-zsh-hook
+  _KEEL_AUGMENT_BASE_PROMPT="${PROMPT-}"
   _KEEL_AUGMENT_BASE_RPROMPT="${RPROMPT-}"
   _KEEL_AUGMENT_BASE_RPROMPT_INDENT="${ZLE_RPROMPT_INDENT:-1}"
   ZLE_RPROMPT_INDENT=0
@@ -296,6 +328,7 @@ function keel-augment-disable() {
   add-zsh-hook -d zshexit _keel-augment-zshexit 2>/dev/null || true
 
   _keel-augment-stop-server
+  PROMPT="$_KEEL_AUGMENT_BASE_PROMPT"
   RPROMPT="$_KEEL_AUGMENT_BASE_RPROMPT"
   ZLE_RPROMPT_INDENT="$_KEEL_AUGMENT_BASE_RPROMPT_INDENT"
   _KEEL_AUGMENT_LAST_FRAGMENT=''
@@ -308,8 +341,9 @@ function keel-augment-disable() {
 function keel-augment-status() {
   if (( _KEEL_AUGMENT_ACTIVE )); then
     print "keel-augment: enabled"
-    print "renderer: persistent Rust process -> ratatui buffer -> zsh prompt fragment"
+    print "renderer: persistent Rust process -> ratatui buffer -> zsh prompt surfaces"
     print "host: zsh ZLE owns editing, resize, and command execution"
+    print "profile: $_KEEL_AUGMENT_POC prompt=$_KEEL_AUGMENT_PROMPT_MODE"
     print "cursor: mode=$_KEEL_AUGMENT_CURSOR_MODE style=$_KEEL_AUGMENT_CURSOR_STYLE"
     if (( _KEEL_AUGMENT_SERVER_RUNNING )); then
       print -r -u "$_KEEL_AUGMENT_SERVER_IN_FD" -- stats 2>/dev/null || true

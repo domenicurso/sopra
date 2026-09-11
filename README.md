@@ -8,11 +8,10 @@ acceptance, history, and command execution.
 The current prototype uses one long-lived Rust renderer per shell. Zsh sends a
 compact snapshot over a private request/response protocol from
 line-pre-redraw; Rust builds a generic component tree, paints it into an
-offscreen ratatui Buffer, and returns a structured host plan containing a
-zsh-safe RPROMPT fragment plus an optional cursor decoration. There are no
-widget wrappers, redraw loops, alternate-screen sequences, or cursor-motion
-sequences in prompt text, so the normal shell continues to own the interactive
-line.
+offscreen ratatui Buffer, and returns a structured host plan containing
+zsh-safe prompt surfaces plus optional cursor and syntax decorations. Zsh still
+owns the interactive line, so the prototype augments the prompt without
+creating a second editor or terminal session.
 
 ## Run The Prototype
 
@@ -25,6 +24,27 @@ the cursor, resize the terminal, press Ctrl-C, and run commands. The badge on
 the right is recomputed from the live ZLE snapshot, while normal shell
 behavior continues underneath it. The badge includes the active keymap,
 grapheme count, cursor index, and the last command status.
+
+## Live POCs
+
+The POC launcher changes the scene used by the same live zsh session; it does
+not print a static preview or replace command execution:
+
+```bash
+./scripts/start-keel-augment-poc.sh prompt
+./scripts/start-keel-augment-poc.sh cursor
+./scripts/start-keel-augment-poc.sh syntax
+./scripts/start-keel-augment-poc.sh widget
+./scripts/start-keel-augment-poc.sh dashboard
+```
+
+`prompt` renders a Rust-owned multiline context header and prompt prefix,
+`cursor` changes the native cursor shape and highlights the grapheme under it,
+`syntax` adds Rust-computed zsh `region_highlight` spans, `widget` places a
+native ratatui line gauge in the right rail, and `dashboard` combines those
+surfaces with a full-width rule and live diagnostics. In every profile, type,
+move the cursor, resize, run a command, press Ctrl-C, and run
+`keel-augment-status`; zsh remains the source of truth for those actions.
 
 The safe cursor-relative mode is opt-in:
 
@@ -52,6 +72,14 @@ Disable it with keel-augment-disable and inspect the boundary and renderer
 cache with keel-augment-status. The optional KEEL_AUGMENT_THEME=mono or
 KEEL_AUGMENT_THEME=amber environment setting selects a built-in theme.
 
+The automated live probe requires `expect` and drives the same interactive
+session through typing, cursor movement, Ctrl-C, a terminal-width change, and
+normal command execution:
+
+```bash
+./tests/augment-pty.sh
+```
+
 ## Architecture
 
 ```text
@@ -70,20 +98,21 @@ keel-augment.zsh -> persistent keel-augment --server process
                     ratatui offscreen Buffer
                               |
                               v
-                    keel-renderer ANSI/zsh fragment
+                    keel-renderer prompt surfaces
                               |
                               v
                   zsh host decoration plan
                     /                \
-               RPROMPT       cursor style/highlight
+             PROMPT/RPROMPT       cursor/syntax spans
 ```
 
 The shell adapter only captures state, applies the returned host plan, installs
 lifecycle hooks, and restores the user's prompt on disable. Rust owns
-composition, measurement, and the decision about which cursor decoration is
-appropriate, but it deliberately does not own the terminal or the shell's
-editing buffer. That ownership split is what lets Keel augment the prompt
-without reproducing ZLE's wrapping, cursor, history, and command semantics.
+composition, measurement, prompt styling, and the decision about which cursor
+or syntax decoration is appropriate, but it deliberately does not own the
+terminal or the shell's editing buffer. That ownership split is what lets Keel
+augment the prompt without reproducing ZLE's wrapping, cursor, history, and
+command semantics.
 
 This prototype intentionally does not include completions, AI, plugins,
 mouse input, scrollback management, raw mode, alternate-screen ownership, or

@@ -19,16 +19,15 @@ line-pre-redraw / precmd / preexec
                 |
                 v
       zsh host decoration plan
-       /                  \
- RPROMPT          cursor style/highlight
+   PROMPT/RPROMPT       cursor/syntax spans
 ```
 
 HostSnapshot contains the observable ZLE buffer, cursor, terminal dimensions,
-keymap, and last command status. Rust treats that data as input to the
-augmentation scene; it does not copy the line into a competing editor. The
-long-lived process keeps its renderer, previous frame, scheduler clock, and
-statistics between requests, which removes process startup from the keypress
-path and makes unchanged snapshots cheap cache hits.
+keymap, current working directory, and last command status. Rust treats that
+data as input to the augmentation scene; it does not copy the line into a
+competing editor. The long-lived process keeps its renderer, previous frame,
+scheduler clock, and statistics between requests, which removes process
+startup from the keypress path and makes unchanged snapshots cheap cache hits.
 
 keel-ui owns a generic component tree. Text, Paragraph, InputLine, Row,
 Column, Align, Spacer, and Panel are convenience components, and
@@ -40,9 +39,9 @@ zsh's width accounting remains correct.
 
 The shell adapter installs only line-pre-redraw, line-finish, precmd, and
 preexec hooks. It never wraps built-in ZLE widgets or mutates BUFFER or CURSOR.
-When the returned fragment changes, it asks ZLE for its normal prompt refresh;
-a re-entry guard prevents the refresh from recursively triggering another
-refresh loop. The only direct terminal sequence is an optional zero-width
+When a returned prompt surface changes, it asks ZLE for its normal prompt
+refresh; a re-entry guard prevents the refresh from recursively triggering
+another loop. The only direct terminal sequence is an optional zero-width
 cursor-style change such as blink-block or bar. It does not move the cursor or
 write screen cells, so it cannot desynchronise ZLE's coordinate model.
 

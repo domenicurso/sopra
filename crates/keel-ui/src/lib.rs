@@ -171,7 +171,6 @@ impl StyleToken {
 
 pub struct Text {
     lines: Vec<Line<'static>>,
-    style: Style,
     wrap: bool,
 }
 
@@ -179,7 +178,6 @@ impl Text {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             lines: vec![Line::from(text.into())],
-            style: Style::default(),
             wrap: false,
         }
     }
@@ -187,7 +185,6 @@ impl Text {
     pub fn styled(text: impl Into<String>, style: Style) -> Self {
         Self {
             lines: vec![Line::from(Span::styled(text.into(), style))],
-            style,
             wrap: false,
         }
     }
@@ -197,11 +194,7 @@ impl Text {
     }
 
     pub fn lines(lines: Vec<Line<'static>>) -> Self {
-        Self {
-            lines,
-            style: Style::default(),
-            wrap: false,
-        }
+        Self { lines, wrap: false }
     }
 
     pub fn with_wrap(mut self, wrap: bool) -> Self {
@@ -225,11 +218,23 @@ impl Component for Text {
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let mut paragraph = RatatuiParagraph::new(self.lines.clone()).style(self.style);
+        let width = if self.wrap {
+            area.width
+        } else {
+            self.lines
+                .iter()
+                .map(line_width)
+                .max()
+                .unwrap_or(1)
+                .min(area.width as usize)
+                .max(1) as u16
+        };
+        let render_area = Rect::new(area.x, area.y, width, area.height);
+        let mut paragraph = RatatuiParagraph::new(self.lines.clone());
         if self.wrap {
             paragraph = paragraph.wrap(Wrap { trim: false });
         }
-        paragraph.render(area, buffer);
+        paragraph.render(render_area, buffer);
     }
 }
 
@@ -715,6 +720,75 @@ impl Component for Spacer {
     fn render(&self, _area: Rect, _buffer: &mut Buffer) {}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleAxis {
+    Horizontal,
+    Vertical,
+}
+
+pub struct Rule {
+    axis: RuleAxis,
+    style: Style,
+    symbol: &'static str,
+}
+
+impl Rule {
+    pub fn horizontal(style: Style) -> Self {
+        Self {
+            axis: RuleAxis::Horizontal,
+            style,
+            symbol: "─",
+        }
+    }
+
+    pub fn vertical(style: Style) -> Self {
+        Self {
+            axis: RuleAxis::Vertical,
+            style,
+            symbol: "│",
+        }
+    }
+
+    pub fn symbol(mut self, symbol: &'static str) -> Self {
+        self.symbol = symbol;
+        self
+    }
+}
+
+impl Component for Rule {
+    fn measure(&self, constraints: Constraints) -> Size {
+        match self.axis {
+            RuleAxis::Horizontal => Size {
+                width: constraints.max_width,
+                height: 1.min(constraints.max_height),
+            },
+            RuleAxis::Vertical => Size {
+                width: 1.min(constraints.max_width),
+                height: constraints.max_height,
+            },
+        }
+    }
+
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        match self.axis {
+            RuleAxis::Horizontal => {
+                for x in area.left()..area.right() {
+                    buffer[(x, area.top())]
+                        .set_symbol(self.symbol)
+                        .set_style(self.style);
+                }
+            }
+            RuleAxis::Vertical => {
+                for y in area.top()..area.bottom() {
+                    buffer[(area.left(), y)]
+                        .set_symbol(self.symbol)
+                        .set_style(self.style);
+                }
+            }
+        }
+    }
+}
+
 pub struct InputLine {
     prefix: Line<'static>,
     text: String,
@@ -828,8 +902,8 @@ mod tests {
     };
 
     use super::{
-        Align, Component, Constraints, InputLine, Paragraph, Scene, Size, StyleToken, Text, Theme,
-        badge_component, ratatui_component,
+        Align, Component, Constraints, InputLine, Paragraph, Rule, Scene, Size, StyleToken, Text,
+        Theme, badge_component, ratatui_component,
     };
 
     #[test]
@@ -890,5 +964,23 @@ mod tests {
 
         assert_eq!(buffer[(0, 0)].symbol(), "┌");
         assert_eq!(scene.measure(80).height, 3);
+    }
+
+    #[test]
+    fn horizontal_rule_expands_to_the_available_width() {
+        let rule = Rule::horizontal(Theme::default().border);
+        let area = Rect::new(0, 0, 6, 1);
+        let mut buffer = Buffer::empty(area);
+
+        rule.render(area, &mut buffer);
+
+        assert_eq!(
+            rule.measure(Constraints::new(6, 4)),
+            Size {
+                width: 6,
+                height: 1
+            }
+        );
+        assert_eq!(buffer[(5, 0)].symbol(), "─");
     }
 }

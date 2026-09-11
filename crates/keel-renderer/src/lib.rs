@@ -122,7 +122,7 @@ fn content_area(buffer: &Buffer, area: Rect) -> Rect {
     for y in 0..area.height {
         for x in 0..area.width {
             let cell = &buffer[(x, y)];
-            if cell == &Cell::EMPTY {
+            if !has_visible_symbol(cell) {
                 continue;
             }
             has_content = true;
@@ -158,8 +158,11 @@ fn serialize_buffer(buffer: &Buffer, area: Rect, zsh_wrapped: bool) -> String {
         if row > area.y {
             output.push('\n');
         }
+        let Some((first_column, last_column)) = row_content_bounds(buffer, area, row) else {
+            continue;
+        };
         let mut current_style = None;
-        for column in area.x..area.x + area.width {
+        for column in first_column..=last_column {
             let cell = &buffer[(column, row)];
             let style = cell.style();
             if current_style != Some(style) {
@@ -176,6 +179,22 @@ fn serialize_buffer(buffer: &Buffer, area: Rect, zsh_wrapped: bool) -> String {
         }
     }
     output
+}
+
+fn row_content_bounds(buffer: &Buffer, area: Rect, row: u16) -> Option<(u16, u16)> {
+    let mut first = None;
+    let mut last = None;
+    for column in area.x..area.x + area.width {
+        if has_visible_symbol(&buffer[(column, row)]) {
+            first.get_or_insert(column);
+            last = Some(column);
+        }
+    }
+    first.zip(last)
+}
+
+fn has_visible_symbol(cell: &Cell) -> bool {
+    cell.symbol() != " "
 }
 
 fn push_control(output: &mut String, sequence: &str, zsh_wrapped: bool) {
