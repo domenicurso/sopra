@@ -72,7 +72,9 @@ run_step 'Building Keel' env KEEL_ZSH_PREFIX="$zsh_prefix" "$repo_root/scripts/b
 install_files() {
     mkdir -p "$install_prefix/bin" "$install_prefix/share" "$module_dir" "$startup_dir"
     install -m 0755 "$repo_root/target/debug/keel.so" "$module_dir/keel.so"
-    install -m 0644 "$repo_root/zsh/keel.zsh" "$install_prefix/share/keel.zsh"
+    for shell_file in "$repo_root"/zsh/*.zsh; do
+        install -m 0644 "$shell_file" "$install_prefix/share/$(basename "$shell_file")"
+    done
     printf 'keel-install-v1\n' > "$install_prefix/.keel-install"
 
     launcher="$install_prefix/bin/keel"

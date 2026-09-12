@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+neo_frizbee.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 

@@ -222,6 +222,7 @@ name = "keel-core"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "neo_frizbee",
  "unicode-segmentation",
  "unicode-width 0.2.0",
 ]
@@ -284,6 +285,12 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
  "hashbrown",
 ]
+
+[[package]]
+name = "neo_frizbee"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2f6120a8da26bea3587731072111062c5d8c51ca3a3a75a716bd8b735d5882"
 
 [[package]]
 name = "once_cell"

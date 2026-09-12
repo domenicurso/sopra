@@ -28,12 +28,17 @@ puts $startup_file {typeset -a _keel_many_values=(item-00 item-01 item-02 item-0
 puts $startup_file {typeset -a _keel_many_descriptions=('item zero' 'item one' 'item two' 'item three' 'item four' 'item five' 'item six' 'item seven' 'item eight' 'item nine' 'item ten' 'item eleven' 'item twelve' 'item thirteen' 'item fourteen' 'item fifteen' 'item sixteen' 'item seventeen' 'item eighteen' 'item nineteen')}
 puts $startup_file {_keel_many_complete() { compadd -d _keel_many_descriptions -- "${_keel_many_values[@]}"; }}
 puts $startup_file {_keel_options_complete() { _arguments '1:subcommand:(run inspect search)' '--verbose[show verbose output]' '--format=[select output format]:format:(text json)'; }}
+puts $startup_file {typeset -a _keel_fuzzy_values=(--files-with-matches --files-without-match)}
+puts $startup_file {typeset -a _keel_fuzzy_descriptions=('print only matching files' 'print files without matches')}
+puts $startup_file {_keel_fuzzy_complete() { compadd -d _keel_fuzzy_descriptions -- "${_keel_fuzzy_values[@]}"; }}
 puts $startup_file {keel-test() { print -r -- "keel-test:$*"; }}
 puts $startup_file {keel-many() { print -r -- "keel-many:$*"; }}
 puts $startup_file {keel-options() { print -r -- "keel-options:$*"; }}
+puts $startup_file {keel-fuzzy() { print -r -- "keel-fuzzy:$*"; }}
 puts $startup_file "compdef _keel_test_complete keel-test"
 puts $startup_file "compdef _keel_many_complete keel-many"
 puts $startup_file "compdef _keel_options_complete keel-options"
+puts $startup_file "compdef _keel_fuzzy_complete keel-fuzzy"
 puts $startup_file "source '$repo/zsh/keel.zsh'"
 close $startup_file
 set env(ZDOTDIR) $startup_dir
@@ -117,9 +122,43 @@ expect_native_prompt
 # Keel must display those records instead of synthesizing them from help text.
 send "keel-options --"
 expect {
-    -re {show verbose output.*select output format.*0/[0-9]+; [0-9]+ms} {}
+    -re {verbose} {}
+    timeout {
+        puts stderr "Zsh did not provide the verbose option"
+        exit 1
+    }
+}
+expect {
+    -re {show verbose output} {}
+    timeout {
+        puts stderr "Zsh verbose option description was not captured"
+        exit 1
+    }
+}
+expect {
+    -re {format} {}
+    timeout {
+        puts stderr "Zsh did not provide the format option"
+        exit 1
+    }
+}
+expect {
+    -re {select output format.*0/[0-9]+; [0-9]+ms} {}
     timeout {
         puts stderr "Zsh option descriptions were not captured"
+        exit 1
+    }
+}
+send "\003"
+after 200
+
+# The completion set is captured from the real provider and fuzzy-ranked in
+# Rust, so a non-contiguous query can find an option that prefix matching misses.
+send "keel-fuzzy mchs"
+expect {
+    -re {print only matching files.*0/[0-9]+; [0-9]+ms} {}
+    timeout {
+        puts stderr "fuzzy completion did not find the non-prefix option"
         exit 1
     }
 }

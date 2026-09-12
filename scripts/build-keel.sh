@@ -8,23 +8,28 @@ cargo build --manifest-path "$repo_root/Cargo.toml" -p keel-module
 rust_archive="$repo_root/target/debug/libkeel_module.a"
 output="$repo_root/target/debug/keel.so"
 cc=${CC:-cc}
+native_objects=()
 
-"$cc" -std=c11 -Wall -Wextra -Werror -fPIC \
-    -I "$repo_root/native" \
-    -c "$repo_root/native/keel_zsh_module.c" \
-    -o "$repo_root/target/debug/keel_zsh_module.o"
+for source in keel_zsh_module.c keel_zsh_render.c keel_zsh_widgets.c; do
+    object="$repo_root/target/debug/${source%.c}.o"
+    "$cc" -std=c11 -Wall -Wextra -Werror -fPIC \
+        -I "$repo_root/native" \
+        -c "$repo_root/native/$source" \
+        -o "$object"
+    native_objects+=("$object")
+done
 
 case "$(uname -s)" in
     Darwin)
         "$cc" -bundle -flat_namespace -undefined suppress \
             -o "$output" \
-            "$repo_root/target/debug/keel_zsh_module.o" \
+            "${native_objects[@]}" \
             "$rust_archive" -lpthread
         ;;
     Linux)
         "$cc" -shared -Wl,--unresolved-symbols=ignore-in-shared-libs \
             -o "$output" \
-            "$repo_root/target/debug/keel_zsh_module.o" \
+            "${native_objects[@]}" \
             "$rust_archive" -lpthread -ldl -lm
         ;;
     *)

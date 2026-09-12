@@ -1,0 +1,120 @@
+use keel_ui::Size;
+use ratatui::{buffer::Buffer, layout::Rect};
+use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderContext {
+    pub terminal_columns: u16,
+    pub max_height: u16,
+    pub origin_column: u16,
+    pub row_offset: i16,
+    pub force_full: bool,
+}
+
+impl RenderContext {
+    pub const fn new(terminal_columns: u16, max_height: u16, origin_column: u16) -> Self {
+        Self {
+            terminal_columns: if terminal_columns == 0 {
+                1
+            } else {
+                terminal_columns
+            },
+            max_height: if max_height == 0 { 1 } else { max_height },
+            origin_column,
+            row_offset: 1,
+            force_full: false,
+        }
+    }
+
+    pub const fn row_offset(mut self, row_offset: i16) -> Self {
+        self.row_offset = row_offset;
+        self
+    }
+
+    pub const fn full_repaint(mut self, force_full: bool) -> Self {
+        self.force_full = force_full;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedFrame {
+    pub area: Rect,
+    pub used_size: Size,
+    pub buffer: Buffer,
+    pub origin_column: u16,
+    pub row_offset: i16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameDiff {
+    pub changed_cells: usize,
+    pub changed_rows: Vec<u16>,
+    pub cleared_rows: Vec<u16>,
+    pub previous_area: Rect,
+    pub next_area: Rect,
+    pub previous_origin: u16,
+    pub next_origin: u16,
+    pub previous_row_offset: i16,
+    pub next_row_offset: i16,
+}
+
+impl FrameDiff {
+    pub fn changed(&self) -> bool {
+        self.changed_cells > 0
+            || !self.cleared_rows.is_empty()
+            || self.previous_area != self.next_area
+            || self.previous_origin != self.next_origin
+            || self.previous_row_offset != self.next_row_offset
+    }
+
+    pub fn origin_changed(&self) -> bool {
+        self.previous_origin != self.next_origin || self.previous_row_offset != self.next_row_offset
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchOp {
+    SaveCursor,
+    HideCursor,
+    MoveToSurface,
+    ClearSurface {
+        origin_column: u16,
+        row_offset: i16,
+        width: u16,
+        height: u16,
+    },
+    ClearSpan {
+        row: u16,
+        width: u16,
+    },
+    PaintRow {
+        row: u16,
+    },
+    RestoreCursor,
+    ShowCursor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderTransaction {
+    pub origin_column: u16,
+    pub row_offset: i16,
+    pub width: u16,
+    pub height: u16,
+    pub ops: Vec<PatchOp>,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedRegion {
+    pub frame: RenderedFrame,
+    pub diff: FrameDiff,
+    pub transaction: RenderTransaction,
+    pub used_rows: u16,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum RenderError {
+    #[error("rendered surface has no columns")]
+    EmptyWidth,
+}

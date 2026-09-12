@@ -181,7 +181,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ## Current limitations
 
-- Completion capture follows Zsh's installed completion functions, but it is bounded to 64 records and does not yet expose history or provider metadata beyond what `compadd` supplies.
+- Completion capture follows Zsh's installed completion functions, is bounded to 512 records, and uses the `neo_frizbee` fuzzy matcher to rank the captured labels while preserving `compadd` descriptions.
 - Zsh still owns keyboard input and the editable buffer; Keel adds navigation and Tab insertion widgets while leaving command parsing, history, and execution in ZLE.
 - Running Keel requires the patched Zsh 5.9 build, which is why the project builds and ships its own private shell instead of loading into `/bin/zsh`.
 - The native build scripts currently implement Darwin and Linux link steps; other host operating systems are rejected explicitly.
