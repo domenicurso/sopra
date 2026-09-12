@@ -6,9 +6,11 @@ use keel_scheduler::{FrameClock, InvalidationReason};
 use keel_ui::{Constraints, PopupItem, Scene, SuggestionPopup, Theme};
 
 const MAX_HOST_BYTES: usize = 256 * 1024;
+pub const KEEL_NATIVE_ABI_VERSION: u32 = 1;
 
 #[repr(C)]
 pub struct KeelNativeHostSnapshot {
+    pub abi_version: u32,
     pub buffer: *const u8,
     pub buffer_len: usize,
     pub cursor_units: usize,
@@ -200,6 +202,9 @@ fn build_scene(app: &AppState, theme: Theme) -> Option<Scene> {
 fn read_snapshot(raw: *const KeelNativeHostSnapshot) -> Option<HostSnapshot> {
     // The C shim owns these buffers for the duration of the call.
     let raw = unsafe { &*raw };
+    if raw.abi_version != KEEL_NATIVE_ABI_VERSION {
+        return None;
+    }
     let buffer = read_utf8(raw.buffer, raw.buffer_len)?;
     let cwd = read_utf8(raw.cwd, raw.cwd_len)?;
     let keymap = read_utf8(raw.keymap, raw.keymap_len)?;
@@ -241,6 +246,7 @@ mod tests {
 
     fn snapshot(text: &[u8], cursor_column: u16) -> KeelNativeHostSnapshot {
         KeelNativeHostSnapshot {
+            abi_version: KEEL_NATIVE_ABI_VERSION,
             buffer: text.as_ptr(),
             buffer_len: text.len(),
             cursor_units: text.len(),
@@ -289,5 +295,17 @@ mod tests {
         let size = keel_module_before_redraw(output.as_mut_ptr(), output.len());
         assert!(size > 0);
         assert!(String::from_utf8_lossy(&output[..size]).contains("\x1b["));
+    }
+
+    #[test]
+    fn unknown_native_abi_is_rejected_before_reading_host_memory() {
+        keel_module_init();
+        let mut output = [0_u8; 4096];
+        let mut raw = snapshot(b"git", 3);
+        raw.abi_version = KEEL_NATIVE_ABI_VERSION + 1;
+        assert_eq!(
+            keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()),
+            0
+        );
     }
 }

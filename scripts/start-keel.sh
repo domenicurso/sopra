@@ -5,8 +5,8 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 "$repo_root/scripts/build-keel.sh"
 
 zsh_root=${KEEL_ZSH_PREFIX:-"$repo_root/target/keel-zsh"}
-zshrc_root=$(mktemp -d "$repo_root/target/keel-zshrc.XXXXXX")
-trap 'rm -rf "$zshrc_root"' EXIT
+zshrc_root="$repo_root/target/keel-zshrc"
+mkdir -p "$zshrc_root"
 
 printf '%s\n' \
     "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
@@ -14,6 +14,6 @@ printf '%s\n' \
     "source '$repo_root/zsh/keel.zsh'" \
     > "$zshrc_root/.zshrc"
 
-ZDOTDIR="$zshrc_root" \
-    KEEL_MODULE_PATH="$repo_root/target/debug" \
-    "$zsh_root/bin/zsh" -di
+export ZDOTDIR="$zshrc_root"
+export KEEL_MODULE_PATH="$repo_root/target/debug"
+exec "$zsh_root/bin/zsh" -di

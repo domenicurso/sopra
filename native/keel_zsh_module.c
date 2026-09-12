@@ -16,6 +16,7 @@ extern size_t keel_module_after_redraw(const void *snapshot, unsigned char *outp
 extern size_t keel_module_line_finish(unsigned char *output, size_t capacity);
 
 typedef struct {
+    uint32_t abi_version;
     const unsigned char *buffer;
     size_t buffer_len;
     size_t cursor_units;
@@ -122,6 +123,7 @@ static void keel_after_redraw(void)
 
     copy_zle_line();
     copy_cwd();
+    snapshot.abi_version = KEEL_NATIVE_ABI_VERSION;
     snapshot.buffer = (const unsigned char *)line_buffer;
     snapshot.buffer_len = strlen(line_buffer);
     snapshot.cursor_units = zlecs > 0 ? (size_t)zlecs : 0;
@@ -165,29 +167,31 @@ static int keel_line_finish(char **args)
     return 0;
 }
 
-int setup_keel(Module module)
+int setup_(Module module)
 {
     (void)module;
     return 0;
 }
 
-int features_keel(Module module, char ***features)
+int features_(Module module, char ***features)
 {
     (void)module;
     (void)features;
     return 1;
 }
 
-int enables_keel(Module module, int **enables)
+int enables_(Module module, int **enables)
 {
     (void)module;
     (void)enables;
     return 1;
 }
 
-int boot_keel(Module module)
+int boot_(Module module)
 {
     (void)module;
+    if (keel_zsh_abi_version != KEEL_ZSH_ABI_VERSION)
+        return 1;
     (void)setlocale(LC_CTYPE, "");
     line_init_widget = addzlefunction("keel-native-line-init", keel_line_init,
                                       KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
@@ -208,7 +212,7 @@ int boot_keel(Module module)
     return 0;
 }
 
-int cleanup_keel(Module module)
+int cleanup_(Module module)
 {
     size_t length;
 
@@ -234,7 +238,7 @@ int cleanup_keel(Module module)
     return 0;
 }
 
-int finish_keel(Module module)
+int finish_(Module module)
 {
     (void)module;
     return 0;

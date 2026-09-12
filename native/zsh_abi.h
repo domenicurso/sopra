@@ -11,6 +11,9 @@ typedef struct widget *Widget;
 typedef int (*ZleIntFunc)(char **);
 typedef void (*KeelRedrawCallback)(void);
 
+#define KEEL_ZSH_ABI_VERSION 1u
+#define KEEL_NATIVE_ABI_VERSION 1u
+
 extern Widget addzlefunction(char *name, ZleIntFunc function, int flags);
 extern void deletezlefunction(Widget widget);
 
@@ -25,6 +28,7 @@ extern int zlell;
 extern wchar_t *zleline;
 
 /* Exported by the Keel-enabled Zsh build, immediately after redisplay. */
+extern unsigned int keel_zsh_abi_version;
 extern KeelRedrawCallback keel_pre_redraw_callback;
 extern KeelRedrawCallback keel_post_redraw_callback;
 extern uint64_t keel_redisplay_generation;

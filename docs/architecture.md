@@ -22,4 +22,8 @@ On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook re
 
 ## Build boundary
 
-The patch in `patches/zsh-5.9-keel-redraw.patch` adds a small callback ABI to a private Zsh 5.9 build. `scripts/start-keel.sh` uses that build with an isolated `ZDOTDIR`, which makes the demo reproducible without changing the user's installed shell. A stock Zsh can still run normally, but it cannot load this module because it does not export the callback symbols.
+The patch in `patches/zsh-5.9-keel-redraw.patch` adds a small callback ABI to a private Zsh 5.9 build. `scripts/start-keel.sh` uses that build with an isolated `ZDOTDIR`, which makes the demo reproducible without changing the user's installed shell; its final `exec` means the launcher itself does not become a second shell process. `install.sh` delegates to `scripts/install-keel.sh`, which installs the same private Zsh, module, loader, and stable `bin/keel` wrapper under a user-owned prefix so a terminal profile can launch Keel as its root interactive process without changing `chsh`. The installed wrapper uses a dedicated startup directory and only imports `~/.zshrc` when `KEEL_SOURCE_USER_RC=1`, so shell startup bugs cannot silently prevent the module from loading.
+
+The loader exposes `keel status`, `keel enable`, and `keel disable` as a shell-native command surface. The wrapper also accepts `keel status` outside an active session for installation diagnostics, but session mutation stays in the shell function because a child process cannot change its parent Zsh's module state.
+
+The C shim and Rust module both require ABI version 1, and the patched Zsh exports the matching version symbol before the module can register widgets or redraw hooks. The integration suite loads the module in the patched Zsh and verifies that the stock `/bin/zsh` rejects it, so a mismatched shell cannot silently run against the wrong callback layout.

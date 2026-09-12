@@ -93,7 +93,38 @@ expect {
 }
 expect_custom_prompt
 
-send "keel-disable\r"
+send "keel status\r"
+expect {
+    -re {keel: enabled} {}
+    timeout {
+        puts stderr "keel status did not report an active session"
+        exit 1
+    }
+}
+expect_custom_prompt
+send "keel disable\r"
+expect_custom_prompt
+send "keel status\r"
+expect {
+    -re {keel: disabled} {}
+    timeout {
+        puts stderr "keel status did not report the disabled session"
+        exit 1
+    }
+}
+expect_custom_prompt
+send "keel enable\r"
+expect_custom_prompt
+send "keel status\r"
+expect {
+    -re {keel: enabled} {}
+    timeout {
+        puts stderr "keel enable did not restore the active session"
+        exit 1
+    }
+}
+expect_custom_prompt
+send "keel disable\r"
 expect_custom_prompt
 send "printf disabled-ok\r"
 expect {
