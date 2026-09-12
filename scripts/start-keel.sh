@@ -11,6 +11,8 @@ mkdir -p "$zshrc_root"
 printf '%s\n' \
     "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
     "RPROMPT=''" \
+    "autoload -Uz compinit" \
+    "compinit -C" \
     "source '$repo_root/zsh/keel.zsh'" \
     > "$zshrc_root/.zshrc"
 

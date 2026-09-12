@@ -1,6 +1,8 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+pub const SUGGESTION_VIEWPORT_ROWS: usize = 12;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalSize {
     pub columns: u16,
@@ -231,35 +233,38 @@ impl HostSnapshot {
 pub struct Suggestion {
     pub label: String,
     pub detail: String,
+    replacement: String,
 }
 
 impl Suggestion {
     pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
+        let label = label.into();
         Self {
-            label: label.into(),
+            replacement: label.clone(),
+            label,
             detail: detail.into(),
         }
     }
+
+    pub fn with_replacement(
+        label: impl Into<String>,
+        detail: impl Into<String>,
+        replacement: impl Into<String>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            detail: detail.into(),
+            replacement: replacement.into(),
+        }
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
 }
 
-pub fn suggestions_for(input: &str) -> Vec<Suggestion> {
-    let input = input.trim_end();
-    if input.is_empty() {
-        return Vec::new();
-    }
-
-    if input.ends_with("grep --matches") {
-        return vec![
-            Suggestion::new("--files-with-matches", "grep option"),
-            Suggestion::new("--files-without-match", "grep option"),
-        ];
-    }
-
-    vec![
-        Suggestion::new(format!("run {input}"), "execute this command"),
-        Suggestion::new(format!("inspect {input}"), "inspect the command"),
-        Suggestion::new(format!("search {input}"), "search related history"),
-    ]
+pub trait CompletionProvider {
+    fn complete(&self, line: &str, cursor: usize, cwd: &str) -> Vec<Suggestion>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,7 +287,10 @@ pub struct AppState {
     pub keymap: String,
     pub last_status: i32,
     pub suggestions: Vec<Suggestion>,
-    pub selected_suggestion: usize,
+    pub selected_suggestion: Option<usize>,
+    suggestion_scroll: usize,
+    pub overlay_dismissed: bool,
+    suppressed_overlay_text: Option<String>,
     pub mode: EditorMode,
     pub dirty: bool,
     pub redisplay_generation: u64,
@@ -307,8 +315,11 @@ impl AppState {
             cwd: snapshot.cwd,
             keymap: snapshot.keymap,
             last_status: snapshot.last_status,
-            suggestions: suggestions_for(&snapshot.line.text),
-            selected_suggestion: 0,
+            suggestions: Vec::new(),
+            selected_suggestion: None,
+            suggestion_scroll: 0,
+            overlay_dismissed: false,
+            suppressed_overlay_text: None,
             mode: EditorMode::ObservingZle,
             dirty: true,
             redisplay_generation: snapshot.redisplay_generation,
@@ -318,14 +329,14 @@ impl AppState {
     pub fn observe(&mut self, snapshot: &HostSnapshot) -> bool {
         let snapshot = snapshot.sanitized();
         let next_buffer = snapshot.line.buffer();
-        let next_suggestions = suggestions_for(&snapshot.line.text);
+        let line_changed = self.buffer.text() != next_buffer.text();
+        let suppressed = self.suppressed_overlay_text.as_deref() == Some(next_buffer.text());
         let changed = self.buffer != next_buffer
             || self.cursor.screen != snapshot.cursor
             || self.terminal != snapshot.terminal
             || self.cwd != snapshot.cwd
             || self.keymap != snapshot.keymap
             || self.last_status != snapshot.last_status
-            || self.suggestions != next_suggestions
             || self.redisplay_generation != snapshot.redisplay_generation;
 
         self.buffer = next_buffer;
@@ -334,9 +345,20 @@ impl AppState {
         self.cwd = snapshot.cwd;
         self.keymap = snapshot.keymap;
         self.last_status = snapshot.last_status;
-        self.suggestions = next_suggestions;
-        if self.selected_suggestion >= self.suggestions.len() {
-            self.selected_suggestion = 0;
+        if suppressed {
+            self.overlay_dismissed = true;
+        } else if line_changed {
+            self.overlay_dismissed = false;
+            self.suppressed_overlay_text = None;
+            self.suggestions.clear();
+            self.selected_suggestion = None;
+            self.suggestion_scroll = 0;
+        }
+        if self
+            .selected_suggestion
+            .is_some_and(|selected| selected >= self.suggestions.len())
+        {
+            self.selected_suggestion = None;
         }
         self.redisplay_generation = snapshot.redisplay_generation;
         self.dirty = changed;
@@ -344,27 +366,118 @@ impl AppState {
     }
 
     pub fn selected(&self) -> Option<&Suggestion> {
-        self.suggestions.get(self.selected_suggestion)
+        self.selected_suggestion
+            .and_then(|selected| self.suggestions.get(selected))
+    }
+
+    pub fn suggestions_visible(&self) -> bool {
+        !self.overlay_dismissed && !self.suggestions.is_empty()
+    }
+
+    pub fn selected_replacement(&self) -> Option<&str> {
+        self.selected().map(Suggestion::replacement)
+    }
+
+    pub fn suggestion_viewport_start(&self) -> usize {
+        self.suggestion_scroll
+    }
+
+    pub fn completion_query(&self) -> String {
+        let cursor = self.buffer.cursor_byte_offset();
+        self.buffer.text()[..cursor]
+            .rsplit(char::is_whitespace)
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    pub fn completion_token_width(&self) -> u16 {
+        self.completion_query().width().min(u16::MAX as usize) as u16
+    }
+
+    pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>) -> bool {
+        let had_selection = self.selected_suggestion.is_some();
+        let changed = self.suggestions != suggestions;
+        self.suggestions = suggestions;
+        if changed {
+            self.selected_suggestion = had_selection
+                .then_some(0)
+                .filter(|_| !self.suggestions.is_empty());
+            self.suggestion_scroll = 0;
+        } else if self
+            .selected_suggestion
+            .is_some_and(|selected| selected >= self.suggestions.len())
+        {
+            self.selected_suggestion = None;
+            self.suggestion_scroll = 0;
+        }
+        self.dirty |= changed;
+        changed
     }
 
     pub fn move_selection(&mut self, delta: isize) -> bool {
-        if self.suggestions.is_empty() {
+        if !self.suggestions_visible() {
             return false;
         }
 
         let len = self.suggestions.len() as isize;
-        let next = (self.selected_suggestion as isize + delta).rem_euclid(len) as usize;
-        let changed = next != self.selected_suggestion;
-        self.selected_suggestion = next;
+        let next = match self.selected_suggestion {
+            Some(selected) => (selected as isize + delta).rem_euclid(len) as usize,
+            None if delta < 0 => len.saturating_sub(1) as usize,
+            None => 0,
+        };
+        self.selected_suggestion = Some(next);
+        self.update_suggestion_scroll(next);
+        self.dirty = true;
+        true
+    }
+
+    fn update_suggestion_scroll(&mut self, selected: usize) {
+        let length = self.suggestions.len();
+        let max_start = length.saturating_sub(SUGGESTION_VIEWPORT_ROWS);
+        if max_start == 0 {
+            self.suggestion_scroll = 0;
+            return;
+        }
+
+        // Keep two rows available in the direction of travel. The selected
+        // item moves the viewport when it reaches the eleventh visible row,
+        // then moves it back when it reaches the second visible row.
+        if selected >= self.suggestion_scroll + SUGGESTION_VIEWPORT_ROWS - 2 {
+            let desired_start = selected.saturating_sub(SUGGESTION_VIEWPORT_ROWS - 3);
+            self.suggestion_scroll = self
+                .suggestion_scroll
+                .max(desired_start)
+                .min(max_start);
+        } else if selected <= self.suggestion_scroll + 1 {
+            self.suggestion_scroll = self
+                .suggestion_scroll
+                .min(selected.saturating_sub(2));
+        }
+    }
+
+    pub fn dismiss_overlay(&mut self) -> bool {
+        let changed = self.suggestions_visible();
+        self.overlay_dismissed = true;
+        self.suppressed_overlay_text = Some(self.buffer.text().to_string());
         self.dirty |= changed;
         changed
+    }
+
+    pub fn suppress_overlay_for_text(&mut self, text: impl Into<String>) {
+        self.overlay_dismissed = true;
+        self.suppressed_overlay_text = Some(text.into());
+        self.dirty = true;
     }
 
     pub fn clear(&mut self) -> bool {
         let changed = !self.buffer.text().is_empty() || self.buffer.cursor() != 0;
         self.buffer = EditorBuffer::new("", 0);
         self.suggestions.clear();
-        self.selected_suggestion = 0;
+        self.selected_suggestion = None;
+        self.suggestion_scroll = 0;
+        self.overlay_dismissed = false;
+        self.suppressed_overlay_text = None;
         self.dirty = true;
         changed
     }
@@ -461,30 +574,123 @@ mod tests {
     }
 
     #[test]
-    fn suggestions_are_empty_for_an_empty_line() {
-        assert!(suggestions_for("   ").is_empty());
-    }
-
-    #[test]
-    fn grep_suggestions_match_the_completion_poc() {
-        let suggestions = suggestions_for("grep --matches");
-        assert_eq!(suggestions.len(), 2);
-        assert_eq!(suggestions[0].label, "--files-with-matches");
-        assert_eq!(suggestions[1].label, "--files-without-match");
-    }
-
-    #[test]
     fn selection_wraps_without_owning_the_host_line() {
         let snapshot = HostSnapshot {
             line: HostLine::new("git", 3),
             ..HostSnapshot::default()
         };
         let mut app = AppState::from_snapshot(&snapshot);
+        app.set_suggestions(vec![
+            Suggestion::new("run git", ""),
+            Suggestion::new("inspect git", ""),
+            Suggestion::new("search git", ""),
+        ]);
         assert!(app.move_selection(-1));
         assert_eq!(
             app.selected().map(|suggestion| suggestion.label.as_str()),
             Some("search git")
         );
         assert_eq!(app.buffer.text(), "git");
+    }
+
+    #[test]
+    fn dismissed_overlay_stays_hidden_until_the_line_changes() {
+        let snapshot = HostSnapshot {
+            line: HostLine::new("git", 3),
+            ..HostSnapshot::default()
+        };
+        let mut app = AppState::from_snapshot(&snapshot);
+        app.set_suggestions(vec![Suggestion::new("run git", "")]);
+        assert!(app.suggestions_visible());
+        assert!(app.dismiss_overlay());
+        assert!(!app.suggestions_visible());
+
+        let same_line = HostSnapshot {
+            redisplay_generation: 2,
+            ..snapshot.clone()
+        };
+        app.observe(&same_line);
+        assert!(!app.suggestions_visible());
+
+        let changed_line = HostSnapshot {
+            line: HostLine::new("git ", 4),
+            ..same_line
+        };
+        app.observe(&changed_line);
+        app.set_suggestions(vec![Suggestion::new("run git", "")]);
+        assert!(app.suggestions_visible());
+    }
+
+    #[test]
+    fn moving_selection_does_not_reopen_a_dismissed_overlay() {
+        let snapshot = HostSnapshot {
+            line: HostLine::new("git", 3),
+            ..HostSnapshot::default()
+        };
+        let mut app = AppState::from_snapshot(&snapshot);
+        app.set_suggestions(vec![
+            Suggestion::new("run git", ""),
+            Suggestion::new("inspect git", ""),
+        ]);
+        app.dismiss_overlay();
+        assert!(!app.move_selection(1));
+        assert!(!app.suggestions_visible());
+    }
+
+    #[test]
+    fn selection_is_empty_until_down_moves_into_the_list() {
+        let snapshot = HostSnapshot {
+            line: HostLine::new("git", 3),
+            ..HostSnapshot::default()
+        };
+        let mut app = AppState::from_snapshot(&snapshot);
+        app.set_suggestions(vec![
+            Suggestion::new("git", ""),
+            Suggestion::new("git-receive-pack", ""),
+        ]);
+
+        assert_eq!(app.selected_suggestion, None);
+        assert!(app.move_selection(1));
+        assert_eq!(app.selected_suggestion, Some(0));
+    }
+
+    #[test]
+    fn selection_scrolls_at_the_eleventh_and_second_visible_rows() {
+        let snapshot = HostSnapshot {
+            line: HostLine::new("command ", 8),
+            ..HostSnapshot::default()
+        };
+        let mut app = AppState::from_snapshot(&snapshot);
+        app.set_suggestions(
+            (0..20)
+                .map(|index| Suggestion::new(format!("item-{index}"), ""))
+                .collect(),
+        );
+
+        for _ in 0..10 {
+            assert!(app.move_selection(1));
+        }
+        assert_eq!(app.selected_suggestion, Some(9));
+        assert_eq!(app.suggestion_viewport_start(), 0);
+
+        assert!(app.move_selection(1));
+        assert_eq!(app.selected_suggestion, Some(10));
+        assert_eq!(app.suggestion_viewport_start(), 1);
+
+        for _ in 0..9 {
+            assert!(app.move_selection(1));
+        }
+        assert_eq!(app.selected_suggestion, Some(19));
+        assert_eq!(app.suggestion_viewport_start(), 8);
+
+        for _ in 0..10 {
+            assert!(app.move_selection(-1));
+        }
+        assert_eq!(app.selected_suggestion, Some(9));
+        assert_eq!(app.suggestion_viewport_start(), 7);
+
+        assert!(app.move_selection(-1));
+        assert_eq!(app.selected_suggestion, Some(8));
+        assert_eq!(app.suggestion_viewport_start(), 6);
     }
 }

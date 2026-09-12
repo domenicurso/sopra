@@ -128,6 +128,8 @@ install_files() {
         "    PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
         "    RPROMPT=''" \
         'fi' \
+        'autoload -Uz compinit' \
+        'compinit -C' \
         "source $quoted_prefix/share/keel.zsh" \
         > "$startup_dir/.zshrc"
 

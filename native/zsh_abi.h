@@ -13,9 +13,11 @@ typedef void (*KeelRedrawCallback)(void);
 
 #define KEEL_ZSH_ABI_VERSION 1u
 #define KEEL_NATIVE_ABI_VERSION 1u
+#define KEEL_MAX_HOST_BYTES (256u * 1024u)
 
 extern Widget addzlefunction(char *name, ZleIntFunc function, int flags);
 extern void deletezlefunction(Widget widget);
+extern void *zrealloc(void *pointer, size_t size);
 
 extern int SHTTY;
 extern FILE *shout;

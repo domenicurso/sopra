@@ -14,6 +14,7 @@ pub struct RenderContext {
     pub terminal_columns: u16,
     pub max_height: u16,
     pub origin_column: u16,
+    pub row_offset: i16,
     pub force_full: bool,
 }
 
@@ -27,8 +28,14 @@ impl RenderContext {
             },
             max_height: if max_height == 0 { 1 } else { max_height },
             origin_column,
+            row_offset: 1,
             force_full: false,
         }
+    }
+
+    pub const fn row_offset(mut self, row_offset: i16) -> Self {
+        self.row_offset = row_offset;
+        self
     }
 
     pub const fn full_repaint(mut self, force_full: bool) -> Self {
@@ -43,6 +50,7 @@ pub struct RenderedFrame {
     pub used_size: Size,
     pub buffer: Buffer,
     pub origin_column: u16,
+    pub row_offset: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +62,8 @@ pub struct FrameDiff {
     pub next_area: Rect,
     pub previous_origin: u16,
     pub next_origin: u16,
+    pub previous_row_offset: i16,
+    pub next_row_offset: i16,
 }
 
 impl FrameDiff {
@@ -62,10 +72,11 @@ impl FrameDiff {
             || !self.cleared_rows.is_empty()
             || self.previous_area != self.next_area
             || self.previous_origin != self.next_origin
+            || self.previous_row_offset != self.next_row_offset
     }
 
     pub fn origin_changed(&self) -> bool {
-        self.previous_origin != self.next_origin
+        self.previous_origin != self.next_origin || self.previous_row_offset != self.next_row_offset
     }
 }
 
@@ -76,6 +87,7 @@ pub enum PatchOp {
     MoveToSurface,
     ClearSurface {
         origin_column: u16,
+        row_offset: i16,
         width: u16,
         height: u16,
     },
@@ -93,6 +105,7 @@ pub enum PatchOp {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderTransaction {
     pub origin_column: u16,
+    pub row_offset: i16,
     pub width: u16,
     pub height: u16,
     pub ops: Vec<PatchOp>,
@@ -149,11 +162,13 @@ impl Renderer {
             used_size: Size::new(width, height),
             buffer,
             origin_column,
+            row_offset: context.row_offset,
         };
         let diff = self.diff(Some(&frame));
         let payload = AnsiWriter::paint(&frame, &diff, context.force_full);
         let transaction = RenderTransaction {
             origin_column,
+            row_offset: context.row_offset,
             width,
             height,
             ops: patch_ops(&diff, &frame, context.force_full),
@@ -175,6 +190,8 @@ impl Renderer {
         let next_area = next.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
         let previous_origin = previous.map_or(0, |frame| frame.origin_column);
         let next_origin = next.map_or(0, |frame| frame.origin_column);
+        let previous_row_offset = previous.map_or(0, |frame| frame.row_offset);
+        let next_row_offset = next.map_or(0, |frame| frame.row_offset);
         let width = previous_area.width.max(next_area.width);
         let height = previous_area.height.max(next_area.height);
         let mut changed_cells = 0;
@@ -216,6 +233,8 @@ impl Renderer {
             next_area,
             previous_origin,
             next_origin,
+            previous_row_offset,
+            next_row_offset,
         }
     }
 
@@ -223,6 +242,7 @@ impl Renderer {
         let previous = self.previous.take()?;
         Some(AnsiWriter::clear_surface(
             previous.origin_column,
+            previous.row_offset,
             previous.area.width,
             previous.area.height,
         ))
@@ -241,6 +261,7 @@ fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<P
     if diff.origin_changed() && diff.previous_area.height > 0 {
         ops.push(PatchOp::ClearSurface {
             origin_column: diff.previous_origin,
+            row_offset: diff.previous_row_offset,
             width: diff.previous_area.width,
             height: diff.previous_area.height,
         });
@@ -270,12 +291,13 @@ fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<P
 struct AnsiWriter;
 
 impl AnsiWriter {
-    fn clear_surface(origin_column: u16, width: u16, height: u16) -> Vec<u8> {
+    fn clear_surface(origin_column: u16, row_offset: i16, width: u16, height: u16) -> Vec<u8> {
         if width == 0 || height == 0 {
             return Vec::new();
         }
         let mut output = String::new();
-        output.push_str("\x1b7\x1b[?25l\x1b[1B");
+        output.push_str("\x1b7\x1b[?25l");
+        move_relative_rows(&mut output, row_offset);
         move_to_column(&mut output, origin_column);
         for row in 0..height {
             output.push_str("\x1b[0m");
@@ -285,7 +307,7 @@ impl AnsiWriter {
                 move_to_column(&mut output, origin_column);
             }
         }
-        output.push_str("\x1b8\x1b[?25h");
+        output.push_str("\x1b[0m\x1b8\x1b[?25h");
         output.into_bytes()
     }
 
@@ -294,16 +316,19 @@ impl AnsiWriter {
             return Vec::new();
         }
         let mut output = String::new();
-        output.push_str("\x1b7\x1b[?25l\x1b[1B");
+        output.push_str("\x1b7\x1b[?25l");
         if diff.origin_changed() && diff.previous_area.height > 0 {
+            output.push_str("\x1b8");
             clear_surface_body(
                 &mut output,
                 diff.previous_origin,
+                diff.previous_row_offset,
                 diff.previous_area.width,
                 diff.previous_area.height,
             );
-            output.push_str("\x1b8\x1b[1B");
+            output.push_str("\x1b8");
         }
+        move_relative_rows(&mut output, frame.row_offset);
         move_to_column(&mut output, frame.origin_column);
         let clear_width = frame.area.width.max(diff.previous_area.width);
         let row_count = frame.area.height.max(diff.previous_area.height);
@@ -327,11 +352,26 @@ impl AnsiWriter {
     }
 }
 
+fn move_relative_rows(output: &mut String, offset: i16) {
+    if offset > 0 {
+        let _ = write!(output, "\x1b[{}B", offset);
+    } else if offset < 0 {
+        let _ = write!(output, "\x1b[{}A", offset.unsigned_abs());
+    }
+}
+
 fn move_to_column(output: &mut String, column: u16) {
     let _ = write!(output, "\x1b[{}G", column.saturating_add(1));
 }
 
-fn clear_surface_body(output: &mut String, origin_column: u16, width: u16, height: u16) {
+fn clear_surface_body(
+    output: &mut String,
+    origin_column: u16,
+    row_offset: i16,
+    width: u16,
+    height: u16,
+) {
+    move_relative_rows(output, row_offset);
     move_to_column(output, origin_column);
     for row in 0..height {
         output.push_str("\x1b[0m");
@@ -429,16 +469,46 @@ fn write_color(output: &mut String, color: Color, background: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use keel_ui::{PopupItem, SuggestionPopup, Theme};
+    use keel_ui::{PopupItem, SuggestionPopup};
+
+    fn strip_ansi(input: &str) -> String {
+        let mut output = String::with_capacity(input.len());
+        let mut escape = false;
+        let mut csi = false;
+
+        for byte in input.bytes() {
+            if csi {
+                if (0x40..=0x7e).contains(&byte) {
+                    csi = false;
+                }
+                continue;
+            }
+            if escape {
+                if byte == b'[' {
+                    csi = true;
+                }
+                escape = false;
+                continue;
+            }
+            if byte == 0x1b {
+                escape = true;
+            } else {
+                output.push(byte as char);
+            }
+        }
+
+        output
+    }
 
     fn popup(items: &[&str]) -> Scene {
-        Scene::new(SuggestionPopup::new(
-            "Keel suggestions",
-            format!("1/{}; Tab to accept", items.len()),
-            items.iter().map(|item| PopupItem::new(*item, "")).collect(),
-            0,
-            Theme::default(),
-        ))
+        Scene::new(
+            SuggestionPopup::new(
+                format!("1/{}; Tab to accept", items.len()),
+                items.iter().map(|item| PopupItem::new(*item, "")).collect(),
+                Some(0),
+            )
+            .query("git"),
+        )
     }
 
     #[test]
@@ -455,11 +525,11 @@ mod tests {
             (0..rendered.frame.area.height).collect::<Vec<_>>()
         );
         assert_eq!(rendered.transaction.ops.first(), Some(&PatchOp::SaveCursor));
-        assert!(
-            String::from_utf8(rendered.transaction.payload)
-                .unwrap()
-                .contains("Keel suggestions")
-        );
+        let payload = String::from_utf8(rendered.transaction.payload).unwrap();
+        let visible = strip_ansi(&payload);
+        assert!(visible.contains("run git"));
+        assert!(visible.contains("1/2; Tab to accept"));
+        assert!(!visible.contains("Keel suggestions"));
     }
 
     #[test]
@@ -507,6 +577,32 @@ mod tests {
     }
 
     #[test]
+    fn moving_surface_restores_host_cursor_before_clearing_the_old_offset() {
+        let mut renderer = Renderer::new();
+        let scene = popup(&["run git"]);
+        renderer
+            .render(
+                &scene,
+                RenderContext::new(80, 12, 2)
+                    .row_offset(-4)
+                    .full_repaint(true),
+            )
+            .unwrap();
+        let moved = renderer
+            .render(
+                &scene,
+                RenderContext::new(80, 12, 7)
+                    .row_offset(2)
+                    .full_repaint(false),
+            )
+            .unwrap();
+        let payload = String::from_utf8(moved.transaction.payload).unwrap();
+        let old_clear = payload.find("\x1b8\x1b[4A").unwrap();
+        let new_paint = payload.find("\x1b8\x1b[2B").unwrap();
+        assert!(old_clear < new_paint);
+    }
+
+    #[test]
     fn shrinking_surface_clears_old_rows() {
         let mut renderer = Renderer::new();
         let previous = renderer
@@ -539,7 +635,8 @@ mod tests {
             .payload;
         let payload = String::from_utf8(payload).unwrap();
         assert!(payload.starts_with("\x1b7\x1b[?25l\x1b[1B\x1b[6G"));
-        assert!(payload.contains("\x1b8\x1b[?25h"));
+        assert!(payload.contains("\x1b[0m\x1b8\x1b[?25h"));
+        assert!(!payload.contains(" q"));
         assert!(!payload.contains("\x1b[2J"));
     }
 
@@ -553,5 +650,44 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rendered.used_rows, rendered.frame.area.height);
+    }
+
+    #[test]
+    fn default_popup_uses_only_terminal_palette_colors() {
+        let mut renderer = Renderer::new();
+        let payload = renderer
+            .render(
+                &popup(&["run git", "inspect git"]),
+                RenderContext::new(80, 12, 0).full_repaint(true),
+            )
+            .unwrap()
+            .transaction
+            .payload;
+        let payload = String::from_utf8(payload).unwrap();
+
+        assert!(!payload.contains("38;"));
+        assert!(!payload.contains("48;"));
+        assert!(payload.contains("\x1b[32m"));
+        assert!(payload.contains("\x1b[97m"));
+        assert!(payload.contains("\x1b[1m"));
+        assert!(payload.contains("\x1b[4m"));
+        assert!(payload.contains("\x1b[7m"));
+    }
+
+    #[test]
+    fn above_cursor_surface_uses_negative_row_offset_without_owning_cursor_style() {
+        let mut renderer = Renderer::new();
+        let rendered = renderer
+            .render(
+                &popup(&["run git"]),
+                RenderContext::new(80, 5, 8)
+                    .row_offset(-5)
+                    .full_repaint(true),
+            )
+            .unwrap();
+        assert_eq!(rendered.frame.row_offset, -5);
+        let payload = String::from_utf8(rendered.transaction.payload).unwrap();
+        assert!(payload.starts_with("\x1b7\x1b[?25l\x1b[5A"));
+        assert!(!payload.contains(" q"));
     }
 }

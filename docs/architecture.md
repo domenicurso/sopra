@@ -4,9 +4,9 @@ Keel augments an interactive Zsh session instead of replacing it. The stock shel
 
 ## Ownership
 
-`zsh/keel.zsh` loads the module and installs the two ZLE lifecycle hooks. It contains no editor state machine, redraw loop, process manager, or prompt projection.
+`zsh/keel.zsh` loads the module, installs the ZLE lifecycle hooks, binds the small set of Keel widgets, and brokers completion capture. It contains no renderer, prompt projection, or independent editor; completion capture is isolated in a short-lived `zpty` so the user's Zsh process remains the host of the live line.
 
-The C shim is the only code that knows the Zsh ABI. It registers the module and line hooks, receives the patched ZLE redisplay callbacks, snapshots the host line and terminal geometry, and writes Rust's returned byte payload to `SHTTY`. It does not decide layout or compose UI.
+The C shim is the only code that knows the Zsh ABI. It registers the module and native widgets, receives the patched ZLE redisplay callbacks, snapshots the host line and terminal geometry, and writes Rust's returned byte payload to `SHTTY`. It does not decide layout or compose the UI. The shell side calls the normal completion widget in a forked `zpty`, intercepts `compadd` only in that child, and sends bounded label, description, and candidate records back to the native module.
 
 `keel-core` normalizes host data and keeps the session model. Its buffer and cursor types are grapheme-aware, but the MVP observes the line Zsh edits rather than trying to replace ZLE's editing engine.
 
@@ -14,11 +14,11 @@ The C shim is the only code that knows the Zsh ABI. It registers the module and 
 
 ## Redisplay lifecycle
 
-The Keel-enabled Zsh calls the module before its normal redraw. Keel clears the previous surface using cursor save/restore and targeted row erases. Zsh then draws its ordinary prompt and editable line. The post-redraw callback receives the final visual cursor position, so Rust can anchor the next surface to the actual host cursor rather than guessing from prompt strings.
+The Keel-enabled Zsh calls the module before its normal redraw. Keel clears the previous surface using cursor save/restore and targeted row erases. Zsh then draws its ordinary prompt and editable line. The post-redraw callback receives the final visual cursor position, so Rust can anchor the next surface to the actual host cursor rather than guessing from prompt strings. A `line-pre-redraw` hook starts or reuses one completion request for the current line, and the file-descriptor callback applies a response through a ZLE widget only if the line, cursor, and working directory still match the request snapshot.
 
-Rust mirrors that snapshot, builds the component tree, measures it against the terminal width and row budget, paints an offscreen buffer, diffs it, and returns one ANSI payload. The payload hides the cursor while it paints, clears rows that are no longer used, restores the host cursor, and never enters the alternate screen or clears the terminal.
+Rust mirrors that snapshot, builds the component tree, measures it against the terminal width and available rows above or below the host cursor, paints an offscreen buffer, diffs it, and returns one ANSI payload. The payload hides the cursor while it paints, clears rows that are no longer used, restores the host cursor, and never enters the alternate screen or clears the terminal. The C shim independently selects a block cursor while Keel is active, so cursor shape is stable even when the popup is absent.
 
-On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Cancel and empty input likewise follow native ZLE behavior; Keel only tears down its overlay and does not print a synthetic prompt.
+On accept, Zsh's normal `accept-line` remains in charge. Tab asks the native widget for the selected replacement and writes that complete line into ZLE; Enter then accepts the line normally. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Escape dismisses the current popup, Ctrl-C clears the current ZLE line without accepting it, and empty Enter only requests a redisplay, so no path prints a synthetic prompt.
 
 ## Build boundary
 

@@ -8,6 +8,8 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+pub const MAX_VISIBLE_ITEMS: usize = 12;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Size {
     pub width: u16,
@@ -40,6 +42,31 @@ pub trait Component {
     fn render(&self, area: Rect, buffer: &mut Buffer);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StyleToken {
+    Match,
+    Detail,
+    Border,
+    Footer,
+    Selection,
+    Cursor,
+}
+
+impl StyleToken {
+    pub fn style(self) -> Style {
+        match self {
+            Self::Match => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
+            Self::Detail | Self::Border | Self::Footer => Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::DIM),
+            Self::Selection | Self::Cursor => Style::default().add_modifier(Modifier::REVERSED),
+        }
+    }
+}
+
 pub struct Scene {
     root: Box<dyn Component>,
 }
@@ -57,96 +84,6 @@ impl Scene {
 
     pub fn render(&self, area: Rect, buffer: &mut Buffer) {
         self.root.render(area, buffer);
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Theme {
-    pub accent: Style,
-    pub value: Style,
-    pub muted: Style,
-    pub surface: Style,
-    pub border: Style,
-    pub selection: Style,
-    pub cursor: Style,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self::flyline()
-    }
-}
-
-impl Theme {
-    pub const fn flyline() -> Self {
-        Self {
-            accent: Style::new()
-                .fg(Color::Rgb(48, 197, 128))
-                .add_modifier(Modifier::BOLD),
-            value: Style::new()
-                .fg(Color::Rgb(214, 214, 214))
-                .add_modifier(Modifier::BOLD),
-            muted: Style::new().fg(Color::Rgb(105, 105, 105)),
-            surface: Style::new().bg(Color::Rgb(23, 23, 23)),
-            border: Style::new().fg(Color::Rgb(105, 105, 105)),
-            selection: Style::new()
-                .fg(Color::Rgb(23, 23, 23))
-                .bg(Color::Rgb(48, 197, 128)),
-            cursor: Style::new().fg(Color::Rgb(23, 23, 23)).bg(Color::White),
-        }
-    }
-
-    pub fn named(name: &str) -> Self {
-        match name.trim().to_ascii_lowercase().as_str() {
-            "mono" | "monochrome" => Self {
-                accent: Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
-                value: Style::new().fg(Color::White),
-                muted: Style::new().fg(Color::DarkGray),
-                surface: Style::default(),
-                border: Style::new().fg(Color::Gray),
-                selection: Style::new().fg(Color::Black).bg(Color::White),
-                cursor: Style::new().fg(Color::Black).bg(Color::White),
-            },
-            "amber" => Self {
-                accent: Style::new()
-                    .fg(Color::LightYellow)
-                    .add_modifier(Modifier::BOLD),
-                value: Style::new()
-                    .fg(Color::Rgb(251, 146, 60))
-                    .add_modifier(Modifier::BOLD),
-                muted: Style::new().fg(Color::DarkGray),
-                surface: Style::new().bg(Color::Rgb(28, 25, 23)),
-                border: Style::new().fg(Color::LightYellow),
-                selection: Style::new().fg(Color::Black).bg(Color::LightYellow),
-                cursor: Style::new().fg(Color::Black).bg(Color::LightYellow),
-            },
-            _ => Self::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StyleToken {
-    Accent,
-    Value,
-    Muted,
-    Surface,
-    Border,
-    Selection,
-    Cursor,
-}
-
-impl StyleToken {
-    pub fn resolve(self, theme: Theme) -> Style {
-        match self {
-            Self::Accent => theme.accent,
-            Self::Value => theme.value,
-            Self::Muted => theme.muted,
-            Self::Surface => theme.surface,
-            Self::Border => theme.border,
-            Self::Selection => theme.selection,
-            Self::Cursor => theme.cursor,
-        }
     }
 }
 
@@ -527,7 +464,7 @@ impl InputLine {
             text: text.into(),
             cursor,
             text_style: Style::default(),
-            cursor_style: Theme::default().cursor,
+            cursor_style: StyleToken::Cursor.style(),
         }
     }
 
@@ -608,6 +545,13 @@ pub struct PopupItem {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PopupPlacement {
+    #[default]
+    Below,
+    Above,
+}
+
 impl PopupItem {
     pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
@@ -618,28 +562,53 @@ impl PopupItem {
 }
 
 pub struct SuggestionPopup {
-    title: String,
     footer: String,
     items: Vec<PopupItem>,
-    selected: usize,
-    theme: Theme,
+    selected: Option<usize>,
+    query: String,
+    anchor_column: u16,
+    placement: PopupPlacement,
+    viewport_start: usize,
+    max_visible_items: usize,
 }
 
 impl SuggestionPopup {
-    pub fn new(
-        title: impl Into<String>,
-        footer: impl Into<String>,
-        items: Vec<PopupItem>,
-        selected: usize,
-        theme: Theme,
-    ) -> Self {
+    pub fn new(footer: impl Into<String>, items: Vec<PopupItem>, selected: Option<usize>) -> Self {
         Self {
-            title: title.into(),
             footer: footer.into(),
             items,
             selected,
-            theme,
+            query: String::new(),
+            anchor_column: 0,
+            placement: PopupPlacement::Below,
+            viewport_start: 0,
+            max_visible_items: MAX_VISIBLE_ITEMS,
         }
+    }
+
+    pub fn query(mut self, query: impl Into<String>) -> Self {
+        self.query = query.into();
+        self
+    }
+
+    pub const fn anchor_column(mut self, anchor_column: u16) -> Self {
+        self.anchor_column = anchor_column;
+        self
+    }
+
+    pub const fn placement(mut self, placement: PopupPlacement) -> Self {
+        self.placement = placement;
+        self
+    }
+
+    pub const fn viewport(mut self, start: usize, max_visible_items: usize) -> Self {
+        self.viewport_start = start;
+        self.max_visible_items = if max_visible_items == 0 {
+            1
+        } else {
+            max_visible_items
+        };
+        self
     }
 }
 
@@ -649,23 +618,25 @@ impl Component for SuggestionPopup {
             .items
             .iter()
             .map(|item| {
-                2 + item.label.width()
+                item.label.width()
                     + if item.detail.is_empty() {
                         0
                     } else {
                         2 + item.detail.width()
                     }
             })
-            .chain(std::iter::once(self.title.width()))
             .chain(std::iter::once(self.footer.width()))
             .max()
             .unwrap_or(1);
+        let scrollbar_width = usize::from(self.items.len() > self.max_visible_items);
+        let visible_items = self.items.len().min(self.max_visible_items);
         Size::new(
             (content_width as u16)
                 .saturating_add(4)
+                .saturating_add(scrollbar_width as u16)
                 .min(constraints.max_width),
-            (self.items.len() as u16)
-                .saturating_add(3)
+            (visible_items as u16)
+                .saturating_add(2)
                 .min(constraints.max_height),
         )
     }
@@ -675,38 +646,197 @@ impl Component for SuggestionPopup {
             return;
         }
 
+        let connector_column = self.anchor_column.clamp(1, area.width.saturating_sub(2));
+        let junction = match self.placement {
+            PopupPlacement::Below => "┴",
+            PopupPlacement::Above => "┬",
+        };
+
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(self.theme.border)
-            .style(self.theme.surface)
+            .border_style(border_style())
             .padding(Padding::horizontal(1))
-            .title(Span::styled(&self.title, self.theme.accent));
+            .title_bottom(
+                Line::from(Span::styled(self.footer.clone(), footer_style())).right_aligned(),
+            );
         let inner = block.inner(area);
         block.render(area, buffer);
 
-        let mut lines = Vec::with_capacity(self.items.len() + 1);
-        for (index, item) in self.items.iter().enumerate() {
-            let style = if index == self.selected {
-                self.theme.selection
+        let junction_column = area.x + connector_column;
+        let junction_row = match self.placement {
+            PopupPlacement::Below => area.y,
+            PopupPlacement::Above => area.y + area.height - 1,
+        };
+        if let Some(cell) = buffer.cell_mut((junction_column, junction_row)) {
+            cell.set_symbol(junction);
+            cell.set_style(border_style());
+        }
+
+        let mut lines = Vec::with_capacity(self.items.len());
+        let visible_count = self
+            .items
+            .len()
+            .min(self.max_visible_items)
+            .min(inner.height as usize);
+        let mut viewport_start = self
+            .viewport_start
+            .min(self.items.len().saturating_sub(visible_count));
+        if let Some(selected) = self.selected {
+            if selected < viewport_start {
+                viewport_start = selected;
+            } else if selected >= viewport_start.saturating_add(visible_count) && visible_count > 0
+            {
+                viewport_start = selected.saturating_add(1).saturating_sub(visible_count);
+            }
+        }
+        let end = viewport_start
+            .saturating_add(visible_count)
+            .min(self.items.len());
+        for (index, item) in self.items[viewport_start..end].iter().enumerate() {
+            let index = viewport_start + index;
+            let selected = self.selected == Some(index);
+            let term_style = if selected {
+                StyleToken::Selection.style()
             } else {
-                self.theme.value
+                Style::default()
             };
-            let marker = Span::styled("> ", self.theme.accent);
-            let label = Span::styled(item.label.clone(), style);
+            let mut spans = match_spans(
+                &item.label,
+                &self.query,
+                term_style,
+                matching_style(selected),
+            );
             let detail = if item.detail.is_empty() {
                 Span::raw("")
             } else {
-                Span::styled(format!("  {}", item.detail), self.theme.muted)
+                Span::styled(format!("  {}", item.detail), detail_style())
             };
-            lines.push(Line::from(vec![marker, label, detail]));
+            spans.push(detail);
+            lines.push(Line::from(spans));
         }
-        lines.push(Line::from(Span::styled(&self.footer, self.theme.muted)));
 
-        RatatuiParagraph::new(lines)
-            .style(self.theme.surface)
-            .render(inner, buffer);
+        let has_scrollbar = self.items.len() > self.max_visible_items;
+        let content_area = if has_scrollbar && inner.width > 0 {
+            Rect::new(
+                inner.x,
+                inner.y,
+                inner.width.saturating_sub(1),
+                inner.height,
+            )
+        } else {
+            inner
+        };
+        RatatuiParagraph::new(lines).render(content_area, buffer);
+        if has_scrollbar {
+            render_scrollbar(
+                Rect::new(
+                    inner.x.saturating_add(inner.width.saturating_sub(1)),
+                    inner.y,
+                    1,
+                    inner.height,
+                ),
+                self.items.len(),
+                viewport_start,
+                visible_count,
+                buffer,
+            );
+        }
     }
+}
+
+fn render_scrollbar(
+    area: Rect,
+    item_count: usize,
+    viewport_start: usize,
+    visible_count: usize,
+    buffer: &mut Buffer,
+) {
+    if area.width == 0 || area.height == 0 || item_count == 0 || visible_count == 0 {
+        return;
+    }
+
+    let track_height = area.height as usize;
+    let thumb_height = (track_height * visible_count).div_ceil(item_count).max(1);
+    let max_thumb_top = track_height.saturating_sub(thumb_height);
+    let max_viewport_start = item_count.saturating_sub(visible_count);
+    let thumb_top = if max_viewport_start == 0 {
+        0
+    } else {
+        viewport_start.min(max_viewport_start) * max_thumb_top / max_viewport_start
+    };
+    for row in 0..track_height {
+        let Some(cell) = buffer.cell_mut((area.x, area.y + row as u16)) else {
+            continue;
+        };
+        cell.set_symbol(" ");
+        if (thumb_top..thumb_top + thumb_height).contains(&row) {
+            cell.set_style(
+                Style::default()
+                    .bg(Color::White)
+                    .add_modifier(Modifier::DIM),
+            );
+        } else {
+            cell.set_style(Style::default());
+        }
+    }
+}
+
+fn matching_style(selected: bool) -> Style {
+    let style = StyleToken::Match.style();
+    if selected {
+        style.add_modifier(Modifier::REVERSED)
+    } else {
+        style
+    }
+}
+
+fn detail_style() -> Style {
+    StyleToken::Detail.style()
+}
+
+fn footer_style() -> Style {
+    StyleToken::Footer.style()
+}
+
+fn border_style() -> Style {
+    StyleToken::Border.style()
+}
+
+fn match_spans(text: &str, query: &str, base: Style, matching: Style) -> Vec<Span<'static>> {
+    let graphemes = text.graphemes(true).collect::<Vec<_>>();
+    let mut matched = vec![false; graphemes.len()];
+    let mut search_start = 0;
+    for wanted in query
+        .graphemes(true)
+        .filter(|grapheme| !grapheme.chars().all(char::is_whitespace))
+    {
+        let Some(index) = graphemes[search_start..]
+            .iter()
+            .position(|grapheme| grapheme.eq_ignore_ascii_case(wanted))
+            .map(|index| index + search_start)
+        else {
+            continue;
+        };
+        matched[index] = true;
+        search_start = index + 1;
+    }
+
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut current_style = base;
+    for (index, grapheme) in graphemes.iter().enumerate() {
+        let style = if matched[index] { matching } else { base };
+        if style != current_style && !current.is_empty() {
+            spans.push(Span::styled(std::mem::take(&mut current), current_style));
+        }
+        current_style = style;
+        current.push_str(grapheme);
+    }
+    if !current.is_empty() {
+        spans.push(Span::styled(current, current_style));
+    }
+    spans
 }
 
 fn line_width(line: &Line<'_>) -> usize {
@@ -771,39 +901,97 @@ mod tests {
     }
 
     #[test]
+    fn composition_measures_context_multiline_body_and_input() {
+        let scene = Scene::new(
+            Column::new()
+                .child(Text::new("context"))
+                .child(Paragraph::new("first\nsecond").wrap(false))
+                .child(InputLine::new("> ", "open", 4)),
+        );
+
+        assert_eq!(scene.measure(Constraints::new(80, 20)), Size::new(7, 4));
+    }
+
+    #[test]
     fn popup_wraps_to_content_and_renders_selection() {
         let scene = Scene::new(SuggestionPopup::new(
-            "suggestions",
             "1/2; Tab to accept",
             vec![
                 PopupItem::new("--files-with-matches", ""),
                 PopupItem::new("--files-without-match", ""),
             ],
-            0,
-            Theme::default(),
+            Some(0),
         ));
         let size = scene.measure(Constraints::new(80, 20));
-        assert_eq!(size, Size::new(27, 5));
+        assert_eq!(size, Size::new(25, 4));
         let rendered = snapshot(&scene, 80);
-        assert!(rendered.contains("suggestions"));
+        assert!(!rendered.contains("suggestions"));
+        assert!(!rendered.contains("> "));
         assert!(rendered.contains("--files-with-matches"));
         assert!(rendered.contains("1/2; Tab to accept"));
     }
 
     #[test]
+    fn selection_reverses_only_the_term_and_keeps_details_dim() {
+        let scene = Scene::new(
+            SuggestionPopup::new(
+                "1/1; 2ms",
+                vec![PopupItem::new("alpha", "description")],
+                Some(0),
+            )
+            .query("a"),
+        );
+        let size = scene.measure(Constraints::new(80, 20));
+        let area = Rect::new(0, 0, size.width, size.height);
+        let mut buffer = Buffer::empty(area);
+        scene.render(area, &mut buffer);
+
+        let term_style = buffer.cell((2, 1)).unwrap().style();
+        let detail_style = buffer.cell((9, 1)).unwrap().style();
+        assert!(term_style.add_modifier.contains(Modifier::REVERSED));
+        assert!(term_style.add_modifier.contains(Modifier::UNDERLINED));
+        assert!(detail_style.add_modifier.contains(Modifier::DIM));
+        assert!(!detail_style.add_modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
     fn popup_visual_snapshot_is_stable() {
         let scene = Scene::new(SuggestionPopup::new(
-            "Keel suggestions",
-            "1/2 · Up/Down to select",
+            "1/2; Up/Down to select",
             vec![
                 PopupItem::new("--files-with-matches", "grep option"),
                 PopupItem::new("--files-without-match", "grep option"),
             ],
-            0,
-            Theme::default(),
+            Some(0),
         ));
 
         insta::assert_snapshot!(snapshot(&scene, 42));
+    }
+
+    #[test]
+    fn popup_limits_entries_and_renders_an_inline_scrollbar() {
+        let items = (0..20)
+            .map(|index| PopupItem::new(format!("item-{index:02}"), "detail"))
+            .collect();
+        let scene = Scene::new(
+            SuggestionPopup::new("11/20; 3ms", items, Some(10)).viewport(1, MAX_VISIBLE_ITEMS),
+        );
+        let size = scene.measure(Constraints::new(80, 40));
+        assert_eq!(size.height, 14);
+        let area = Rect::new(0, 0, size.width, size.height);
+        let mut buffer = Buffer::empty(area);
+        scene.render(area, &mut buffer);
+
+        let rendered = snapshot(&scene, 80);
+        assert!(rendered.contains("item-01"));
+        assert!(rendered.contains("item-12"));
+        assert!(!rendered.contains("item-00"));
+        assert!(!rendered.contains("item-13"));
+
+        let scrollbar_x = area.x + area.width - 3;
+        let thumb = buffer.cell((scrollbar_x, area.y + 5)).unwrap();
+        assert_eq!(thumb.symbol(), " ");
+        assert_eq!(thumb.bg, Color::White);
     }
 
     #[test]

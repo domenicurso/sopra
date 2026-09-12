@@ -8,7 +8,7 @@ Keel adds Rust-rendered terminal surfaces to a normal Zsh session while keeping 
 
 </div>
 
-Keel is a terminal augmentation prototype. The current MVP renders a small autocomplete surface below the active line whenever the input is non-empty. Its suggestions are intentionally deterministic and limited, which keeps the host/render boundary stable while a real completion provider is still being designed.
+Keel is a terminal augmentation prototype. The current MVP renders a small autocomplete surface below the active line by asking Zsh's own completion system for matches in a short-lived `zpty`, then paints those matches through the native renderer without asking ZLE to draw a second prompt.
 
 - [Try the isolated demo](#try-the-isolated-demo)
 - [Install a user-owned shell](#install-a-user-owned-shell)
@@ -27,7 +27,7 @@ Keel is a terminal augmentation prototype. The current MVP renders a small autoc
 
 Keel is for people who want to experiment with rich shell interfaces while preserving the behavior users already rely on, and for developers who want a small Rust-native foundation for terminal surfaces rather than another shell-side editor implementation.
 
-The current demo is deliberately modest: typing `git` produces `run git`, `inspect git`, and `search git`, while `grep --matches` produces two option suggestions. Keel displays that data below the line; it does not yet query history, invoke a completion backend, or insert a selected item into Zsh's buffer.
+The current demo is deliberately modest: any `compdef` available after `compinit` can provide the popup entries, including descriptions from `compadd -d`. Keel displays those entries below the line, keeps selection in Rust, and writes a selected replacement back into ZLE only when Tab is pressed.
 
 ## Installation
 
@@ -46,7 +46,7 @@ From the repository root, run:
 ./scripts/start-keel.sh
 ```
 
-The first run downloads and builds the private Zsh, compiles the Rust module, creates a temporary startup directory under `target/`, and launches the demo shell. It does not edit your dotfiles or change your default shell.
+The first run downloads and builds the private Zsh, compiles the Rust module, initializes Zsh's standard completion definitions, creates a temporary startup directory under `target/`, and launches the demo shell. It does not edit your dotfiles or change your default shell.
 
 The launcher replaces itself with the Keel-enabled Zsh, but it cannot replace the shell that invoked it. Use `exec` when the current terminal shell should be replaced too:
 
@@ -113,7 +113,7 @@ keel help      # show the command syntax
 
 The installed `bin/keel` wrapper also accepts `keel status` outside an active session and reports where Keel is installed. `enable` and `disable` must run inside the managed shell because an executable cannot change the module state of the shell that launched it.
 
-The integration only activates in an interactive shell with `KEEL_MODULE_PATH` set. Sourcing the loader from an ordinary stock Zsh is safe when that variable is absent; the loader returns without installing hooks.
+The integration only activates in an interactive shell with `KEEL_MODULE_PATH` set. Sourcing the loader from an ordinary stock Zsh is safe when that variable is absent; the loader returns without installing hooks. A normal existing Zsh setup can keep control of `compinit`; the isolated demo and installed shell initialize it explicitly so the autocomplete MVP works without extra configuration.
 
 ## How it works
 
@@ -137,7 +137,7 @@ patched redraw hooks -> C ABI snapshot -> Rust app state
 
 ### Ownership boundary
 
-`zsh/keel.zsh` loads the native module and installs the `line-init` and `line-finish` hooks. The C shim is the only layer that knows the Zsh ABI: it receives the patched redisplay callbacks, snapshots the current line and terminal geometry, and writes Rust's returned bytes to the terminal. It does not decide layout or compose the UI.
+`zsh/keel.zsh` loads the native module and installs the `line-init` and `line-finish` hooks. The C shim is the only layer that knows the Zsh ABI: it receives the patched redisplay callbacks, snapshots the current line and terminal geometry, registers the small native widgets, and writes Rust's returned bytes to the terminal. It does not decide layout or compose the UI. The shell loader runs the real completion widget in a bounded `zpty`, captures `compadd` records, rejects stale responses against the line snapshot, and hands one protocol payload to the native module.
 
 The Rust crates keep the rest of the work separated. `keel-core` normalizes host data and maintains the session model, `keel-ui` measures and paints components, `keel-renderer` turns those components into a diffed ANSI transaction, and `keel-scheduler` defines invalidation and frame timing without starting a background runtime.
 
@@ -145,7 +145,7 @@ The Rust crates keep the rest of the work separated. `keel-core` normalizes host
 
 Before Zsh redraws, Keel clears the previous surface. After Zsh has drawn its ordinary prompt and line, the post-redraw hook receives the actual visual cursor position, so the next surface can anchor to the host cursor rather than guessing from prompt strings.
 
-On accept, cancel, resize, or module unload, Keel clears only the rows it owns and leaves Zsh's normal behavior in charge. It never enters the alternate screen, clears the terminal, rewrites scrollback, wraps the shell in another PTY, or starts a daemon.
+On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Tab accepts a selected completion by updating the ZLE buffer, while Enter executes the resulting line. Escape dismisses the popup, Ctrl-C clears the current line in place, and empty Enter only redisplays it; none of these paths prints a synthetic prompt. Keel never enters the alternate screen, clears the terminal, rewrites scrollback, wraps the shell in another PTY, or starts a daemon.
 
 For the lower-level rendering contract, see [the architecture notes](docs/architecture.md) and [the renderer notes](docs/renderer.md).
 
@@ -169,8 +169,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ### Repository layout
 
-- `crates/keel-core` contains the host snapshot, grapheme-aware line model, application state, and deterministic MVP suggestions.
-- `crates/keel-ui` contains the measured component API, themes, and suggestion popup.
+- `crates/keel-core` contains the host snapshot, grapheme-aware line model, application state, and completion selection state.
+- `crates/keel-ui` contains the measured component API, terminal-palette style tokens, and suggestion popup.
 - `crates/keel-renderer` contains the offscreen ratatui buffer, frame diff, and bounded ANSI writer.
 - `crates/keel-scheduler` contains invalidation and frame-clock behavior for the host integration.
 - `native` contains the C loadable-module shim and the checked Zsh ABI boundary.
@@ -181,8 +181,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ## Current limitations
 
-- The completion data is hard-coded for the MVP, so Keel has no filesystem, history, or external completion provider yet.
-- Zsh still owns keyboard input and the editable buffer, so the popup does not currently apply a selected suggestion or provide a replacement editing mode.
+- Completion capture follows Zsh's installed completion functions, but it is bounded to 64 records and does not yet expose history or provider metadata beyond what `compadd` supplies.
+- Zsh still owns keyboard input and the editable buffer; Keel adds navigation and Tab insertion widgets while leaving command parsing, history, and execution in ZLE.
 - Running Keel requires the patched Zsh 5.9 build, which is why the project builds and ships its own private shell instead of loading into `/bin/zsh`.
 - The native build scripts currently implement Darwin and Linux link steps; other host operating systems are rejected explicitly.
 
