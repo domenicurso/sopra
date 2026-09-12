@@ -1,325 +1,557 @@
+use std::fmt::Write as _;
+
+use keel_ui::{Constraints, Scene, Size};
 use ratatui::{
     buffer::{Buffer, Cell},
     layout::Rect,
     style::{Color, Modifier, Style},
 };
-use unicode_segmentation::UnicodeSegmentation;
+use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
-use keel_ui::{Scene, Size};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderContext {
+    pub terminal_columns: u16,
+    pub max_height: u16,
+    pub origin_column: u16,
+    pub force_full: bool,
+}
 
-#[derive(Debug)]
+impl RenderContext {
+    pub const fn new(terminal_columns: u16, max_height: u16, origin_column: u16) -> Self {
+        Self {
+            terminal_columns: if terminal_columns == 0 {
+                1
+            } else {
+                terminal_columns
+            },
+            max_height: if max_height == 0 { 1 } else { max_height },
+            origin_column,
+            force_full: false,
+        }
+    }
+
+    pub const fn full_repaint(mut self, force_full: bool) -> Self {
+        self.force_full = force_full;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedFrame {
     pub area: Rect,
     pub used_size: Size,
     pub buffer: Buffer,
-    pub content_area: Rect,
+    pub origin_column: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameDiff {
     pub changed_cells: usize,
     pub changed_rows: Vec<u16>,
+    pub cleared_rows: Vec<u16>,
     pub previous_area: Rect,
     pub next_area: Rect,
-    pub cleared_rows: u16,
+    pub previous_origin: u16,
+    pub next_origin: u16,
 }
 
 impl FrameDiff {
     pub fn changed(&self) -> bool {
-        self.changed_cells > 0 || self.cleared_rows > 0 || self.previous_area != self.next_area
+        self.changed_cells > 0
+            || !self.cleared_rows.is_empty()
+            || self.previous_area != self.next_area
+            || self.previous_origin != self.next_origin
+    }
+
+    pub fn origin_changed(&self) -> bool {
+        self.previous_origin != self.next_origin
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Renderer;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchOp {
+    SaveCursor,
+    HideCursor,
+    MoveToSurface,
+    ClearSurface {
+        origin_column: u16,
+        width: u16,
+        height: u16,
+    },
+    ClearSpan {
+        row: u16,
+        width: u16,
+    },
+    PaintRow {
+        row: u16,
+    },
+    RestoreCursor,
+    ShowCursor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderTransaction {
+    pub origin_column: u16,
+    pub width: u16,
+    pub height: u16,
+    pub ops: Vec<PatchOp>,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedRegion {
+    pub frame: RenderedFrame,
+    pub diff: FrameDiff,
+    pub transaction: RenderTransaction,
+    pub used_rows: u16,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum RenderError {
+    #[error("rendered surface has no columns")]
+    EmptyWidth,
+}
+
+#[derive(Debug, Default)]
+pub struct Renderer {
+    previous: Option<RenderedFrame>,
+}
 
 impl Renderer {
-    pub fn render(&self, scene: &Scene, max_width: u16) -> RenderedFrame {
-        self.render_in_width(scene, scene.measure(max_width.max(1)).width.max(1))
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn render_in_width(&self, scene: &Scene, width: u16) -> RenderedFrame {
-        let width = width.max(1);
-        let used_size = scene.measure(width);
-        let area = Rect::new(0, 0, width, used_size.height.max(1));
+    pub fn render(
+        &mut self,
+        scene: &Scene,
+        context: RenderContext,
+    ) -> Result<RenderedRegion, RenderError> {
+        let max_width = context
+            .terminal_columns
+            .saturating_sub(context.origin_column)
+            .max(1);
+        let measured = scene.measure(Constraints::new(max_width, context.max_height));
+        let width = measured.width.min(max_width);
+        if width == 0 {
+            return Err(RenderError::EmptyWidth);
+        }
+        let height = measured.height.max(1).min(context.max_height.max(1));
+        let origin_column = context
+            .origin_column
+            .min(context.terminal_columns.saturating_sub(width));
+        let area = Rect::new(0, 0, width, height);
         let mut buffer = Buffer::empty(area);
         scene.render(area, &mut buffer);
-        let content_area = content_area(&buffer, area);
-        RenderedFrame {
+        let frame = RenderedFrame {
             area,
-            used_size,
+            used_size: Size::new(width, height),
             buffer,
-            content_area,
-        }
+            origin_column,
+        };
+        let diff = self.diff(Some(&frame));
+        let payload = AnsiWriter::paint(&frame, &diff, context.force_full);
+        let transaction = RenderTransaction {
+            origin_column,
+            width,
+            height,
+            ops: patch_ops(&diff, &frame, context.force_full),
+            payload,
+        };
+        let rendered = RenderedRegion {
+            frame: frame.clone(),
+            diff,
+            transaction,
+            used_rows: height,
+        };
+        self.previous = Some(frame);
+        Ok(rendered)
     }
 
-    pub fn diff(&self, previous: Option<&RenderedFrame>, next: &RenderedFrame) -> FrameDiff {
+    pub fn diff(&self, next: Option<&RenderedFrame>) -> FrameDiff {
+        let previous = self.previous.as_ref();
         let previous_area = previous.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
-        let width = previous_area.width.max(next.area.width);
-        let height = previous_area.height.max(next.area.height);
+        let next_area = next.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
+        let previous_origin = previous.map_or(0, |frame| frame.origin_column);
+        let next_origin = next.map_or(0, |frame| frame.origin_column);
+        let width = previous_area.width.max(next_area.width);
+        let height = previous_area.height.max(next_area.height);
         let mut changed_cells = 0;
         let mut changed_rows = Vec::new();
+        let mut cleared_rows = Vec::new();
         let empty = Cell::EMPTY;
 
         for y in 0..height {
             let mut row_changed = false;
+            let mut row_cleared = false;
             for x in 0..width {
                 let previous_cell = previous
-                    .and_then(|frame| cell_at(&frame.buffer, frame.area, x, y))
+                    .and_then(|frame| frame.buffer.cell((x, y)))
                     .unwrap_or(&empty);
-                let next_cell = cell_at(&next.buffer, next.area, x, y).unwrap_or(&empty);
+                let next_cell = next
+                    .and_then(|frame| frame.buffer.cell((x, y)))
+                    .unwrap_or(&empty);
                 if previous_cell != next_cell {
                     changed_cells += 1;
                     row_changed = true;
+                    if next.is_none() || y >= next_area.height || x >= next_area.width {
+                        row_cleared = true;
+                    }
                 }
             }
             if row_changed {
                 changed_rows.push(y);
+            }
+            if row_cleared {
+                cleared_rows.push(y);
             }
         }
 
         FrameDiff {
             changed_cells,
             changed_rows,
+            cleared_rows,
             previous_area,
-            next_area: next.area,
-            cleared_rows: previous_area.height.saturating_sub(next.area.height),
+            next_area,
+            previous_origin,
+            next_origin,
         }
     }
 
-    pub fn to_zsh_prompt(&self, frame: &RenderedFrame) -> String {
-        serialize_buffer(&frame.buffer, frame.content_area, true)
+    pub fn clear_previous(&mut self) -> Option<Vec<u8>> {
+        let previous = self.previous.take()?;
+        Some(AnsiWriter::clear_surface(
+            previous.origin_column,
+            previous.area.width,
+            previous.area.height,
+        ))
     }
 
-    pub fn to_ansi(&self, frame: &RenderedFrame) -> String {
-        serialize_buffer(&frame.buffer, frame.content_area, false)
+    pub fn previous_frame(&self) -> Option<&RenderedFrame> {
+        self.previous.as_ref()
     }
 }
 
-pub fn truncate_to_width(text: &str, max_width: u16) -> String {
-    let max_width = max_width as usize;
-    let mut used: usize = 0;
-    let mut output = String::new();
-    for grapheme in text.graphemes(true) {
-        let width = UnicodeWidthStr::width(grapheme);
-        if used.saturating_add(width) > max_width {
-            break;
+fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<PatchOp> {
+    if !force_full && !diff.changed() {
+        return Vec::new();
+    }
+    let mut ops = vec![PatchOp::SaveCursor, PatchOp::HideCursor];
+    if diff.origin_changed() && diff.previous_area.height > 0 {
+        ops.push(PatchOp::ClearSurface {
+            origin_column: diff.previous_origin,
+            width: diff.previous_area.width,
+            height: diff.previous_area.height,
+        });
+    }
+    ops.push(PatchOp::MoveToSurface);
+    let clear_width = frame.area.width.max(diff.previous_area.width);
+    let row_count = frame.area.height.max(diff.previous_area.height);
+    let repaint_all = force_full || diff.origin_changed();
+    for row in 0..row_count {
+        if row < frame.area.height && (repaint_all || diff.changed_rows.contains(&row)) {
+            ops.push(PatchOp::ClearSpan {
+                row,
+                width: clear_width,
+            });
+            ops.push(PatchOp::PaintRow { row });
+        } else if row >= frame.area.height && diff.cleared_rows.contains(&row) {
+            ops.push(PatchOp::ClearSpan {
+                row,
+                width: diff.previous_area.width,
+            });
         }
-        output.push_str(grapheme);
-        used += width;
     }
-    output
+    ops.extend([PatchOp::RestoreCursor, PatchOp::ShowCursor]);
+    ops
 }
 
-fn content_area(buffer: &Buffer, area: Rect) -> Rect {
-    let mut min_x = area.width;
-    let mut min_y = area.height;
-    let mut max_x = 0;
-    let mut max_y = 0;
-    let mut has_content = false;
+struct AnsiWriter;
 
-    for y in 0..area.height {
-        for x in 0..area.width {
-            let cell = &buffer[(x, y)];
-            if !has_visible_symbol(cell) {
-                continue;
+impl AnsiWriter {
+    fn clear_surface(origin_column: u16, width: u16, height: u16) -> Vec<u8> {
+        if width == 0 || height == 0 {
+            return Vec::new();
+        }
+        let mut output = String::new();
+        output.push_str("\x1b7\x1b[?25l\x1b[1B");
+        move_to_column(&mut output, origin_column);
+        for row in 0..height {
+            output.push_str("\x1b[0m");
+            erase_characters(&mut output, width);
+            if row + 1 < height {
+                output.push_str("\x1b[1B");
+                move_to_column(&mut output, origin_column);
             }
-            has_content = true;
-            min_x = min_x.min(x);
-            min_y = min_y.min(y);
-            max_x = max_x.max(x + 1);
-            max_y = max_y.max(y + 1);
         }
+        output.push_str("\x1b8\x1b[?25h");
+        output.into_bytes()
     }
 
-    if has_content {
-        Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
-    } else {
-        Rect::new(0, 0, 0, 0)
+    fn paint(frame: &RenderedFrame, diff: &FrameDiff, force_full: bool) -> Vec<u8> {
+        if !force_full && !diff.changed() {
+            return Vec::new();
+        }
+        let mut output = String::new();
+        output.push_str("\x1b7\x1b[?25l\x1b[1B");
+        if diff.origin_changed() && diff.previous_area.height > 0 {
+            clear_surface_body(
+                &mut output,
+                diff.previous_origin,
+                diff.previous_area.width,
+                diff.previous_area.height,
+            );
+            output.push_str("\x1b8\x1b[1B");
+        }
+        move_to_column(&mut output, frame.origin_column);
+        let clear_width = frame.area.width.max(diff.previous_area.width);
+        let row_count = frame.area.height.max(diff.previous_area.height);
+        let repaint_all = force_full || diff.origin_changed();
+        for row in 0..row_count {
+            if row < frame.area.height && (repaint_all || diff.changed_rows.contains(&row)) {
+                output.push_str("\x1b[0m");
+                erase_characters(&mut output, clear_width);
+                write_row(&mut output, frame, row);
+            } else if row >= frame.area.height && diff.cleared_rows.contains(&row) {
+                output.push_str("\x1b[0m");
+                erase_characters(&mut output, diff.previous_area.width);
+            }
+            if row + 1 < row_count {
+                output.push_str("\x1b[1B");
+                move_to_column(&mut output, frame.origin_column);
+            }
+        }
+        output.push_str("\x1b[0m\x1b8\x1b[?25h");
+        output.into_bytes()
     }
 }
 
-fn cell_at(buffer: &Buffer, area: Rect, x: u16, y: u16) -> Option<&Cell> {
-    if x < area.width && y < area.height {
-        Some(&buffer[(x, y)])
-    } else {
-        None
+fn move_to_column(output: &mut String, column: u16) {
+    let _ = write!(output, "\x1b[{}G", column.saturating_add(1));
+}
+
+fn clear_surface_body(output: &mut String, origin_column: u16, width: u16, height: u16) {
+    move_to_column(output, origin_column);
+    for row in 0..height {
+        output.push_str("\x1b[0m");
+        erase_characters(output, width);
+        if row + 1 < height {
+            output.push_str("\x1b[1B");
+            move_to_column(output, origin_column);
+        }
     }
 }
 
-fn serialize_buffer(buffer: &Buffer, area: Rect, zsh_wrapped: bool) -> String {
-    if area.width == 0 || area.height == 0 {
-        return String::new();
-    }
+fn erase_characters(output: &mut String, width: u16) {
+    let _ = write!(output, "\x1b[{}X", width);
+}
 
-    let mut output = String::new();
-    for row in area.y..area.y + area.height {
-        if row > area.y {
-            output.push('\n');
-        }
-        let Some((first_column, last_column)) = row_content_bounds(buffer, area, row) else {
+fn write_row(output: &mut String, frame: &RenderedFrame, row: u16) {
+    let mut active_style = Style::default();
+    let mut previous_wide = false;
+    let empty = Cell::EMPTY;
+    for x in 0..frame.area.width {
+        let cell = frame.buffer.cell((x, row)).unwrap_or(&empty);
+        if previous_wide {
+            previous_wide = false;
             continue;
-        };
-        let mut current_style = None;
-        for column in first_column..=last_column {
-            let cell = &buffer[(column, row)];
-            let style = cell.style();
-            if current_style != Some(style) {
-                if current_style.is_some() {
-                    push_control(&mut output, "\x1b[0m", zsh_wrapped);
-                }
-                push_control(&mut output, &style_to_ansi(style), zsh_wrapped);
-                current_style = Some(style);
-            }
-            output.push_str(cell.symbol());
         }
-        if current_style.is_some() {
-            push_control(&mut output, "\x1b[0m", zsh_wrapped);
+        set_style(output, &mut active_style, cell.style());
+        output.push_str(cell.symbol());
+        previous_wide = cell.symbol().width() > 1;
+    }
+    output.push_str("\x1b[0m");
+}
+
+fn set_style(output: &mut String, current: &mut Style, next: Style) {
+    if *current == next {
+        return;
+    }
+    output.push_str("\x1b[0m");
+    if let Some(color) = next.fg {
+        write_color(output, color, false);
+    }
+    if let Some(color) = next.bg {
+        write_color(output, color, true);
+    }
+    let modifiers = next.add_modifier;
+    let modifier_codes = [
+        (Modifier::BOLD, "1"),
+        (Modifier::DIM, "2"),
+        (Modifier::ITALIC, "3"),
+        (Modifier::UNDERLINED, "4"),
+        (Modifier::SLOW_BLINK, "5"),
+        (Modifier::RAPID_BLINK, "6"),
+        (Modifier::REVERSED, "7"),
+        (Modifier::HIDDEN, "8"),
+        (Modifier::CROSSED_OUT, "9"),
+    ];
+    for (modifier, code) in modifier_codes {
+        if modifiers.contains(modifier) {
+            let _ = write!(output, "\x1b[{}m", code);
         }
     }
-    output
+    *current = next;
 }
 
-fn row_content_bounds(buffer: &Buffer, area: Rect, row: u16) -> Option<(u16, u16)> {
-    let mut first = None;
-    let mut last = None;
-    for column in area.x..area.x + area.width {
-        if has_visible_symbol(&buffer[(column, row)]) {
-            first.get_or_insert(column);
-            last = Some(column);
-        }
-    }
-    first.zip(last)
-}
-
-fn has_visible_symbol(cell: &Cell) -> bool {
-    cell.symbol() != " "
-}
-
-fn push_control(output: &mut String, sequence: &str, zsh_wrapped: bool) {
-    if zsh_wrapped {
-        output.push_str("%{");
-        output.push_str(sequence);
-        output.push_str("%}");
-    } else {
-        output.push_str(sequence);
-    }
-}
-
-fn style_to_ansi(style: Style) -> String {
-    let mut codes = Vec::new();
-    if style.add_modifier.contains(Modifier::BOLD) {
-        codes.push("1".to_string());
-    }
-    if let Some(code) = color_to_ansi(style.fg, false) {
-        codes.push(code);
-    }
-    if let Some(code) = color_to_ansi(style.bg, true) {
-        codes.push(code);
-    }
-    if codes.is_empty() {
-        "\x1b[0m".to_string()
-    } else {
-        format!("\x1b[{}m", codes.join(";"))
-    }
-}
-
-fn color_to_ansi(color: Option<Color>, background: bool) -> Option<String> {
+fn write_color(output: &mut String, color: Color, background: bool) {
     let prefix = if background { 48 } else { 38 };
-    match color? {
-        Color::Reset => None,
-        Color::Rgb(red, green, blue) => Some(format!("{prefix};2;{red};{green};{blue}")),
-        Color::Indexed(index) => Some(format!("{prefix};5;{index}")),
-        Color::Black => Some(format!("{prefix};5;0")),
-        Color::Red => Some(format!("{prefix};5;1")),
-        Color::Green => Some(format!("{prefix};5;2")),
-        Color::Yellow => Some(format!("{prefix};5;3")),
-        Color::Blue => Some(format!("{prefix};5;4")),
-        Color::Magenta => Some(format!("{prefix};5;5")),
-        Color::Cyan => Some(format!("{prefix};5;6")),
-        Color::Gray => Some(format!("{prefix};5;7")),
-        Color::DarkGray => Some(format!("{prefix};5;8")),
-        Color::LightRed => Some(format!("{prefix};5;9")),
-        Color::LightGreen => Some(format!("{prefix};5;10")),
-        Color::LightYellow => Some(format!("{prefix};5;11")),
-        Color::LightBlue => Some(format!("{prefix};5;12")),
-        Color::LightMagenta => Some(format!("{prefix};5;13")),
-        Color::LightCyan => Some(format!("{prefix};5;14")),
-        Color::White => Some(format!("{prefix};5;15")),
+    match color {
+        Color::Reset => {
+            let _ = write!(output, "\x1b[{}m", if background { 49 } else { 39 });
+        }
+        Color::Black => output.push_str(if background { "\x1b[40m" } else { "\x1b[30m" }),
+        Color::Red => output.push_str(if background { "\x1b[41m" } else { "\x1b[31m" }),
+        Color::Green => output.push_str(if background { "\x1b[42m" } else { "\x1b[32m" }),
+        Color::Yellow => output.push_str(if background { "\x1b[43m" } else { "\x1b[33m" }),
+        Color::Blue => output.push_str(if background { "\x1b[44m" } else { "\x1b[34m" }),
+        Color::Magenta => output.push_str(if background { "\x1b[45m" } else { "\x1b[35m" }),
+        Color::Cyan => output.push_str(if background { "\x1b[46m" } else { "\x1b[36m" }),
+        Color::Gray => output.push_str(if background { "\x1b[47m" } else { "\x1b[37m" }),
+        Color::DarkGray => output.push_str(if background { "\x1b[100m" } else { "\x1b[90m" }),
+        Color::LightRed => output.push_str(if background { "\x1b[101m" } else { "\x1b[91m" }),
+        Color::LightGreen => output.push_str(if background { "\x1b[102m" } else { "\x1b[92m" }),
+        Color::LightYellow => output.push_str(if background { "\x1b[103m" } else { "\x1b[93m" }),
+        Color::LightBlue => output.push_str(if background { "\x1b[104m" } else { "\x1b[94m" }),
+        Color::LightMagenta => output.push_str(if background { "\x1b[105m" } else { "\x1b[95m" }),
+        Color::LightCyan => output.push_str(if background { "\x1b[106m" } else { "\x1b[96m" }),
+        Color::White => output.push_str(if background { "\x1b[107m" } else { "\x1b[97m" }),
+        Color::Indexed(value) => {
+            let _ = write!(output, "\x1b[{};5;{}m", prefix, value);
+        }
+        Color::Rgb(red, green, blue) => {
+            let _ = write!(output, "\x1b[{};2;{};{};{}m", prefix, red, green, blue);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use keel_ui::{Paragraph, Scene, Text, Theme, badge_scene};
-    use ratatui::{
-        buffer::Buffer,
-        layout::Rect,
-        style::{Color, Style},
-    };
+    use super::*;
+    use keel_ui::{PopupItem, SuggestionPopup, Theme};
 
-    use super::{FrameDiff, Renderer};
-
-    #[test]
-    fn renders_ratatui_styling_as_a_zsh_fragment() {
-        let renderer = Renderer;
-        let frame = renderer.render(&badge_scene("Keel | main | 7c:5"), 80);
-        let fragment = renderer.to_zsh_prompt(&frame);
-
-        assert!(fragment.contains("Keel | main | 7c:5"));
-        assert!(fragment.contains("%{\u{1b}["));
-        assert!(fragment.contains("38;2;125;211;252"));
-        assert!(!fragment.contains('\n'));
+    fn popup(items: &[&str]) -> Scene {
+        Scene::new(SuggestionPopup::new(
+            "Keel suggestions",
+            format!("1/{}; Tab to accept", items.len()),
+            items.iter().map(|item| PopupItem::new(*item, "")).collect(),
+            0,
+            Theme::default(),
+        ))
     }
 
     #[test]
-    fn keeps_the_widget_inside_the_terminal_width() {
-        let renderer = Renderer;
-        let frame = renderer.render(&badge_scene("a compact badge"), 8);
-
-        assert!(frame.used_size.width <= 8);
-        assert_eq!(frame.used_size.height, 1);
-    }
-
-    #[test]
-    fn diff_reports_changed_cells_and_row_cleanup() {
-        let renderer = Renderer;
-        let first = renderer.render(
-            &Scene::new(Paragraph::new("one\ntwo").style(Style::default().fg(Color::Red))),
-            10,
+    fn first_frame_paints_every_row_into_one_transaction() {
+        let mut renderer = Renderer::new();
+        let rendered = renderer
+            .render(
+                &popup(&["run git", "inspect git"]),
+                RenderContext::new(80, 12, 3).full_repaint(true),
+            )
+            .unwrap();
+        assert_eq!(
+            rendered.diff.changed_rows,
+            (0..rendered.frame.area.height).collect::<Vec<_>>()
         );
-        let second = renderer.render(&Scene::new(Text::new("one")), 10);
-
-        let diff = renderer.diff(Some(&first), &second);
-        assert!(diff.changed());
-        assert!(diff.changed_cells > 0);
-        assert_eq!(diff.cleared_rows, 1);
+        assert_eq!(rendered.transaction.ops.first(), Some(&PatchOp::SaveCursor));
+        assert!(
+            String::from_utf8(rendered.transaction.payload)
+                .unwrap()
+                .contains("Keel suggestions")
+        );
     }
 
     #[test]
-    fn empty_buffer_has_no_prompt_fragment() {
-        let renderer = Renderer;
-        let frame = renderer.render(&Scene::new(Text::new("")), 10);
-        assert_eq!(renderer.to_zsh_prompt(&frame), "");
+    fn unchanged_frame_has_no_changed_rows_but_can_be_forced_full() {
+        let mut renderer = Renderer::new();
+        let scene = popup(&["run git"]);
+        let context = RenderContext::new(80, 12, 3).full_repaint(true);
+        renderer.render(&scene, context).unwrap();
+        let unchanged = renderer
+            .render(&scene, RenderContext::new(80, 12, 3))
+            .unwrap();
+        assert!(unchanged.diff.changed_rows.is_empty());
+        assert!(!unchanged.diff.changed());
+        assert!(unchanged.transaction.payload.is_empty());
+        let forced = renderer
+            .render(&scene, RenderContext::new(80, 12, 3).full_repaint(true))
+            .unwrap();
+        assert!(!forced.transaction.payload.is_empty());
     }
 
     #[test]
-    fn keeps_wide_graphemes_whole_when_truncating() {
-        assert_eq!(super::truncate_to_width("ab界c", 3), "ab");
-        assert_eq!(super::truncate_to_width("ab界c", 4), "ab界");
+    fn moving_surface_clears_old_anchor_and_repaints_new_anchor() {
+        let mut renderer = Renderer::new();
+        let scene = popup(&["run git"]);
+        renderer
+            .render(&scene, RenderContext::new(80, 12, 2).full_repaint(true))
+            .unwrap();
+        let moved = renderer
+            .render(&scene, RenderContext::new(80, 12, 7))
+            .unwrap();
+
+        assert!(moved.diff.origin_changed());
+        assert!(moved.transaction.ops.iter().any(|op| {
+            matches!(
+                op,
+                PatchOp::ClearSurface {
+                    origin_column: 2,
+                    ..
+                }
+            )
+        }));
+        let payload = String::from_utf8(moved.transaction.payload).unwrap();
+        assert!(payload.contains("\x1b[3G"));
+        assert!(payload.contains("\x1b[8G"));
     }
 
-    #[allow(dead_code)]
-    fn _buffer_type_is_ratatuified() {
-        let _ = Buffer::empty(Rect::new(0, 0, 1, 1));
-        let _ = Theme::default();
-        let _ = FrameDiff {
-            changed_cells: 0,
-            changed_rows: vec![],
-            previous_area: Rect::default(),
-            next_area: Rect::default(),
-            cleared_rows: 0,
-        };
+    #[test]
+    fn shrinking_surface_clears_old_rows() {
+        let mut renderer = Renderer::new();
+        let previous = renderer
+            .render(
+                &popup(&["one", "two", "three"]),
+                RenderContext::new(80, 12, 0),
+            )
+            .unwrap();
+        let next = renderer
+            .render(&popup(&["one"]), RenderContext::new(80, 12, 0))
+            .unwrap();
+        assert_eq!(
+            next.diff.cleared_rows,
+            (next.frame.area.height..previous.frame.area.height).collect::<Vec<_>>()
+        );
+        let clear = renderer.clear_previous().unwrap();
+        assert!(String::from_utf8(clear).unwrap().contains("\x1b["));
+    }
+
+    #[test]
+    fn encoder_uses_relative_cursor_restore_and_no_full_screen_clear() {
+        let mut renderer = Renderer::new();
+        let payload = renderer
+            .render(
+                &popup(&["run echo hi"]),
+                RenderContext::new(40, 8, 5).full_repaint(true),
+            )
+            .unwrap()
+            .transaction
+            .payload;
+        let payload = String::from_utf8(payload).unwrap();
+        assert!(payload.starts_with("\x1b7\x1b[?25l\x1b[1B\x1b[6G"));
+        assert!(payload.contains("\x1b8\x1b[?25h"));
+        assert!(!payload.contains("\x1b[2J"));
+    }
+
+    #[test]
+    fn rendered_region_reports_the_reserved_height() {
+        let mut renderer = Renderer::new();
+        let rendered = renderer
+            .render(
+                &popup(&["run git"]),
+                RenderContext::new(80, 12, 0).full_repaint(true),
+            )
+            .unwrap();
+        assert_eq!(rendered.used_rows, rendered.frame.area.height);
     }
 }

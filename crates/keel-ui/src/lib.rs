@@ -1,9 +1,9 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph as RatatuiParagraph, Widget, Wrap},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph as RatatuiParagraph, Widget, Wrap},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -12,6 +12,12 @@ use unicode_width::UnicodeWidthStr;
 pub struct Size {
     pub width: u16,
     pub height: u16,
+}
+
+impl Size {
+    pub const fn new(width: u16, height: u16) -> Self {
+        Self { width, height }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,38 +40,6 @@ pub trait Component {
     fn render(&self, area: Rect, buffer: &mut Buffer);
 }
 
-/// Adapts a cloneable ratatui `Widget` to the Keel component tree.
-///
-/// This keeps the composition API small while allowing callers to use
-/// ratatui widgets directly whenever a built-in component is not enough.
-pub struct RatatuiComponent<W> {
-    widget: W,
-    size: Size,
-}
-
-impl<W> RatatuiComponent<W> {
-    pub fn new(widget: W, size: Size) -> Self {
-        Self { widget, size }
-    }
-}
-
-impl<W: Widget + Clone> Component for RatatuiComponent<W> {
-    fn measure(&self, constraints: Constraints) -> Size {
-        Size {
-            width: self.size.width.min(constraints.max_width),
-            height: self.size.height.min(constraints.max_height),
-        }
-    }
-
-    fn render(&self, area: Rect, buffer: &mut Buffer) {
-        self.widget.clone().render(area, buffer);
-    }
-}
-
-pub fn ratatui_component<W: Widget + Clone>(widget: W, size: Size) -> RatatuiComponent<W> {
-    RatatuiComponent::new(widget, size)
-}
-
 pub struct Scene {
     root: Box<dyn Component>,
 }
@@ -77,9 +51,8 @@ impl Scene {
         }
     }
 
-    pub fn measure(&self, max_width: u16) -> Size {
-        self.root
-            .measure(Constraints::new(max_width.max(1), u16::MAX))
+    pub fn measure(&self, constraints: Constraints) -> Size {
+        self.root.measure(constraints)
     }
 
     pub fn render(&self, area: Rect, buffer: &mut Buffer) {
@@ -94,52 +67,58 @@ pub struct Theme {
     pub muted: Style,
     pub surface: Style,
     pub border: Style,
+    pub selection: Style,
     pub cursor: Style,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self {
-            accent: Style::default()
-                .fg(Color::Rgb(125, 211, 252))
-                .add_modifier(Modifier::BOLD),
-            value: Style::default()
-                .fg(Color::Rgb(250, 204, 21))
-                .add_modifier(Modifier::BOLD),
-            muted: Style::default().fg(Color::Rgb(100, 116, 139)),
-            surface: Style::default().bg(Color::Rgb(15, 23, 42)),
-            border: Style::default().fg(Color::Rgb(45, 212, 191)),
-            cursor: Style::default()
-                .fg(Color::Rgb(15, 23, 42))
-                .bg(Color::Rgb(125, 211, 252)),
-        }
+        Self::flyline()
     }
 }
 
 impl Theme {
+    pub const fn flyline() -> Self {
+        Self {
+            accent: Style::new()
+                .fg(Color::Rgb(48, 197, 128))
+                .add_modifier(Modifier::BOLD),
+            value: Style::new()
+                .fg(Color::Rgb(214, 214, 214))
+                .add_modifier(Modifier::BOLD),
+            muted: Style::new().fg(Color::Rgb(105, 105, 105)),
+            surface: Style::new().bg(Color::Rgb(23, 23, 23)),
+            border: Style::new().fg(Color::Rgb(105, 105, 105)),
+            selection: Style::new()
+                .fg(Color::Rgb(23, 23, 23))
+                .bg(Color::Rgb(48, 197, 128)),
+            cursor: Style::new().fg(Color::Rgb(23, 23, 23)).bg(Color::White),
+        }
+    }
+
     pub fn named(name: &str) -> Self {
         match name.trim().to_ascii_lowercase().as_str() {
             "mono" | "monochrome" => Self {
-                accent: Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-                value: Style::default().fg(Color::White),
-                muted: Style::default().fg(Color::DarkGray),
+                accent: Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
+                value: Style::new().fg(Color::White),
+                muted: Style::new().fg(Color::DarkGray),
                 surface: Style::default(),
-                border: Style::default().fg(Color::Gray),
-                cursor: Style::default().fg(Color::Black).bg(Color::White),
+                border: Style::new().fg(Color::Gray),
+                selection: Style::new().fg(Color::Black).bg(Color::White),
+                cursor: Style::new().fg(Color::Black).bg(Color::White),
             },
             "amber" => Self {
-                accent: Style::default()
+                accent: Style::new()
                     .fg(Color::LightYellow)
                     .add_modifier(Modifier::BOLD),
-                value: Style::default()
+                value: Style::new()
                     .fg(Color::Rgb(251, 146, 60))
                     .add_modifier(Modifier::BOLD),
-                muted: Style::default().fg(Color::DarkGray),
-                surface: Style::default().bg(Color::Rgb(28, 25, 23)),
-                border: Style::default().fg(Color::LightYellow),
-                cursor: Style::default().fg(Color::Black).bg(Color::LightYellow),
+                muted: Style::new().fg(Color::DarkGray),
+                surface: Style::new().bg(Color::Rgb(28, 25, 23)),
+                border: Style::new().fg(Color::LightYellow),
+                selection: Style::new().fg(Color::Black).bg(Color::LightYellow),
+                cursor: Style::new().fg(Color::Black).bg(Color::LightYellow),
             },
             _ => Self::default(),
         }
@@ -153,6 +132,7 @@ pub enum StyleToken {
     Muted,
     Surface,
     Border,
+    Selection,
     Cursor,
 }
 
@@ -164,310 +144,9 @@ impl StyleToken {
             Self::Muted => theme.muted,
             Self::Surface => theme.surface,
             Self::Border => theme.border,
+            Self::Selection => theme.selection,
             Self::Cursor => theme.cursor,
         }
-    }
-}
-
-pub struct Text {
-    lines: Vec<Line<'static>>,
-    wrap: bool,
-}
-
-impl Text {
-    pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            lines: vec![Line::from(text.into())],
-            wrap: false,
-        }
-    }
-
-    pub fn styled(text: impl Into<String>, style: Style) -> Self {
-        Self {
-            lines: vec![Line::from(Span::styled(text.into(), style))],
-            wrap: false,
-        }
-    }
-
-    pub fn token(text: impl Into<String>, token: StyleToken, theme: Theme) -> Self {
-        Self::styled(text, token.resolve(theme))
-    }
-
-    pub fn lines(lines: Vec<Line<'static>>) -> Self {
-        Self { lines, wrap: false }
-    }
-
-    pub fn with_wrap(mut self, wrap: bool) -> Self {
-        self.wrap = wrap;
-        self
-    }
-}
-
-impl Component for Text {
-    fn measure(&self, constraints: Constraints) -> Size {
-        let width = self.lines.iter().map(line_width).max().unwrap_or_default();
-        let height = if self.wrap {
-            wrapped_height(&self.lines, constraints.max_width)
-        } else {
-            self.lines.len().max(1).min(u16::MAX as usize) as u16
-        };
-        Size {
-            width: width.min(constraints.max_width as usize) as u16,
-            height: height.min(constraints.max_height),
-        }
-    }
-
-    fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let width = if self.wrap {
-            area.width
-        } else {
-            self.lines
-                .iter()
-                .map(line_width)
-                .max()
-                .unwrap_or(1)
-                .min(area.width as usize)
-                .max(1) as u16
-        };
-        let render_area = Rect::new(area.x, area.y, width, area.height);
-        let mut paragraph = RatatuiParagraph::new(self.lines.clone());
-        if self.wrap {
-            paragraph = paragraph.wrap(Wrap { trim: false });
-        }
-        paragraph.render(render_area, buffer);
-    }
-}
-
-pub struct Paragraph {
-    lines: Vec<Line<'static>>,
-    style: Style,
-    wrap: bool,
-    border: Option<Style>,
-    padding: u16,
-}
-
-impl Paragraph {
-    pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            lines: {
-                let text: String = text.into();
-                text.split('\n')
-                    .map(|line| Line::from(line.to_string()))
-                    .collect()
-            },
-            style: Style::default(),
-            wrap: true,
-            border: None,
-            padding: 0,
-        }
-    }
-
-    pub fn from_lines(lines: Vec<Line<'static>>) -> Self {
-        Self {
-            lines,
-            style: Style::default(),
-            wrap: true,
-            border: None,
-            padding: 0,
-        }
-    }
-
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    pub fn token(mut self, token: StyleToken, theme: Theme) -> Self {
-        self.style = token.resolve(theme);
-        self
-    }
-
-    pub fn wrap(mut self, wrap: bool) -> Self {
-        self.wrap = wrap;
-        self
-    }
-
-    pub fn bordered(mut self, style: Style) -> Self {
-        self.border = Some(style);
-        self
-    }
-
-    pub fn padding(mut self, padding: u16) -> Self {
-        self.padding = padding;
-        self
-    }
-
-    fn chrome_width(&self) -> u16 {
-        let border = u16::from(self.border.is_some()) * 2;
-        border.saturating_add(self.padding.saturating_mul(2))
-    }
-
-    fn chrome_height(&self) -> u16 {
-        self.chrome_width()
-    }
-}
-
-impl Component for Paragraph {
-    fn measure(&self, constraints: Constraints) -> Size {
-        let chrome_width = self.chrome_width();
-        let chrome_height = self.chrome_height();
-        let content_width = constraints.max_width.saturating_sub(chrome_width).max(1);
-        let content_height = if self.wrap {
-            wrapped_height(&self.lines, content_width)
-        } else {
-            self.lines.len().max(1).min(u16::MAX as usize) as u16
-        };
-        Size {
-            width: self
-                .lines
-                .iter()
-                .map(line_width)
-                .max()
-                .unwrap_or_default()
-                .saturating_add(chrome_width as usize)
-                .min(constraints.max_width as usize) as u16,
-            height: content_height
-                .saturating_add(chrome_height)
-                .min(constraints.max_height),
-        }
-    }
-
-    fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let inner = if let Some(border_style) = self.border {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .padding(Padding::uniform(self.padding))
-                .style(self.style);
-            let inner = block.inner(area);
-            block.render(area, buffer);
-            inner
-        } else {
-            Rect::new(
-                area.x.saturating_add(self.padding),
-                area.y.saturating_add(self.padding),
-                area.width.saturating_sub(self.padding.saturating_mul(2)),
-                area.height.saturating_sub(self.padding.saturating_mul(2)),
-            )
-        };
-
-        let mut paragraph = RatatuiParagraph::new(self.lines.clone()).style(self.style);
-        if self.wrap {
-            paragraph = paragraph.wrap(Wrap { trim: false });
-        }
-        paragraph.render(inner, buffer);
-    }
-}
-
-pub struct Panel {
-    child: Box<dyn Component>,
-    style: Style,
-    border: Option<Style>,
-    borders: Borders,
-    padding: Padding,
-}
-
-impl Panel {
-    pub fn new(child: impl Component + 'static) -> Self {
-        Self {
-            child: Box::new(child),
-            style: Style::default(),
-            border: None,
-            borders: Borders::ALL,
-            padding: Padding::ZERO,
-        }
-    }
-
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-
-    pub fn bordered(mut self, style: Style) -> Self {
-        self.border = Some(style);
-        self
-    }
-
-    pub fn borders(mut self, borders: Borders) -> Self {
-        self.borders = borders;
-        self
-    }
-
-    pub fn padding(mut self, padding: u16) -> Self {
-        self.padding = Padding::uniform(padding);
-        self
-    }
-
-    pub fn padding_horizontal(mut self, padding: u16) -> Self {
-        self.padding.left = padding;
-        self.padding.right = padding;
-        self
-    }
-
-    pub fn padding_vertical(mut self, padding: u16) -> Self {
-        self.padding.top = padding;
-        self.padding.bottom = padding;
-        self
-    }
-
-    fn chrome_width(&self) -> u16 {
-        let border = u16::from(self.borders.contains(Borders::LEFT))
-            + u16::from(self.borders.contains(Borders::RIGHT));
-        border
-            .saturating_add(self.padding.left)
-            .saturating_add(self.padding.right)
-    }
-
-    fn chrome_height(&self) -> u16 {
-        let border = u16::from(self.borders.contains(Borders::TOP))
-            + u16::from(self.borders.contains(Borders::BOTTOM));
-        border
-            .saturating_add(self.padding.top)
-            .saturating_add(self.padding.bottom)
-    }
-}
-
-impl Component for Panel {
-    fn measure(&self, constraints: Constraints) -> Size {
-        let chrome_width = self.chrome_width();
-        let chrome_height = self.chrome_height();
-        let content = self.child.measure(Constraints::new(
-            constraints.max_width.saturating_sub(chrome_width).max(1),
-            constraints.max_height.saturating_sub(chrome_height).max(1),
-        ));
-        Size {
-            width: content
-                .width
-                .saturating_add(chrome_width)
-                .min(constraints.max_width),
-            height: content
-                .height
-                .saturating_add(chrome_height)
-                .min(constraints.max_height),
-        }
-    }
-
-    fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let inner = if let Some(border_style) = self.border {
-            let block = Block::default()
-                .borders(self.borders)
-                .border_style(border_style)
-                .padding(self.padding)
-                .style(self.style);
-            let inner = block.inner(area);
-            block.render(area, buffer);
-            inner
-        } else {
-            Rect::new(
-                area.x.saturating_add(self.padding.left),
-                area.y.saturating_add(self.padding.top),
-                area.width
-                    .saturating_sub(self.padding.left.saturating_add(self.padding.right)),
-                area.height
-                    .saturating_sub(self.padding.top.saturating_add(self.padding.bottom)),
-            )
-        };
-        self.child.render(inner, buffer);
     }
 }
 
@@ -489,7 +168,7 @@ impl Column {
         self
     }
 
-    pub fn gap(mut self, gap: u16) -> Self {
+    pub const fn gap(mut self, gap: u16) -> Self {
         self.gap = gap;
         self
     }
@@ -503,45 +182,36 @@ impl Default for Column {
 
 impl Component for Column {
     fn measure(&self, constraints: Constraints) -> Size {
-        let sizes = self
-            .children
-            .iter()
-            .map(|child| child.measure(constraints))
-            .collect::<Vec<_>>();
-        Size {
-            width: sizes.iter().map(|size| size.width).max().unwrap_or(0),
-            height: sizes
-                .iter()
-                .map(|size| size.height)
-                .fold(0, u16::saturating_add)
-                .saturating_add(
-                    self.gap
-                        .saturating_mul(self.children.len().saturating_sub(1) as u16),
-                )
-                .min(constraints.max_height),
+        let mut width: u16 = 0;
+        let mut height: u16 = 0;
+        for (index, child) in self.children.iter().enumerate() {
+            let size = child.measure(constraints);
+            width = width.max(size.width);
+            height = height.saturating_add(size.height);
+            if index > 0 {
+                height = height.saturating_add(self.gap);
+            }
         }
+        Size::new(
+            width.min(constraints.max_width),
+            height.min(constraints.max_height),
+        )
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let mut constraints = Vec::with_capacity(self.children.len() * 2);
+        let mut y = area.y;
         for (index, child) in self.children.iter().enumerate() {
-            let size = child.measure(Constraints::new(area.width, area.height));
-            constraints.push(Constraint::Length(size.height));
-            if index + 1 < self.children.len() {
-                constraints.push(Constraint::Length(self.gap));
+            if index > 0 {
+                y = y.saturating_add(self.gap);
             }
-        }
-        let regions = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(area);
-        let mut region_index = 0;
-        for child in &self.children {
-            child.render(regions[region_index], buffer);
-            region_index += 1;
-            if region_index < regions.len() && region_index < self.children.len() * 2 {
-                region_index += 1;
+            if y >= area.y.saturating_add(area.height) {
+                break;
             }
+            let remaining = area.y.saturating_add(area.height).saturating_sub(y);
+            let size = child.measure(Constraints::new(area.width, remaining));
+            let child_area = Rect::new(area.x, y, area.width, size.height.min(remaining));
+            child.render(child_area, buffer);
+            y = y.saturating_add(child_area.height);
         }
     }
 }
@@ -564,7 +234,7 @@ impl Row {
         self
     }
 
-    pub fn gap(mut self, gap: u16) -> Self {
+    pub const fn gap(mut self, gap: u16) -> Self {
         self.gap = gap;
         self
     }
@@ -578,51 +248,42 @@ impl Default for Row {
 
 impl Component for Row {
     fn measure(&self, constraints: Constraints) -> Size {
-        let sizes = self
-            .children
-            .iter()
-            .map(|child| child.measure(constraints))
-            .collect::<Vec<_>>();
-        Size {
-            width: sizes
-                .iter()
-                .map(|size| size.width)
-                .fold(0, u16::saturating_add)
-                .saturating_add(
-                    self.gap
-                        .saturating_mul(self.children.len().saturating_sub(1) as u16),
-                )
-                .min(constraints.max_width),
-            height: sizes.iter().map(|size| size.height).max().unwrap_or(0),
+        let mut width: u16 = 0;
+        let mut height: u16 = 0;
+        for (index, child) in self.children.iter().enumerate() {
+            let size = child.measure(constraints);
+            width = width.saturating_add(size.width);
+            height = height.max(size.height);
+            if index > 0 {
+                width = width.saturating_add(self.gap);
+            }
         }
+        Size::new(
+            width.min(constraints.max_width),
+            height.min(constraints.max_height),
+        )
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let mut constraints = Vec::with_capacity(self.children.len() * 2);
+        let mut x = area.x;
         for (index, child) in self.children.iter().enumerate() {
-            let size = child.measure(Constraints::new(area.width, area.height));
-            constraints.push(Constraint::Length(size.width));
-            if index + 1 < self.children.len() {
-                constraints.push(Constraint::Length(self.gap));
+            if index > 0 {
+                x = x.saturating_add(self.gap);
             }
-        }
-        let regions = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints)
-            .split(area);
-        let mut region_index = 0;
-        for child in &self.children {
-            child.render(regions[region_index], buffer);
-            region_index += 1;
-            if region_index < regions.len() && region_index < self.children.len() * 2 {
-                region_index += 1;
+            if x >= area.x.saturating_add(area.width) {
+                break;
             }
+            let remaining = area.x.saturating_add(area.width).saturating_sub(x);
+            let size = child.measure(Constraints::new(remaining, area.height));
+            let child_area = Rect::new(x, area.y, size.width.min(remaining), area.height);
+            child.render(child_area, buffer);
+            x = x.saturating_add(child_area.width);
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HorizontalAlign {
+pub enum HorizontalAlignment {
     Left,
     Center,
     Right,
@@ -630,28 +291,14 @@ pub enum HorizontalAlign {
 
 pub struct Align {
     child: Box<dyn Component>,
-    horizontal: HorizontalAlign,
+    alignment: HorizontalAlignment,
 }
 
 impl Align {
-    pub fn left(child: impl Component + 'static) -> Self {
+    pub fn new(child: impl Component + 'static, alignment: HorizontalAlignment) -> Self {
         Self {
             child: Box::new(child),
-            horizontal: HorizontalAlign::Left,
-        }
-    }
-
-    pub fn center(child: impl Component + 'static) -> Self {
-        Self {
-            child: Box::new(child),
-            horizontal: HorizontalAlign::Center,
-        }
-    }
-
-    pub fn right(child: impl Component + 'static) -> Self {
-        Self {
-            child: Box::new(child),
-            horizontal: HorizontalAlign::Right,
+            alignment,
         }
     }
 }
@@ -665,127 +312,203 @@ impl Component for Align {
         let size = self
             .child
             .measure(Constraints::new(area.width, area.height));
-        let width = size.width.min(area.width);
-        let x = match self.horizontal {
-            HorizontalAlign::Left => area.x,
-            HorizontalAlign::Center => area.x + area.width.saturating_sub(width) / 2,
-            HorizontalAlign::Right => area.x + area.width.saturating_sub(width),
+        let x = match self.alignment {
+            HorizontalAlignment::Left => area.x,
+            HorizontalAlignment::Center => area
+                .x
+                .saturating_add(area.width.saturating_sub(size.width) / 2),
+            HorizontalAlignment::Right => {
+                area.x.saturating_add(area.width.saturating_sub(size.width))
+            }
         };
         self.child
-            .render(Rect::new(x, area.y, width, area.height), buffer);
+            .render(Rect::new(x, area.y, size.width, area.height), buffer);
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpacerAxis {
-    Horizontal,
-    Vertical,
 }
 
 pub struct Spacer {
-    axis: SpacerAxis,
-    amount: u16,
+    size: Size,
+    style: Style,
 }
 
 impl Spacer {
-    pub fn horizontal(amount: u16) -> Self {
+    pub const fn new(width: u16, height: u16) -> Self {
         Self {
-            axis: SpacerAxis::Horizontal,
-            amount,
+            size: Size::new(width, height),
+            style: Style::new(),
         }
     }
 
-    pub fn vertical(amount: u16) -> Self {
-        Self {
-            axis: SpacerAxis::Vertical,
-            amount,
-        }
+    pub const fn height(height: u16) -> Self {
+        Self::new(0, height)
+    }
+
+    pub const fn width(width: u16) -> Self {
+        Self::new(width, 0)
+    }
+
+    pub const fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
     }
 }
 
 impl Component for Spacer {
     fn measure(&self, constraints: Constraints) -> Size {
-        match self.axis {
-            SpacerAxis::Horizontal => Size {
-                width: self.amount.min(constraints.max_width),
-                height: 1.min(constraints.max_height),
-            },
-            SpacerAxis::Vertical => Size {
-                width: 1.min(constraints.max_width),
-                height: self.amount.min(constraints.max_height),
-            },
-        }
+        Size::new(
+            self.size.width.min(constraints.max_width),
+            self.size.height.min(constraints.max_height),
+        )
     }
 
-    fn render(&self, _area: Rect, _buffer: &mut Buffer) {}
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        if self.style != Style::default() {
+            buffer.set_style(area, self.style);
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuleAxis {
-    Horizontal,
-    Vertical,
+pub struct Text {
+    lines: Vec<Line<'static>>,
+    wrap: bool,
 }
 
-pub struct Rule {
-    axis: RuleAxis,
-    style: Style,
-    symbol: &'static str,
-}
-
-impl Rule {
-    pub fn horizontal(style: Style) -> Self {
+impl Text {
+    pub fn new(text: impl Into<String>) -> Self {
         Self {
-            axis: RuleAxis::Horizontal,
-            style,
-            symbol: "─",
+            lines: text
+                .into()
+                .split('\n')
+                .map(|line| Line::from(line.to_string()))
+                .collect(),
+            wrap: false,
         }
     }
 
-    pub fn vertical(style: Style) -> Self {
+    pub fn styled(text: impl Into<String>, style: Style) -> Self {
         Self {
-            axis: RuleAxis::Vertical,
-            style,
-            symbol: "│",
+            lines: vec![Line::from(Span::styled(text.into(), style))],
+            wrap: false,
         }
     }
 
-    pub fn symbol(mut self, symbol: &'static str) -> Self {
-        self.symbol = symbol;
+    pub fn lines(lines: Vec<Line<'static>>) -> Self {
+        Self { lines, wrap: false }
+    }
+
+    pub fn wrap(mut self, wrap: bool) -> Self {
+        self.wrap = wrap;
         self
     }
 }
 
-impl Component for Rule {
+impl Component for Text {
     fn measure(&self, constraints: Constraints) -> Size {
-        match self.axis {
-            RuleAxis::Horizontal => Size {
-                width: constraints.max_width,
-                height: 1.min(constraints.max_height),
-            },
-            RuleAxis::Vertical => Size {
-                width: 1.min(constraints.max_width),
-                height: constraints.max_height,
-            },
-        }
+        let width = self.lines.iter().map(line_width).max().unwrap_or(0);
+        let height = if self.wrap {
+            self.lines
+                .iter()
+                .map(|line| wrapped_line_height(line, constraints.max_width))
+                .sum::<usize>()
+        } else {
+            self.lines.len().max(1)
+        };
+        Size::new(
+            (width as u16).min(constraints.max_width),
+            (height as u16).min(constraints.max_height),
+        )
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        match self.axis {
-            RuleAxis::Horizontal => {
-                for x in area.left()..area.right() {
-                    buffer[(x, area.top())]
-                        .set_symbol(self.symbol)
-                        .set_style(self.style);
-                }
-            }
-            RuleAxis::Vertical => {
-                for y in area.top()..area.bottom() {
-                    buffer[(area.left(), y)]
-                        .set_symbol(self.symbol)
-                        .set_style(self.style);
-                }
-            }
+        let mut paragraph = RatatuiParagraph::new(self.lines.clone());
+        if self.wrap {
+            paragraph = paragraph.wrap(Wrap { trim: false });
         }
+        paragraph.render(area, buffer);
+    }
+}
+
+pub struct Paragraph {
+    lines: Vec<Line<'static>>,
+    style: Style,
+    block: Option<Block<'static>>,
+    wrap: bool,
+}
+
+impl Paragraph {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            lines: text
+                .into()
+                .split('\n')
+                .map(|line| Line::from(line.to_string()))
+                .collect(),
+            style: Style::default(),
+            block: None,
+            wrap: true,
+        }
+    }
+
+    pub fn from_lines(lines: Vec<Line<'static>>) -> Self {
+        Self {
+            lines,
+            style: Style::default(),
+            block: None,
+            wrap: true,
+        }
+    }
+
+    pub const fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn block(mut self, block: Block<'static>) -> Self {
+        self.block = Some(block);
+        self
+    }
+
+    pub const fn wrap(mut self, wrap: bool) -> Self {
+        self.wrap = wrap;
+        self
+    }
+}
+
+impl Component for Paragraph {
+    fn measure(&self, constraints: Constraints) -> Size {
+        let (horizontal, vertical) = self
+            .block
+            .as_ref()
+            .map_or((0, 0), |block| block_dimensions(block, constraints));
+        let content_width = constraints.max_width.saturating_sub(horizontal);
+        let content_height = if self.wrap {
+            self.lines
+                .iter()
+                .map(|line| wrapped_line_height(line, content_width))
+                .sum::<usize>()
+        } else {
+            self.lines.len().max(1)
+        } as u16;
+        let content_width_used = self.lines.iter().map(line_width).max().unwrap_or(0) as u16;
+        Size::new(
+            content_width_used
+                .saturating_add(horizontal)
+                .min(constraints.max_width),
+            content_height
+                .saturating_add(vertical)
+                .min(constraints.max_height),
+        )
+    }
+
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        let mut paragraph = RatatuiParagraph::new(self.lines.clone()).style(self.style);
+        if self.wrap {
+            paragraph = paragraph.wrap(Wrap { trim: false });
+        }
+        if let Some(block) = self.block.clone() {
+            paragraph = paragraph.block(block);
+        }
+        paragraph.render(area, buffer);
     }
 }
 
@@ -808,179 +531,286 @@ impl InputLine {
         }
     }
 
-    pub fn styles(mut self, text_style: Style, cursor_style: Style) -> Self {
-        self.text_style = text_style;
-        self.cursor_style = cursor_style;
+    pub const fn text_style(mut self, style: Style) -> Self {
+        self.text_style = style;
+        self
+    }
+
+    pub const fn cursor_style(mut self, style: Style) -> Self {
+        self.cursor_style = style;
         self
     }
 }
 
 impl Component for InputLine {
     fn measure(&self, constraints: Constraints) -> Size {
-        let width = line_width(&self.prefix)
-            .saturating_add(self.text.width())
-            .min(constraints.max_width as usize) as u16;
-        let height = wrapped_height(&[self.input_line()], constraints.max_width);
-        Size {
-            width,
-            height: height.min(constraints.max_height),
-        }
+        let text_width = self.text.width() as u16;
+        Size::new(
+            (line_width(&self.prefix) as u16)
+                .saturating_add(text_width)
+                .min(constraints.max_width),
+            1.min(constraints.max_height),
+        )
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer) {
-        let line = self.input_line();
-        RatatuiParagraph::new(line)
-            .wrap(Wrap { trim: false })
-            .render(area, buffer);
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        let cursor = self.cursor.min(graphemes.len());
+        let mut spans = self.prefix.spans.clone();
+        spans.push(Span::styled(graphemes[..cursor].concat(), self.text_style));
+        if cursor < graphemes.len() {
+            spans.push(Span::styled(
+                graphemes[cursor].to_string(),
+                self.cursor_style,
+            ));
+            spans.push(Span::styled(
+                graphemes[cursor + 1..].concat(),
+                self.text_style,
+            ));
+        } else {
+            spans.push(Span::styled(" ", self.cursor_style));
+        }
+        RatatuiParagraph::new(Line::from(spans)).render(area, buffer);
+    }
+}
 
-        if area.width == 0 || area.height == 0 {
+pub struct RatatuiComponent<W> {
+    widget: W,
+    size: Size,
+}
+
+impl<W> RatatuiComponent<W> {
+    pub fn new(widget: W, size: Size) -> Self {
+        Self { widget, size }
+    }
+}
+
+impl<W: Widget + Clone> Component for RatatuiComponent<W> {
+    fn measure(&self, constraints: Constraints) -> Size {
+        Size::new(
+            self.size.width.min(constraints.max_width),
+            self.size.height.min(constraints.max_height),
+        )
+    }
+
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        self.widget.clone().render(area, buffer);
+    }
+}
+
+pub fn ratatui_component<W: Widget + Clone>(widget: W, size: Size) -> RatatuiComponent<W> {
+    RatatuiComponent::new(widget, size)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PopupItem {
+    pub label: String,
+    pub detail: String,
+}
+
+impl PopupItem {
+    pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            detail: detail.into(),
+        }
+    }
+}
+
+pub struct SuggestionPopup {
+    title: String,
+    footer: String,
+    items: Vec<PopupItem>,
+    selected: usize,
+    theme: Theme,
+}
+
+impl SuggestionPopup {
+    pub fn new(
+        title: impl Into<String>,
+        footer: impl Into<String>,
+        items: Vec<PopupItem>,
+        selected: usize,
+        theme: Theme,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            footer: footer.into(),
+            items,
+            selected,
+            theme,
+        }
+    }
+}
+
+impl Component for SuggestionPopup {
+    fn measure(&self, constraints: Constraints) -> Size {
+        let content_width = self
+            .items
+            .iter()
+            .map(|item| {
+                2 + item.label.width()
+                    + if item.detail.is_empty() {
+                        0
+                    } else {
+                        2 + item.detail.width()
+                    }
+            })
+            .chain(std::iter::once(self.title.width()))
+            .chain(std::iter::once(self.footer.width()))
+            .max()
+            .unwrap_or(1);
+        Size::new(
+            (content_width as u16)
+                .saturating_add(4)
+                .min(constraints.max_width),
+            (self.items.len() as u16)
+                .saturating_add(3)
+                .min(constraints.max_height),
+        )
+    }
+
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        if area.width < 2 || area.height < 2 {
             return;
         }
-        let prefix_width = line_width(&self.prefix);
-        let text_width = self
-            .text
-            .graphemes(true)
-            .take(self.cursor.min(self.text.graphemes(true).count()))
-            .map(UnicodeWidthStr::width)
-            .sum::<usize>();
-        let offset = prefix_width.saturating_add(text_width);
-        let x = (offset % area.width as usize) as u16;
-        let y = (offset / area.width as usize) as u16;
-        if y < area.height {
-            buffer[(area.x + x, area.y + y)].set_style(self.cursor_style);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.border)
+            .style(self.theme.surface)
+            .padding(Padding::horizontal(1))
+            .title(Span::styled(&self.title, self.theme.accent));
+        let inner = block.inner(area);
+        block.render(area, buffer);
+
+        let mut lines = Vec::with_capacity(self.items.len() + 1);
+        for (index, item) in self.items.iter().enumerate() {
+            let style = if index == self.selected {
+                self.theme.selection
+            } else {
+                self.theme.value
+            };
+            let marker = Span::styled("> ", self.theme.accent);
+            let label = Span::styled(item.label.clone(), style);
+            let detail = if item.detail.is_empty() {
+                Span::raw("")
+            } else {
+                Span::styled(format!("  {}", item.detail), self.theme.muted)
+            };
+            lines.push(Line::from(vec![marker, label, detail]));
         }
+        lines.push(Line::from(Span::styled(&self.footer, self.theme.muted)));
+
+        RatatuiParagraph::new(lines)
+            .style(self.theme.surface)
+            .render(inner, buffer);
     }
-}
-
-impl InputLine {
-    fn input_line(&self) -> Line<'static> {
-        let mut spans = self.prefix.spans.clone();
-        spans.push(Span::styled(self.text.clone(), self.text_style));
-        Line::from(spans)
-    }
-}
-
-pub fn badge_component(label: impl Into<String>, theme: Theme) -> Panel {
-    let label = label.into();
-    Panel::new(
-        Paragraph::from_lines(vec![Line::from(Span::styled(label, theme.accent))]).wrap(false),
-    )
-    .style(theme.surface)
-    .bordered(theme.border)
-    .borders(Borders::LEFT | Borders::RIGHT)
-    .padding_horizontal(1)
-}
-
-pub fn badge_scene(label: impl Into<String>) -> Scene {
-    Scene::new(Align::right(badge_component(label, Theme::default())))
 }
 
 fn line_width(line: &Line<'_>) -> usize {
     line.spans
         .iter()
-        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+        .map(|span| span.content.as_ref().width())
         .sum()
 }
 
-fn wrapped_height(lines: &[Line<'_>], width: u16) -> u16 {
-    let width = width.max(1) as usize;
-    lines
-        .iter()
-        .map(|line| line_width(line).max(1).div_ceil(width))
-        .fold(0usize, usize::saturating_add)
-        .max(1)
-        .min(u16::MAX as usize) as u16
+fn wrapped_line_height(line: &Line<'_>, width: u16) -> usize {
+    if width == 0 {
+        return 1;
+    }
+    line_width(line).max(1).div_ceil(width as usize)
+}
+
+fn block_dimensions(block: &Block<'_>, constraints: Constraints) -> (u16, u16) {
+    let inner = block.inner(Rect::new(
+        0,
+        0,
+        constraints.max_width,
+        constraints.max_height,
+    ));
+    (
+        constraints.max_width.saturating_sub(inner.width),
+        constraints.max_height.saturating_sub(inner.height),
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{
-        buffer::Buffer,
-        layout::Rect,
-        style::Color,
-        widgets::{Block, Borders},
-    };
+    use super::*;
 
-    use super::{
-        Align, Component, Constraints, InputLine, Paragraph, Rule, Scene, Size, StyleToken, Text,
-        Theme, badge_component, ratatui_component,
-    };
-
-    #[test]
-    fn paragraph_measures_multiline_wrapped_content() {
-        let paragraph = Paragraph::new("hello\nworld");
-        assert_eq!(
-            paragraph.measure(Constraints::new(20, 20)),
-            Size {
-                width: 5,
-                height: 2
-            }
-        );
+    fn snapshot(scene: &Scene, width: u16) -> String {
+        let size = scene.measure(Constraints::new(width, 20));
+        let area = Rect::new(0, 0, size.width.max(1), size.height.max(1));
+        let mut buffer = Buffer::empty(area);
+        scene.render(area, &mut buffer);
+        (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buffer.cell((x, y)).unwrap().symbol().to_string())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
-    fn right_aligned_component_uses_the_available_width() {
-        let scene = Scene::new(Align::right(Text::token(
-            "Keel",
-            StyleToken::Accent,
+    fn column_and_row_measure_natural_size() {
+        let scene = Scene::new(
+            Column::new().child(Text::new("Keel")).child(
+                Row::new()
+                    .gap(1)
+                    .child(Text::new("a"))
+                    .child(Text::new("bc")),
+            ),
+        );
+        assert_eq!(scene.measure(Constraints::new(80, 20)), Size::new(4, 2));
+    }
+
+    #[test]
+    fn popup_wraps_to_content_and_renders_selection() {
+        let scene = Scene::new(SuggestionPopup::new(
+            "suggestions",
+            "1/2; Tab to accept",
+            vec![
+                PopupItem::new("--files-with-matches", ""),
+                PopupItem::new("--files-without-match", ""),
+            ],
+            0,
             Theme::default(),
-        )));
-        let area = Rect::new(0, 0, 10, 1);
-        let mut buffer = Buffer::empty(area);
-        scene.render(area, &mut buffer);
-
-        assert_eq!(buffer[(6, 0)].symbol(), "K");
-        assert_eq!(buffer[(6, 0)].fg, Color::Rgb(125, 211, 252));
-    }
-
-    #[test]
-    fn input_cursor_is_painted_at_the_wrapped_grapheme_position() {
-        let input = InputLine::new("> ", "ab界", 2);
-        let area = Rect::new(0, 0, 4, 2);
-        let mut buffer = Buffer::empty(area);
-        input.render(area, &mut buffer);
-
-        assert_eq!(buffer[(0, 1)].bg, Theme::default().cursor.bg.unwrap());
-    }
-
-    #[test]
-    fn badge_component_stays_one_row_tall() {
-        let size = badge_component("Keel", Theme::default()).measure(Constraints::new(80, 20));
-        assert_eq!(size.height, 1);
-    }
-
-    #[test]
-    fn arbitrary_ratatui_widget_can_join_a_scene() {
-        let scene = Scene::new(ratatui_component(
-            Block::default().borders(Borders::ALL),
-            Size {
-                width: 4,
-                height: 3,
-            },
         ));
-        let area = Rect::new(0, 0, 4, 3);
-        let mut buffer = Buffer::empty(area);
-        scene.render(area, &mut buffer);
-
-        assert_eq!(buffer[(0, 0)].symbol(), "┌");
-        assert_eq!(scene.measure(80).height, 3);
+        let size = scene.measure(Constraints::new(80, 20));
+        assert_eq!(size, Size::new(27, 5));
+        let rendered = snapshot(&scene, 80);
+        assert!(rendered.contains("suggestions"));
+        assert!(rendered.contains("--files-with-matches"));
+        assert!(rendered.contains("1/2; Tab to accept"));
     }
 
     #[test]
-    fn horizontal_rule_expands_to_the_available_width() {
-        let rule = Rule::horizontal(Theme::default().border);
-        let area = Rect::new(0, 0, 6, 1);
-        let mut buffer = Buffer::empty(area);
+    fn popup_visual_snapshot_is_stable() {
+        let scene = Scene::new(SuggestionPopup::new(
+            "Keel suggestions",
+            "1/2 · Up/Down to select",
+            vec![
+                PopupItem::new("--files-with-matches", "grep option"),
+                PopupItem::new("--files-without-match", "grep option"),
+            ],
+            0,
+            Theme::default(),
+        ));
 
-        rule.render(area, &mut buffer);
+        insta::assert_snapshot!(snapshot(&scene, 42));
+    }
 
-        assert_eq!(
-            rule.measure(Constraints::new(6, 4)),
-            Size {
-                width: 6,
-                height: 1
-            }
-        );
-        assert_eq!(buffer[(5, 0)].symbol(), "─");
+    #[test]
+    fn input_line_handles_unicode_cursor_positions() {
+        let scene = Scene::new(InputLine::new("keel> ", "a🙂é", 2));
+        assert_eq!(scene.measure(Constraints::new(80, 3)), Size::new(10, 1));
+        let rendered = snapshot(&scene, 80);
+        assert!(rendered.starts_with("keel> a🙂"));
     }
 }

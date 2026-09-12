@@ -3,8 +3,8 @@ members = [
     "crates/keel-core",
     "crates/keel-ui",
     "crates/keel-renderer",
-    "crates/keel-augment",
     "crates/keel-scheduler",
+    "crates/keel-module",
 ]
 resolver = "2"
 
@@ -14,6 +14,9 @@ license = "MIT OR Apache-2.0"
 version = "0.1.0"
 
 [workspace.dependencies]
+insta = "1.43"
 ratatui = { version = "0.29", default-features = false }
+thiserror = "2"
+tracing = "0.1"
 unicode-segmentation = "1.12"
 unicode-width = "0.2"

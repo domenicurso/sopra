@@ -1,40 +1,17 @@
-# Renderer Contract
+# Renderer
 
-keel-ui provides a small declarative composition layer over ratatui:
+The renderer has one pipeline:
 
-```rust
-pub trait Component {
-    fn measure(&self, constraints: Constraints) -> Size;
-    fn render(&self, area: Rect, buffer: &mut ratatui::buffer::Buffer);
-}
+```text
+Component tree -> measure -> ratatui Buffer -> FrameDiff -> RenderTransaction -> ANSI bytes
 ```
 
-Scene owns the root component. Built-ins cover the common prompt surfaces,
-while ratatui_component lets a caller place any cloneable ratatui Widget with
-an explicit measured size. This keeps prompt composition generic: adding a
-status panel, separator, inline hint, or future overlay adds a component tree
-child rather than another prompt-specific renderer branch.
+`keel-ui` is responsible for composition and measurement. A scene reports its natural size under terminal constraints, then paints into a ratatui `Buffer`. The renderer never interprets prompt strings or asks ZLE to display a second prompt.
 
-The renderer allocates an offscreen ratatui Buffer at the requested terminal
-width and the scene's measured height. RenderedFrame retains the complete
-buffer, used content bounds, and measured size. Renderer::diff compares the
-current frame with the previous one and reports changed cells, changed rows,
-and rows that must be cleared when the scene shrinks.
+Every frame has a surface-local buffer and a terminal-relative origin column. The origin is the host cursor column, and the first painted row is the row immediately below the saved host cursor. This coordinate system makes an autocomplete box an ordinary child surface while keeping the host prompt untouched.
 
-For the zsh adapter, Renderer::to_zsh_prompt serializes the used rows as a
-compact prompt fragment, preserving per-cell foreground/background colors and
-bold styling with zsh %{...%} control markers. Rows are trimmed independently,
-so a full-width header cannot introduce trailing spaces into the actual input
-prefix. Renderer::to_ansi is the raw terminal form for future region-scoped
-patching. Neither path clears the screen, enters the alternate screen, moves
-the cursor, or takes ownership of scrollback. The augmentation service returns
-separate left and right prompt surfaces plus native cursor and syntax
-decorations.
+The diff compares cells, dimensions, and origin. Changed rows are erased and repainted, a moved surface first clears its old origin, and rows that disappear are explicitly erased. An unchanged frame produces no payload unless the caller requests a full repaint. The native module requests a full repaint after each ZLE redraw because its pre-redraw phase has already removed the old surface from the terminal.
 
-The default scene is a right-aligned status badge built from Row, Text, Panel,
-and Align. The live POC profiles add a Rust-composed multiline prompt header,
-a full-width Rule, syntax spans, and a direct ratatui LineGauge widget. Their
-status is derived from the live host snapshot, and the persistent server
-caches an unchanged snapshot instead of repainting it. Completion popups and
-richer semantic overlays remain later features because they need a host-safe
-placement contract that does not fight ZLE's own cursor and wrapping model.
+The ANSI writer only emits save/restore cursor, cursor visibility, horizontal column moves, relative row moves, targeted erase operations, style changes, and row text. It never emits a screen clear, alternate-screen transition, scrollback operation, or write outside the surface rows.
+
+The current MVP renders a rounded, styled suggestion box below the line. The component API already accepts generic ratatui widgets, so later completion panels, status surfaces, and cursor-anchored overlays can share the same measurement, buffer, diff, and patch pipeline without another terminal writer.

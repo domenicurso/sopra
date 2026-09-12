@@ -1,62 +1,25 @@
-# Augmentation Architecture
+# Architecture
 
-Keel augments a live zsh prompt instead of becoming a second terminal
-application. ZLE remains the only owner of interactive line editing and
-terminal redisplay, so standard typing, cursor movement, wrapping, resize,
-Ctrl-C, Enter, history, and command execution keep their existing semantics.
+Keel augments an interactive Zsh session instead of replacing it. The stock shell owns the visible prompt and the editable line, while Keel owns only the optional surface it paints into the terminal. This boundary lets normal Zsh behavior continue to handle history, cursor movement, accept-line, command execution, output, and terminal scrollback.
 
-The shell boundary is a single persistent renderer process:
+## Ownership
 
-```text
-line-pre-redraw / precmd / preexec
-                |
-                v
-      tab-delimited HostSnapshot
-                |
-                v
-      keel-augment --server
-        keel-core -> keel-ui -> ratatui Buffer -> keel-renderer
-                |
-                v
-      zsh host decoration plan
-   PROMPT/RPROMPT       cursor/syntax spans
-```
+`zsh/keel.zsh` loads the module and installs the two ZLE lifecycle hooks. It contains no editor state machine, redraw loop, process manager, or prompt projection.
 
-HostSnapshot contains the observable ZLE buffer, cursor, terminal dimensions,
-keymap, current working directory, and last command status. Rust treats that
-data as input to the augmentation scene; it does not copy the line into a
-competing editor. The long-lived process keeps its renderer, previous frame,
-scheduler clock, and statistics between requests, which removes process
-startup from the keypress path and makes unchanged snapshots cheap cache hits.
+The C shim is the only code that knows the Zsh ABI. It registers the module and line hooks, receives the patched ZLE redisplay callbacks, snapshots the host line and terminal geometry, and writes Rust's returned byte payload to `SHTTY`. It does not decide layout or compose UI.
 
-keel-ui owns a generic component tree. Text, Paragraph, InputLine, Row,
-Column, Align, Spacer, and Panel are convenience components, and
-ratatui_component adapts cloneable ratatui Widget values directly. Each component
-measures itself under constraints and renders into the same offscreen
-ratatui Buffer; keel-renderer then finds the used content bounds, serializes
-styles into ANSI controls, and wraps controls with zsh %{...%} markers so
-zsh's width accounting remains correct.
+`keel-core` normalizes host data and keeps the session model. Its buffer and cursor types are grapheme-aware, but the MVP observes the line Zsh edits rather than trying to replace ZLE's editing engine.
 
-The shell adapter installs only line-pre-redraw, line-finish, precmd, and
-preexec hooks. It never wraps built-in ZLE widgets or mutates BUFFER or CURSOR.
-When a returned prompt surface changes, it asks ZLE for its normal prompt
-refresh; a re-entry guard prevents the refresh from recursively triggering
-another loop. The only direct terminal sequence is an optional zero-width
-cursor-style change such as blink-block or bar. It does not move the cursor or
-write screen cells, so it cannot desynchronise ZLE's coordinate model.
+`keel-ui` composes a measured component tree from ratatui-compatible components. `keel-renderer` turns that tree into an offscreen ratatui buffer, compares it with the previous frame, and encodes a bounded region transaction. `keel-scheduler` defines invalidation and frame timing without introducing a background runtime.
 
-The optional `KEEL_AUGMENT_CURSOR_MODE=highlight` path adds one
-`region_highlight` span for the grapheme under the cursor. The span is removed
-before each replacement and on disable, which lets other zsh highlighters keep
-their own entries. This is the practical cursor-relative layer: Rust computes
-the decoration, while zsh applies it through the host's own redisplay API.
+## Redisplay lifecycle
 
-Raw cursor movement remains intentionally outside the production contract.
-An ANSI transaction that saves the cursor, paints cells, and restores it can
-be added later for a narrowly scoped widget, but putting that transaction in
-`RPROMPT` would make prompt-width accounting and ZLE redisplay undefined.
+The Keel-enabled Zsh calls the module before its normal redraw. Keel clears the previous surface using cursor save/restore and targeted row erases. Zsh then draws its ordinary prompt and editable line. The post-redraw callback receives the final visual cursor position, so Rust can anchor the next surface to the actual host cursor rather than guessing from prompt strings.
 
-The process boundary is deliberately replaceable. A future native module may
-move the same HostSnapshot, component, and rendered-fragment contracts into
-the zsh process, but it must keep zsh as the owner of editing and terminal
-semantics unless a later design proves a narrower ownership transfer is safe.
+Rust mirrors that snapshot, builds the component tree, measures it against the terminal width and row budget, paints an offscreen buffer, diffs it, and returns one ANSI payload. The payload hides the cursor while it paints, clears rows that are no longer used, restores the host cursor, and never enters the alternate screen or clears the terminal.
+
+On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Cancel and empty input likewise follow native ZLE behavior; Keel only tears down its overlay and does not print a synthetic prompt.
+
+## Build boundary
+
+The patch in `patches/zsh-5.9-keel-redraw.patch` adds a small callback ABI to a private Zsh 5.9 build. `scripts/start-keel.sh` uses that build with an isolated `ZDOTDIR`, which makes the demo reproducible without changing the user's installed shell. A stock Zsh can still run normally, but it cannot load this module because it does not export the callback symbols.

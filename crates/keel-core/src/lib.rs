@@ -1,73 +1,31 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HostSnapshot {
-    pub buffer: String,
-    pub cursor: usize,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalSize {
     pub columns: u16,
     pub rows: u16,
-    pub keymap: String,
-    pub last_status: i32,
-    pub cwd: String,
 }
 
-impl Default for HostSnapshot {
+impl TerminalSize {
+    pub const fn new(columns: u16, rows: u16) -> Self {
+        Self {
+            columns: if columns == 0 { 1 } else { columns },
+            rows: if rows == 0 { 1 } else { rows },
+        }
+    }
+}
+
+impl Default for TerminalSize {
     fn default() -> Self {
-        Self {
-            buffer: String::new(),
-            cursor: 0,
-            columns: 80,
-            rows: 24,
-            keymap: "main".to_string(),
-            last_status: 0,
-            cwd: "~".to_string(),
-        }
+        Self::new(80, 24)
     }
 }
 
-impl HostSnapshot {
-    pub fn sanitized(&self) -> Self {
-        let cursor = self.cursor.min(self.buffer.chars().count());
-        Self {
-            buffer: self.buffer.clone(),
-            cursor,
-            columns: self.columns.max(1),
-            rows: self.rows.max(1),
-            keymap: if self.keymap.is_empty() {
-                "main".to_string()
-            } else {
-                self.keymap.clone()
-            },
-            last_status: self.last_status,
-            cwd: if self.cwd.is_empty() {
-                "~".to_string()
-            } else {
-                self.cwd.clone()
-            },
-        }
-    }
-
-    pub fn character_count(&self) -> usize {
-        self.buffer.chars().count()
-    }
-
-    pub fn grapheme_count(&self) -> usize {
-        self.buffer.graphemes(true).count()
-    }
-
-    pub fn cursor_width(&self) -> usize {
-        self.buffer
-            .graphemes(true)
-            .take(self.cursor.min(self.grapheme_count()))
-            .collect::<String>()
-            .width()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditorMode {
-    Insert,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScreenPoint {
+    pub column: u16,
+    pub row: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,15 +53,28 @@ impl EditorBuffer {
         self.text.graphemes(true).count()
     }
 
+    pub fn cursor_byte_offset(&self) -> usize {
+        self.text
+            .grapheme_indices(true)
+            .nth(self.cursor)
+            .map_or(self.text.len(), |(offset, _)| offset)
+    }
+
+    pub fn cursor_width(&self) -> usize {
+        self.text
+            .graphemes(true)
+            .take(self.cursor)
+            .collect::<String>()
+            .width()
+    }
+
     pub fn insert(&mut self, value: &str) -> bool {
         if value.is_empty() {
             return false;
         }
 
-        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
-        let left = graphemes[..self.cursor].concat();
-        let right = graphemes[self.cursor..].concat();
-        self.text = format!("{left}{value}{right}");
+        let offset = self.cursor_byte_offset();
+        self.text.insert_str(offset, value);
         self.cursor += value.graphemes(true).count();
         true
     }
@@ -113,22 +84,27 @@ impl EditorBuffer {
             return false;
         }
 
-        let mut graphemes = self.text.graphemes(true).collect::<Vec<_>>();
-        graphemes.remove(self.cursor - 1);
-        self.text = graphemes.concat();
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        self.text = graphemes[..self.cursor - 1]
+            .iter()
+            .chain(graphemes[self.cursor..].iter())
+            .copied()
+            .collect();
         self.cursor -= 1;
         true
     }
 
     pub fn delete(&mut self) -> bool {
-        let count = self.grapheme_count();
-        if self.cursor >= count {
+        if self.cursor >= self.grapheme_count() {
             return false;
         }
 
-        let mut graphemes = self.text.graphemes(true).collect::<Vec<_>>();
-        graphemes.remove(self.cursor);
-        self.text = graphemes.concat();
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        self.text = graphemes[..self.cursor]
+            .iter()
+            .chain(graphemes[self.cursor + 1..].iter())
+            .copied()
+            .collect();
         true
     }
 
@@ -163,33 +139,137 @@ impl EditorBuffer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EditorEvent {
-    SyncHost(HostSnapshot),
-    Insert(String),
-    Backspace,
-    Delete,
-    MoveLeft,
-    MoveRight,
-    MoveHome,
-    MoveEnd,
-    Resize { columns: u16, rows: u16 },
-    Accept,
-    Cancel,
+pub struct HostLine {
+    pub text: String,
+    pub cursor: usize,
+}
+
+impl HostLine {
+    pub fn new(text: impl Into<String>, cursor: usize) -> Self {
+        let buffer = EditorBuffer::new(text, cursor);
+        Self {
+            text: buffer.text().to_string(),
+            cursor: buffer.cursor(),
+        }
+    }
+
+    pub fn from_codepoint_cursor(text: impl Into<String>, cursor: usize) -> Self {
+        let text = text.into();
+        let codepoint_cursor = cursor.min(text.chars().count());
+        let grapheme_cursor = text
+            .chars()
+            .take(codepoint_cursor)
+            .collect::<String>()
+            .graphemes(true)
+            .count();
+        Self::new(text, grapheme_cursor)
+    }
+
+    pub fn buffer(&self) -> EditorBuffer {
+        EditorBuffer::new(self.text.clone(), self.cursor)
+    }
+}
+
+impl Default for HostLine {
+    fn default() -> Self {
+        Self::new("", 0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EditorAction {
-    Changed,
-    Moved,
-    Resized,
-    Accepted(String),
-    Cancelled,
-    Noop,
+pub struct HostSnapshot {
+    pub line: HostLine,
+    pub terminal: TerminalSize,
+    pub cursor: ScreenPoint,
+    pub cwd: String,
+    pub keymap: String,
+    pub last_status: i32,
+    pub redisplay_generation: u64,
+}
+
+impl Default for HostSnapshot {
+    fn default() -> Self {
+        Self {
+            line: HostLine::default(),
+            terminal: TerminalSize::default(),
+            cursor: ScreenPoint::default(),
+            cwd: "~".to_string(),
+            keymap: "main".to_string(),
+            last_status: 0,
+            redisplay_generation: 0,
+        }
+    }
+}
+
+impl HostSnapshot {
+    pub fn sanitized(&self) -> Self {
+        let terminal = TerminalSize::new(self.terminal.columns, self.terminal.rows);
+        Self {
+            line: HostLine::new(self.line.text.clone(), self.line.cursor),
+            terminal,
+            cursor: ScreenPoint {
+                column: self.cursor.column.min(terminal.columns.saturating_sub(1)),
+                row: self.cursor.row.min(terminal.rows.saturating_sub(1)),
+            },
+            cwd: if self.cwd.is_empty() {
+                "~".to_string()
+            } else {
+                self.cwd.clone()
+            },
+            keymap: if self.keymap.is_empty() {
+                "main".to_string()
+            } else {
+                self.keymap.clone()
+            },
+            last_status: self.last_status,
+            redisplay_generation: self.redisplay_generation,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suggestion {
+    pub label: String,
+    pub detail: String,
+}
+
+impl Suggestion {
+    pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            detail: detail.into(),
+        }
+    }
+}
+
+pub fn suggestions_for(input: &str) -> Vec<Suggestion> {
+    let input = input.trim_end();
+    if input.is_empty() {
+        return Vec::new();
+    }
+
+    if input.ends_with("grep --matches") {
+        return vec![
+            Suggestion::new("--files-with-matches", "grep option"),
+            Suggestion::new("--files-without-match", "grep option"),
+        ];
+    }
+
+    vec![
+        Suggestion::new(format!("run {input}"), "execute this command"),
+        Suggestion::new(format!("inspect {input}"), "inspect the command"),
+        Suggestion::new(format!("search {input}"), "search related history"),
+    ]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorMode {
+    ObservingZle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CursorState {
-    pub grapheme: usize,
+    pub screen: ScreenPoint,
     pub visible: bool,
 }
 
@@ -197,181 +277,214 @@ pub struct CursorState {
 pub struct AppState {
     pub buffer: EditorBuffer,
     pub cursor: CursorState,
+    pub terminal: TerminalSize,
+    pub cwd: String,
+    pub keymap: String,
+    pub last_status: i32,
+    pub suggestions: Vec<Suggestion>,
+    pub selected_suggestion: usize,
     pub mode: EditorMode,
-    pub columns: u16,
-    pub rows: u16,
     pub dirty: bool,
+    pub redisplay_generation: u64,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::from_snapshot(&HostSnapshot::default())
+    }
 }
 
 impl AppState {
-    pub fn from_host(snapshot: HostSnapshot) -> Self {
+    pub fn from_snapshot(snapshot: &HostSnapshot) -> Self {
         let snapshot = snapshot.sanitized();
-        let buffer = EditorBuffer::new(snapshot.buffer, snapshot.cursor);
         Self {
+            buffer: snapshot.line.buffer(),
             cursor: CursorState {
-                grapheme: buffer.cursor(),
+                screen: snapshot.cursor,
                 visible: true,
             },
-            buffer,
-            mode: EditorMode::Insert,
-            columns: snapshot.columns,
-            rows: snapshot.rows,
+            terminal: snapshot.terminal,
+            cwd: snapshot.cwd,
+            keymap: snapshot.keymap,
+            last_status: snapshot.last_status,
+            suggestions: suggestions_for(&snapshot.line.text),
+            selected_suggestion: 0,
+            mode: EditorMode::ObservingZle,
             dirty: true,
+            redisplay_generation: snapshot.redisplay_generation,
         }
     }
 
+    pub fn observe(&mut self, snapshot: &HostSnapshot) -> bool {
+        let snapshot = snapshot.sanitized();
+        let next_buffer = snapshot.line.buffer();
+        let next_suggestions = suggestions_for(&snapshot.line.text);
+        let changed = self.buffer != next_buffer
+            || self.cursor.screen != snapshot.cursor
+            || self.terminal != snapshot.terminal
+            || self.cwd != snapshot.cwd
+            || self.keymap != snapshot.keymap
+            || self.last_status != snapshot.last_status
+            || self.suggestions != next_suggestions
+            || self.redisplay_generation != snapshot.redisplay_generation;
+
+        self.buffer = next_buffer;
+        self.cursor.screen = snapshot.cursor;
+        self.terminal = snapshot.terminal;
+        self.cwd = snapshot.cwd;
+        self.keymap = snapshot.keymap;
+        self.last_status = snapshot.last_status;
+        self.suggestions = next_suggestions;
+        if self.selected_suggestion >= self.suggestions.len() {
+            self.selected_suggestion = 0;
+        }
+        self.redisplay_generation = snapshot.redisplay_generation;
+        self.dirty = changed;
+        changed
+    }
+
+    pub fn selected(&self) -> Option<&Suggestion> {
+        self.suggestions.get(self.selected_suggestion)
+    }
+
+    pub fn move_selection(&mut self, delta: isize) -> bool {
+        if self.suggestions.is_empty() {
+            return false;
+        }
+
+        let len = self.suggestions.len() as isize;
+        let next = (self.selected_suggestion as isize + delta).rem_euclid(len) as usize;
+        let changed = next != self.selected_suggestion;
+        self.selected_suggestion = next;
+        self.dirty |= changed;
+        changed
+    }
+
+    pub fn clear(&mut self) -> bool {
+        let changed = !self.buffer.text().is_empty() || self.buffer.cursor() != 0;
+        self.buffer = EditorBuffer::new("", 0);
+        self.suggestions.clear();
+        self.selected_suggestion = 0;
+        self.dirty = true;
+        changed
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorEvent {
+    Begin(HostSnapshot),
+    Redisplay(HostSnapshot),
+    Resize(TerminalSize),
+    Accept,
+    Cancel,
+    Finish,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAction {
+    Redraw,
+    Accepted(String),
+    Cleared,
+    Noop,
+}
+
+impl AppState {
     pub fn apply(&mut self, event: EditorEvent) -> EditorAction {
-        let action = match event {
-            EditorEvent::SyncHost(snapshot) => self.sync_host(snapshot),
-            EditorEvent::Insert(value) => {
-                let changed = self.buffer.insert(&value);
-                self.changed(changed)
+        match event {
+            EditorEvent::Begin(snapshot) | EditorEvent::Redisplay(snapshot) => {
+                self.observe(&snapshot);
+                EditorAction::Redraw
             }
-            EditorEvent::Backspace => {
-                let changed = self.buffer.backspace();
-                self.changed(changed)
-            }
-            EditorEvent::Delete => {
-                let changed = self.buffer.delete();
-                self.changed(changed)
-            }
-            EditorEvent::MoveLeft => {
-                let moved = self.buffer.move_left();
-                self.moved(moved)
-            }
-            EditorEvent::MoveRight => {
-                let moved = self.buffer.move_right();
-                self.moved(moved)
-            }
-            EditorEvent::MoveHome => {
-                let moved = self.buffer.move_home();
-                self.moved(moved)
-            }
-            EditorEvent::MoveEnd => {
-                let moved = self.buffer.move_end();
-                self.moved(moved)
-            }
-            EditorEvent::Resize { columns, rows } => {
-                let changed = self.columns != columns.max(1) || self.rows != rows.max(1);
-                self.columns = columns.max(1);
-                self.rows = rows.max(1);
+            EditorEvent::Resize(size) => {
+                let changed = self.terminal != size;
+                self.terminal = size;
+                self.dirty |= changed;
                 if changed {
-                    self.dirty = true;
-                    EditorAction::Resized
+                    EditorAction::Redraw
                 } else {
                     EditorAction::Noop
                 }
             }
             EditorEvent::Accept => EditorAction::Accepted(self.buffer.text().to_string()),
-            EditorEvent::Cancel => {
-                let changed = !self.buffer.text().is_empty() || self.buffer.cursor() != 0;
-                self.buffer = EditorBuffer::new(String::new(), 0);
-                self.cursor.grapheme = 0;
-                self.dirty = true;
-                if changed {
-                    EditorAction::Cancelled
+            EditorEvent::Cancel | EditorEvent::Finish => {
+                if self.clear() {
+                    EditorAction::Cleared
                 } else {
                     EditorAction::Noop
                 }
             }
-        };
-
-        self.cursor.grapheme = self.buffer.cursor();
-        action
-    }
-
-    fn sync_host(&mut self, snapshot: HostSnapshot) -> EditorAction {
-        let snapshot = snapshot.sanitized();
-        let next_buffer = EditorBuffer::new(snapshot.buffer, snapshot.cursor);
-        let changed = self.buffer != next_buffer
-            || self.columns != snapshot.columns
-            || self.rows != snapshot.rows;
-        self.buffer = next_buffer;
-        self.columns = snapshot.columns;
-        self.rows = snapshot.rows;
-        self.dirty = changed;
-        if changed {
-            EditorAction::Changed
-        } else {
-            EditorAction::Noop
-        }
-    }
-
-    fn changed(&mut self, changed: bool) -> EditorAction {
-        if changed {
-            self.dirty = true;
-            EditorAction::Changed
-        } else {
-            EditorAction::Noop
-        }
-    }
-
-    fn moved(&mut self, moved: bool) -> EditorAction {
-        if moved {
-            self.dirty = true;
-            EditorAction::Moved
-        } else {
-            EditorAction::Noop
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AppState, EditorAction, EditorBuffer, EditorEvent, HostSnapshot};
+    use super::*;
 
     #[test]
-    fn sanitizes_cursor_and_terminal_dimensions() {
+    fn edits_are_grapheme_aware() {
+        let mut buffer = EditorBuffer::new("a🙂é", 3);
+        assert_eq!(buffer.grapheme_count(), 3);
+        assert_eq!(buffer.cursor_byte_offset(), buffer.text().len());
+        buffer.backspace();
+        assert_eq!(buffer.text(), "a🙂");
+        assert_eq!(buffer.cursor(), 2);
+        buffer.move_left();
+        buffer.delete();
+        assert_eq!(buffer.text(), "a");
+        buffer.insert("界");
+        assert_eq!(buffer.text(), "a界");
+        assert_eq!(buffer.cursor_width(), 3);
+    }
+
+    #[test]
+    fn host_cursor_is_clamped_to_graphemes_and_terminal() {
         let snapshot = HostSnapshot {
-            buffer: "hello".to_string(),
-            cursor: 99,
-            columns: 0,
-            rows: 0,
-            keymap: String::new(),
-            last_status: 0,
-            cwd: String::new(),
+            line: HostLine::new("🙂", 99),
+            terminal: TerminalSize::new(10, 4),
+            cursor: ScreenPoint {
+                column: 99,
+                row: 99,
+            },
+            ..HostSnapshot::default()
         }
         .sanitized();
-
-        assert_eq!(snapshot.cursor, 5);
-        assert_eq!(snapshot.columns, 1);
-        assert_eq!(snapshot.rows, 1);
-        assert_eq!(snapshot.keymap, "main");
+        assert_eq!(snapshot.line.cursor, 1);
+        assert_eq!(snapshot.cursor, ScreenPoint { column: 9, row: 3 });
     }
 
     #[test]
-    fn measures_cursor_by_terminal_cells() {
+    fn codepoint_cursor_is_translated_to_a_grapheme_cursor() {
+        let line = HostLine::from_codepoint_cursor("a é", 3);
+        assert_eq!(line.text, "a é");
+        assert_eq!(line.cursor, 3);
+    }
+
+    #[test]
+    fn suggestions_are_empty_for_an_empty_line() {
+        assert!(suggestions_for("   ").is_empty());
+    }
+
+    #[test]
+    fn grep_suggestions_match_the_completion_poc() {
+        let suggestions = suggestions_for("grep --matches");
+        assert_eq!(suggestions.len(), 2);
+        assert_eq!(suggestions[0].label, "--files-with-matches");
+        assert_eq!(suggestions[1].label, "--files-without-match");
+    }
+
+    #[test]
+    fn selection_wraps_without_owning_the_host_line() {
         let snapshot = HostSnapshot {
-            buffer: "a界b".to_string(),
-            cursor: 2,
+            line: HostLine::new("git", 3),
             ..HostSnapshot::default()
         };
-
-        assert_eq!(snapshot.cursor_width(), 3);
-    }
-
-    #[test]
-    fn edits_by_grapheme_cluster() {
-        let mut buffer = EditorBuffer::new("a界b", 2);
-
-        assert!(buffer.backspace());
-        assert_eq!(buffer.text(), "ab");
-        assert_eq!(buffer.cursor(), 1);
-        assert!(buffer.insert("界"));
-        assert_eq!(buffer.text(), "a界b");
-        assert_eq!(buffer.cursor(), 2);
-    }
-
-    #[test]
-    fn cancel_clears_in_place_without_accepting() {
-        let mut state = AppState::from_host(HostSnapshot {
-            buffer: "echo hi".to_string(),
-            cursor: 7,
-            ..HostSnapshot::default()
-        });
-
-        assert_eq!(state.apply(EditorEvent::Cancel), EditorAction::Cancelled);
-        assert_eq!(state.buffer.text(), "");
-        assert_eq!(state.cursor.grapheme, 0);
+        let mut app = AppState::from_snapshot(&snapshot);
+        assert!(app.move_selection(-1));
+        assert_eq!(
+            app.selected().map(|suggestion| suggestion.label.as_str()),
+            Some("search git")
+        );
+        assert_eq!(app.buffer.text(), "git");
     }
 }

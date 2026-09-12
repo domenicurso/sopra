@@ -1,0 +1,109 @@
+#!/usr/bin/expect -f
+set timeout 30
+set repo [lindex $argv 0]
+set zsh_bin [lindex $argv 1]
+
+if {$repo eq "" || $zsh_bin eq ""} {
+    puts stderr "usage: native.exp REPO_ROOT ZSH_BIN"
+    exit 2
+}
+
+set env(TERM) xterm-256color
+set env(LANG) C.UTF-8
+set env(LC_ALL) C.UTF-8
+set env(LC_CTYPE) C.UTF-8
+set env(KEEL_MODULE_PATH) "$repo/target/debug"
+log_user 0
+
+proc expect_custom_prompt {} {
+    expect {
+        -re {custom> \x1b\[K} {}
+        timeout {
+            puts stderr "timed out waiting for custom prompt"
+            exit 1
+        }
+        eof {
+            puts stderr "zsh exited before custom prompt"
+            exit 1
+        }
+    }
+}
+
+spawn $zsh_bin -dfi
+send "PROMPT='custom> '; RPROMPT=''; source $repo/zsh/keel.zsh\r"
+expect_custom_prompt
+
+send "git\r"
+expect {
+    -re {Keel suggestions} {}
+    timeout {
+        puts stderr "autocomplete surface did not render"
+        exit 1
+    }
+}
+send "\177\177\177printf native-ok\r"
+expect {
+    -re {native-ok} {}
+    timeout {
+        puts stderr "accepted command did not execute normally"
+        exit 1
+    }
+}
+expect_custom_prompt
+
+send "printf cancel-me"
+expect {
+    -re {cancel-me} {}
+    timeout {
+        puts stderr "editable line did not render"
+        exit 1
+    }
+}
+send "\003"
+expect_custom_prompt
+send "printf post-cancel\r"
+expect {
+    -re {post-cancel} {}
+    timeout {
+        puts stderr "cancel left ZLE unable to execute a later command"
+        exit 1
+    }
+}
+expect_custom_prompt
+
+send "stty rows 12 columns 48; kill -WINCH \$\$\r"
+expect_custom_prompt
+send "grep --matches"
+expect {
+    -re {--files-with-matches} {}
+    timeout {
+        puts stderr "autocomplete surface did not survive resize"
+        exit 1
+    }
+}
+send "\003"
+expect_custom_prompt
+send "printf resize-ok\r"
+expect {
+    -re {resize-ok} {}
+    timeout {
+        puts stderr "resized session did not execute normally"
+        exit 1
+    }
+}
+expect_custom_prompt
+
+send "keel-disable\r"
+expect_custom_prompt
+send "printf disabled-ok\r"
+expect {
+    -re {disabled-ok} {}
+    timeout {
+        puts stderr "the shell was not usable after unloading Keel"
+        exit 1
+    }
+}
+expect_custom_prompt
+
+send "exit\r"
+expect eof
