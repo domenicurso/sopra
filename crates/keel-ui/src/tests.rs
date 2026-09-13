@@ -68,6 +68,21 @@ fn popup_wraps_to_content_and_renders_selection() {
 }
 
 #[test]
+fn popup_caps_width_for_long_details() {
+    let scene = Scene::new(SuggestionPopup::new(
+        "1/1; 1ms",
+        vec![PopupItem::new("command", "x".repeat(240))],
+        None,
+    ));
+
+    assert_eq!(
+        scene.measure(Constraints::new(240, 20)),
+        Size::new(MAX_POPUP_WIDTH, 3)
+    );
+    assert!(snapshot(&scene, 240).contains('…'));
+}
+
+#[test]
 fn selection_reverses_only_the_term_and_keeps_details_dim() {
     let scene = Scene::new(
         SuggestionPopup::new(

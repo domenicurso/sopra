@@ -25,6 +25,26 @@ expect {
 send "\003"
 expect_native_prompt
 
+# Shell functions expose the file that defined them when no provider-specific
+# completion description is available.
+send "keel-path-f"
+expect {
+    -re {keel-path-function} {}
+    timeout {
+        puts stderr "shell function completion was not captured"
+        exit 1
+    }
+}
+expect {
+    -re {keel-native-zshrc-.*\.zshrc} {}
+    timeout {
+        puts stderr "shell function source path was not captured"
+        exit 1
+    }
+}
+send "\003"
+expect_native_prompt
+
 # Up/Down selects a Rust-owned item, and Tab replaces the ZLE line through
 # the native widget rather than printing a second prompt.
 send "keel-test al"

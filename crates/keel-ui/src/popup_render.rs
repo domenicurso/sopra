@@ -5,6 +5,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget},
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     matching::match_spans,
@@ -12,6 +14,47 @@ use crate::{
     scrollbar::render_scrollbar,
     style::{StyleToken, border_style, detail_style, footer_style, matching_style},
 };
+
+const ELLIPSIS: &str = "…";
+
+fn truncate_spans(spans: Vec<Span<'static>>, max_width: usize) -> Vec<Span<'static>> {
+    let content_width = spans.iter().map(Span::width).sum::<usize>();
+    if content_width <= max_width {
+        return spans;
+    }
+
+    let ellipsis_style = spans.last().map_or_else(Style::default, |span| span.style);
+    let mut remaining = max_width.saturating_sub(ELLIPSIS.width());
+    let mut truncated = Vec::with_capacity(spans.len().saturating_add(1));
+
+    for span in spans {
+        if remaining == 0 {
+            break;
+        }
+
+        let mut prefix = String::new();
+        let mut prefix_width: usize = 0;
+        for grapheme in span.content.graphemes(true) {
+            let grapheme_width = grapheme.width();
+            if prefix_width.saturating_add(grapheme_width) > remaining {
+                break;
+            }
+            prefix.push_str(grapheme);
+            prefix_width = prefix_width.saturating_add(grapheme_width);
+        }
+        if prefix_width < span.width() {
+            if !prefix.is_empty() {
+                truncated.push(Span::styled(prefix, span.style));
+            }
+            break;
+        }
+        truncated.push(Span::styled(prefix, span.style));
+        remaining = remaining.saturating_sub(prefix_width);
+    }
+
+    truncated.push(Span::styled(ELLIPSIS, ellipsis_style));
+    truncated
+}
 
 pub(crate) fn render_popup(popup: &SuggestionPopup, area: Rect, buffer: &mut Buffer) {
     if area.width < 2 || area.height < 2 {
@@ -81,7 +124,7 @@ pub(crate) fn render_popup(popup: &SuggestionPopup, area: Rect, buffer: &mut Buf
         if !item.detail.is_empty() {
             spans.push(Span::styled(format!("  {}", item.detail), detail_style()));
         }
-        lines.push(Line::from(spans));
+        lines.push(Line::from(truncate_spans(spans, inner.width as usize)));
     }
 
     Paragraph::new(lines).render(inner, buffer);

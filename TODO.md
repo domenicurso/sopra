@@ -7,7 +7,6 @@
 - mouse support
 - proper text selection
 - autocomplete
-  - show location of functions as descriptions
   - optimize for speed
   - shows files and folders
     - date modified is description

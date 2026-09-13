@@ -33,7 +33,10 @@ puts $startup_file {_keel_options_complete() { _arguments '1:subcommand:(run ins
 puts $startup_file {typeset -a _keel_fuzzy_values=(--files-with-matches --files-without-match)}
 puts $startup_file {typeset -a _keel_fuzzy_descriptions=('print only matching files' 'print files without matches')}
 puts $startup_file {_keel_fuzzy_complete() { compadd -d _keel_fuzzy_descriptions -- "${_keel_fuzzy_values[@]}"; }}
+puts $startup_file {_keel_command_path_complete() { compadd -- sh; }}
 puts $startup_file {keel-test() { print -r -- "keel-test:$*"; }}
+puts $startup_file {keel-path-function() { print -r -- "keel-path-function:$*"; }}
+puts $startup_file {keel-command-path() { print -r -- "keel-command-path:$*"; }}
 puts $startup_file {keel-many() { print -r -- "keel-many:$*"; }}
 puts $startup_file {keel-options() { print -r -- "keel-options:$*"; }}
 puts $startup_file {keel-fuzzy() { print -r -- "keel-fuzzy:$*"; }}
@@ -61,6 +64,7 @@ puts $startup_file "compdef _keel_test_complete keel-test"
 puts $startup_file "compdef _keel_many_complete keel-many"
 puts $startup_file "compdef _keel_options_complete keel-options"
 puts $startup_file "compdef _keel_fuzzy_complete keel-fuzzy"
+puts $startup_file "compdef _keel_command_path_complete keel-command-path"
 puts $startup_file "compdef _grep grep"
 puts $startup_file "source '$repo/zsh/keel.zsh'"
 close $startup_file

@@ -9,6 +9,15 @@
 typedef struct module *Module;
 typedef struct widget *Widget;
 typedef void *KeelHashTable;
+typedef struct {
+    void *next;
+    char *name;
+    int flags;
+} KeelZshHashNode;
+typedef struct {
+    KeelZshHashNode node;
+    char *filename;
+} KeelZshFunctionNode;
 typedef int (*ZleIntFunc)(char **);
 typedef void (*KeelRedrawCallback)(void);
 typedef void (*KeelCompletionMatchCallback)(
@@ -20,6 +29,7 @@ typedef void (*KeelCompletionMatchCallback)(
 #define KEEL_MAX_HOST_BYTES (4u * 1024u * 1024u)
 #define KEEL_FDT_MODULE 3
 #define KEEL_META_DUP 3
+#define KEEL_ZSH_PM_LOADDIR (1 << 17)
 
 extern Widget addzlefunction(char *name, ZleIntFunc function, int flags);
 extern void deletezlefunction(Widget widget);

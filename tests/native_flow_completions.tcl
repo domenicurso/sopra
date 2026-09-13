@@ -67,6 +67,20 @@ expect {
 send "\003"
 expect_native_prompt
 
+# Command-name matches still receive an executable path when their provider
+# does not assign the conventional "commands" group.
+send "keel-command-path "
+expect {
+    -re {/(?:usr/)?bin/sh} {}
+    timeout {
+        puts stderr "external command path was not captured"
+        exit 1
+    }
+}
+expect_popup
+send "\003"
+expect_native_prompt
+
 # Tab accepts an unselected sole result without changing the multi-result
 # rule that Down first selects item zero.
 send "keel-test bet"

@@ -67,37 +67,63 @@ static const char *description_for(const char *original, const char *display)
     return *rest == '\0' ? NULL : display;
 }
 
-static const char *group_description(const char *original, const char *group)
+static int append_function_path(const char *original)
 {
-    const char *path;
+    KeelZshFunctionNode *function = gethashnode(shfunctab, original);
+    size_t path_length;
+
+    if (function == NULL || function->filename == NULL)
+        return 0;
+    path_length = strlen(function->filename);
+    if (!append_decoded(function->filename, path_length))
+        return 0;
+    if ((function->node.flags & KEEL_ZSH_PM_LOADDIR) != 0 &&
+        !append_byte('/'))
+        return 0;
+    if ((function->node.flags & KEEL_ZSH_PM_LOADDIR) != 0)
+        return append_decoded(original, strlen(original));
+    return 1;
+}
+
+static int append_group_description(const char *original, const char *group)
+{
+    char *path;
 
     if (gethashnode(aliastab, original) != NULL)
-        return "alias";
-    if (gethashnode(shfunctab, original) != NULL)
-        return "shell function";
+        return append_decoded("alias", sizeof("alias") - 1);
+    if (gethashnode(shfunctab, original) != NULL) {
+        if (append_function_path(original))
+            return 1;
+        return append_decoded("shell function", sizeof("shell function") - 1);
+    }
     if (gethashnode(builtintab, original) != NULL)
-        return "builtin";
+        return append_decoded("builtin", sizeof("builtin") - 1);
     if (gethashnode(reswdtab, original) != NULL)
-        return "reserved word";
+        return append_decoded("reserved word", sizeof("reserved word") - 1);
+
+    /* Command-name providers do not all use the same completion group. */
+    path = findcmd((char *)original, 1, 0);
+    if (path != NULL)
+        return append_decoded(path, strlen(path));
+
     if (group == NULL)
-        return NULL;
+        return 1;
     if (group[0] == '-' && group[strlen(group) - 1] == '-')
-        return NULL;
+        return 1;
     if (strcmp(group, "commands") == 0) {
-        path = findcmd((char *)original, 1, 0);
-        return path == NULL ? "command" : path;
+        return append_decoded("command", sizeof("command") - 1);
     }
     if (strcmp(group, "builtins") == 0)
-        return "builtin";
+        return append_decoded("builtin", sizeof("builtin") - 1);
     if (strcmp(group, "functions") == 0)
-        return "shell function";
+        return append_decoded("shell function", sizeof("shell function") - 1);
     if (strcmp(group, "aliases") == 0)
-        return "alias";
+        return append_decoded("alias", sizeof("alias") - 1);
     if (strcmp(group, "suffix-aliases") == 0)
-        return "suffix alias";
+        return append_decoded("suffix alias", sizeof("suffix alias") - 1);
     if (strcmp(group, "reserved-words") == 0)
-        return "reserved word";
-    return group;
+        return append_decoded("reserved word", sizeof("reserved word") - 1);
+    return append_decoded(group, strlen(group));
 }
 
 void keel_completion_capture_reset(void)
@@ -124,10 +150,9 @@ void keel_completion_capture_match(char *original, char *display, char *ignored_
         original[0] == '\0' || match == NULL)
         return;
     detail = description_for(original, display);
-    if (detail == NULL)
-        detail = group_description(original, group);
     if (!append_decoded(original, strlen(original)) || !append_byte(0x1f) ||
-        !append_decoded(detail, detail == NULL ? 0 : strlen(detail)) ||
+        (detail != NULL ? !append_decoded(detail, strlen(detail)) :
+                           !append_group_description(original, group)) ||
         !append_byte(0x1f)) {
         capture_length = start;
         return;

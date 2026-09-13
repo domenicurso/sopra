@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub const MAX_VISIBLE_ITEMS: usize = 12;
+pub const MAX_POPUP_WIDTH: u16 = 48;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PopupItem {
@@ -106,8 +107,12 @@ impl Component for SuggestionPopup {
             .unwrap_or(1);
         let visible_items = self.items.len().min(self.max_visible_items);
         Size::new(
-            (content_width as u16)
+            content_width
+                .min(u16::MAX as usize)
+                .try_into()
+                .unwrap_or(u16::MAX)
                 .saturating_add(4)
+                .min(MAX_POPUP_WIDTH)
                 .min(constraints.max_width),
             (visible_items as u16)
                 .saturating_add(2)
