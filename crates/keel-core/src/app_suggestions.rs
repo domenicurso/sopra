@@ -19,6 +19,10 @@ impl AppState {
         self.selected().map(Suggestion::replacement)
     }
 
+    pub fn completion_source_available(&self) -> bool {
+        self.completion_source_key.is_some()
+    }
+
     pub fn suggestion_viewport_start(&self) -> usize {
         self.suggestion_scroll
     }
@@ -32,12 +36,58 @@ impl AppState {
             .to_string()
     }
 
+    pub fn completion_context_key(&self) -> String {
+        let text = self.buffer.text();
+        let cursor = self.buffer.cursor_byte_offset();
+        let prefix = &text[..cursor];
+        let token_start = prefix
+            .char_indices()
+            .rev()
+            .find(|(_, character)| character.is_whitespace())
+            .map_or(0, |(offset, character)| offset + character.len_utf8());
+        let token_prefix = &prefix[token_start..];
+        let suffix = &text[cursor..];
+        let token_end = suffix.find(char::is_whitespace).unwrap_or(suffix.len());
+        let line_suffix = &suffix[token_end..];
+        let option_prefix = if token_prefix.starts_with("--") {
+            "--"
+        } else if token_prefix.starts_with('-') {
+            "-"
+        } else {
+            ""
+        };
+        format!("{}{}{}", &prefix[..token_start], option_prefix, line_suffix)
+    }
+
     pub fn completion_token_width(&self) -> u16 {
         self.completion_query().width().min(u16::MAX as usize) as u16
     }
 
     pub fn set_suggestions(&mut self, suggestions: Vec<Suggestion>) -> bool {
-        let suggestions = rank_suggestions(suggestions, &self.completion_query());
+        self.completion_source = suggestions;
+        self.completion_source_key = Some(self.current_completion_context_key.clone());
+        self.ranked_query = None;
+        self.refresh_suggestions()
+    }
+
+    pub fn refresh_suggestions(&mut self) -> bool {
+        if self.completion_source_key.as_deref()
+            != Some(self.current_completion_context_key.as_str())
+        {
+            let changed = !self.suggestions.is_empty();
+            self.suggestions.clear();
+            self.ranked_query = None;
+            self.selected_suggestion = None;
+            self.suggestion_scroll = 0;
+            self.dirty |= changed;
+            return changed;
+        }
+        let query = self.completion_query();
+        if self.ranked_query.as_deref() == Some(query.as_str()) {
+            return false;
+        }
+        let suggestions = rank_suggestions(&self.completion_source, &query);
+        self.ranked_query = Some(query);
         let had_selection = self.selected_suggestion.is_some();
         let changed = self.suggestions != suggestions;
         self.suggestions = suggestions;
@@ -111,6 +161,10 @@ impl AppState {
         let changed = !self.buffer.text().is_empty() || self.buffer.cursor() != 0;
         self.buffer = crate::EditorBuffer::new("", 0);
         self.suggestions.clear();
+        self.completion_source.clear();
+        self.completion_source_key = None;
+        self.current_completion_context_key = self.completion_context_key();
+        self.ranked_query = None;
         self.selected_suggestion = None;
         self.suggestion_scroll = 0;
         self.overlay_dismissed = false;
@@ -120,9 +174,9 @@ impl AppState {
     }
 }
 
-fn rank_suggestions(mut suggestions: Vec<Suggestion>, query: &str) -> Vec<Suggestion> {
+fn rank_suggestions(suggestions: &[Suggestion], query: &str) -> Vec<Suggestion> {
     if query.is_empty() || suggestions.is_empty() {
-        return suggestions;
+        return suggestions.to_vec();
     }
 
     let labels = suggestions
@@ -141,6 +195,5 @@ fn rank_suggestions(mut suggestions: Vec<Suggestion>, query: &str) -> Vec<Sugges
         ranked.push(suggestion);
     }
 
-    suggestions.clear();
     ranked
 }

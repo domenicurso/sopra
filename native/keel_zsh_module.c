@@ -10,6 +10,7 @@ Widget accept_widget;
 Widget dismiss_widget;
 Widget clear_line_widget;
 Widget set_suggestions_widget;
+Widget refresh_suggestions_widget;
 KeelRuntime runtime;
 unsigned char patch_buffer[1024 * 1024];
 char line_buffer[256 * 1024];

@@ -15,4 +15,7 @@ pub use state::{AppState, CursorState, EditorMode};
 pub use suggestion::{CompletionProvider, Suggestion};
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    mod editor;
+    mod selection;
+}

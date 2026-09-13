@@ -5,8 +5,6 @@ _keel_capture_compadd() {
     local -a original filtered raw generated descriptions
 
     original=("$@")
-    builtin compadd "$@"
-    result=$?
 
     filtered=()
     for (( i = 1; i <= $#original; i++ )); do
@@ -23,8 +21,10 @@ _keel_capture_compadd() {
         esac
     done
 
-    builtin compadd -O raw "${filtered[@]}" >/dev/null 2>&1 || true
-    builtin compadd -A generated "${filtered[@]}" >/dev/null 2>&1 || true
+    # Ask Zsh to produce both display labels and insertion candidates in one
+    # pass; repeating compadd triples provider-side work for large lists.
+    builtin compadd -O raw -A generated "${filtered[@]}" >/dev/null 2>&1
+    result=$?
 
     for (( i = 1; i <= $#original; i++ )); do
         arg=${original[i]}
@@ -94,6 +94,35 @@ _keel_capture_compadd() {
     return "$result"
 }
 
+_keel_completion_broad_context() {
+    emulate -L zsh
+
+    local current_buffer=$1
+    local current_cursor=$2
+    local line_prefix token_prefix context_prefix
+    local rest_after_cursor token_suffix line_suffix option_prefix
+
+    line_prefix=${current_buffer[1,current_cursor]}
+    token_prefix=${line_prefix##*[[:space:]]}
+    if (( ${#token_prefix} < ${#line_prefix} )); then
+        context_prefix=${line_prefix[1,$(( ${#line_prefix} - ${#token_prefix} ))]}
+    else
+        context_prefix=''
+    fi
+    rest_after_cursor=${current_buffer[$(( current_cursor + 1 )),-1]}
+    token_suffix=${rest_after_cursor%%[[:space:]]*}
+    line_suffix=${rest_after_cursor#${token_suffix}}
+    if [[ $token_prefix == --* ]]; then
+        option_prefix='--'
+    elif [[ $token_prefix == -* ]]; then
+        option_prefix='-'
+    else
+        option_prefix=''
+    fi
+    typeset -g _KEEL_COMPLETION_BROAD_BUFFER="${context_prefix}${option_prefix}${line_suffix}"
+    typeset -g _KEEL_COMPLETION_BROAD_CURSOR=$(( ${#context_prefix} + ${#option_prefix} ))
+}
+
 _keel_completion_capture_sync() {
     emulate -L zsh
     setopt localoptions no_monitor
@@ -103,8 +132,7 @@ _keel_completion_capture_sync() {
     local record=$'\x1e'
     local end=$'\x1d'
     local completion_widget payload item
-    local current_buffer current_cursor line_prefix token_prefix context_prefix
-    local rest_after_cursor token_suffix line_suffix broad_buffer broad_cursor
+    local current_buffer current_cursor broad_buffer broad_cursor
     local -F started finished
     integer elapsed_ms=0
     typeset -ga _KEEL_CAPTURE_RECORDS
@@ -131,34 +159,16 @@ _keel_completion_capture_sync() {
         else
             started=$SECONDS
         fi
+        # Capture a broad result set without the active token so the core
+        # fuzzy matcher can handle non-prefix queries.
+        _keel_completion_broad_context "$current_buffer" "$current_cursor"
+        broad_buffer=$_KEEL_COMPLETION_BROAD_BUFFER
+        broad_cursor=$_KEEL_COMPLETION_BROAD_CURSOR
+        BUFFER=$broad_buffer
+        CURSOR=$broad_cursor
         zle -- "$completion_widget" >/dev/null 2>&1
         BUFFER=$current_buffer
         CURSOR=$current_cursor
-
-        # Capture a broad result set without the active token so the core
-        # fuzzy matcher can handle non-prefix queries.
-        line_prefix=${current_buffer[1,current_cursor]}
-        token_prefix=${line_prefix##*[[:space:]]}
-        if [[ -n $token_prefix ]]; then
-            if (( ${#token_prefix} < ${#line_prefix} )); then
-                context_prefix=${line_prefix[1,$(( ${#line_prefix} - ${#token_prefix} ))]}
-            else
-                context_prefix=''
-            fi
-            rest_after_cursor=${current_buffer[$(( current_cursor + 1 )),-1]}
-            token_suffix=${rest_after_cursor%%[[:space:]]*}
-            line_suffix=${rest_after_cursor#${token_suffix}}
-            broad_buffer="${context_prefix}${line_suffix}"
-            broad_cursor=${#context_prefix}
-            if [[ $broad_buffer != "$current_buffer" ||
-                  $broad_cursor != "$current_cursor" ]]; then
-                BUFFER=$broad_buffer
-                CURSOR=$broad_cursor
-                zle -- "$completion_widget" >/dev/null 2>&1
-                BUFFER=$current_buffer
-                CURSOR=$current_cursor
-            fi
-        fi
         if [[ -n ${EPOCHREALTIME:-} ]]; then
             finished=$EPOCHREALTIME
             elapsed_ms=$(( (finished - started) * 1000 ))

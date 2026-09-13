@@ -30,6 +30,7 @@ impl Suggestion {
         }
     }
 
+    /// The candidate token that replaces the active shell token on accept.
     pub fn replacement(&self) -> &str {
         &self.replacement
     }

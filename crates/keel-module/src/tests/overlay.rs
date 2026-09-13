@@ -45,6 +45,49 @@ fn completion_protocol_accepts_option_records_with_descriptions() {
 }
 
 #[test]
+fn cached_completion_source_can_be_refreshed_without_a_new_payload() {
+    crate::keel_module_init();
+    let mut output = [0_u8; 16 * 1024];
+    let raw = snapshot(b"keel-test al", 12);
+    assert_eq!(
+        crate::keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()),
+        0
+    );
+    let payload = b"alpha\x1ffirst result\x1falpha\x1e";
+    assert_eq!(
+        unsafe { crate::keel_module_set_suggestions(payload.as_ptr(), payload.len(), 4) },
+        1
+    );
+    assert_eq!(crate::keel_module_refresh_suggestions(0), 1);
+    assert_eq!(crate::keel_module_has_suggestions(), 1);
+}
+
+#[test]
+fn selected_candidate_uses_the_latest_host_line() {
+    crate::keel_module_init();
+    let mut output = [0_u8; 16 * 1024];
+    let initial = snapshot(b"keel-test al", 12);
+    assert_eq!(
+        crate::keel_module_after_redraw(&initial, output.as_mut_ptr(), output.len()),
+        0
+    );
+    let payload = b"alpha\x1ffirst result\x1falpha\x1e";
+    assert_eq!(
+        unsafe { crate::keel_module_set_suggestions(payload.as_ptr(), payload.len(), 0) },
+        1
+    );
+
+    let latest = snapshot(b"keel-test alp", 13);
+    assert!(crate::keel_module_after_redraw(&latest, output.as_mut_ptr(), output.len()) > 0);
+    assert_eq!(crate::keel_module_move_selection(1), 1);
+
+    let mut replacement = [0_u8; 128];
+    let length =
+        crate::keel_module_selected_replacement(replacement.as_mut_ptr(), replacement.len());
+    assert_eq!(&replacement[..length], b"keel-test alpha");
+}
+
+#[test]
 fn pre_redraw_clears_the_previous_surface() {
     crate::keel_module_init();
     let mut output = [0_u8; 16 * 1024];

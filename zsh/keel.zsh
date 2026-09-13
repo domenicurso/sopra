@@ -5,6 +5,7 @@ fi
 typeset -g _KEEL_ZSH_LOADED=1
 typeset -g _KEEL_ZSH_DIR=${${(%):-%N}:A:h}
 source "$_KEEL_ZSH_DIR/keel-vars.zsh"
+source "$_KEEL_ZSH_DIR/keel-cache.zsh"
 
 if [[ ! -o interactive ]]; then
     return 0
@@ -32,6 +33,7 @@ fi
 
 source "$_KEEL_ZSH_DIR/keel-capture.zsh"
 source "$_KEEL_ZSH_DIR/keel-completion.zsh"
+source "$_KEEL_ZSH_DIR/keel-completion-response.zsh"
 source "$_KEEL_ZSH_DIR/keel-widgets.zsh"
 source "$_KEEL_ZSH_DIR/keel-lifecycle.zsh"
 

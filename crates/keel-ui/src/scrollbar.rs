@@ -28,18 +28,21 @@ pub(crate) fn render_scrollbar(
         let Some(cell) = buffer.cell_mut((area.x, area.y + row as u16)) else {
             continue;
         };
-        cell.set_symbol(" ");
         if (thumb_top..thumb_top + thumb_height).contains(&row) {
+            cell.set_symbol(" ");
             cell.set_style(
                 Style::default()
                     .bg(Color::White)
                     .remove_modifier(Modifier::DIM),
             );
         } else {
+            // Use the palette's dark gray foreground so the track remains
+            // visibly faint even in terminals that ignore DIM.
+            cell.set_symbol("█");
             cell.set_style(
                 Style::default()
-                    .bg(Color::White)
-                    .add_modifier(Modifier::DIM),
+                    .fg(Color::DarkGray)
+                    .remove_modifier(Modifier::DIM),
             );
         }
     }

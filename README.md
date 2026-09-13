@@ -8,7 +8,7 @@ Keel adds Rust-rendered terminal surfaces to a normal Zsh session while keeping 
 
 </div>
 
-Keel is a terminal augmentation prototype. The current MVP renders a small autocomplete surface below the active line by asking Zsh's own completion system for matches in a short-lived `zpty`, then paints those matches through the native renderer without asking ZLE to draw a second prompt.
+Keel is a terminal augmentation prototype. The current MVP renders a small autocomplete surface below the active line by asking Zsh's own completion system for matches in one short-lived `zpty` per completion context, then paints those matches through the native renderer without asking ZLE to draw a second prompt. The captured set is cached and fuzzy-filtered locally while the line changes, so warm edits do not start another Zsh provider or block on a new process.
 
 - [Try the isolated demo](#try-the-isolated-demo)
 - [Install a user-owned shell](#install-a-user-owned-shell)
@@ -21,6 +21,7 @@ Keel is a terminal augmentation prototype. The current MVP renders a small autoc
 - Keeps normal Zsh behavior intact, including prompt rendering, cursor movement, command acceptance, execution, history, and terminal scrollback.
 - Measures the surface against the terminal geometry and writes only a bounded ANSI transaction, so overlays can be cleared without an alternate screen or a scrollback manager.
 - Tracks Unicode input by grapheme and display width, so the host line can contain multi-codepoint characters without making the Rust model lose its place.
+- Captures each broad completion context once, then performs cached fuzzy filtering and ranking in native code so the common edit path is sub-millisecond.
 - Exposes a `keel` command with `status`, `enable`, `disable`, and `help` subcommands inside an active session.
 
 ### Who is it for?
@@ -137,7 +138,7 @@ patched redraw hooks -> C ABI snapshot -> Rust app state
 
 ### Ownership boundary
 
-`zsh/keel.zsh` loads the native module and installs the `line-init` and `line-finish` hooks. The C shim is the only layer that knows the Zsh ABI: it receives the patched redisplay callbacks, snapshots the current line and terminal geometry, registers the small native widgets, and writes Rust's returned bytes to the terminal. It does not decide layout or compose the UI. The shell loader runs the real completion widget in a bounded `zpty`, captures `compadd` records, rejects stale responses against the line snapshot, and hands one protocol payload to the native module.
+`zsh/keel.zsh` loads the native module and installs the `line-init` and `line-finish` hooks. The C shim is the only layer that knows the Zsh ABI: it receives the patched redisplay callbacks, snapshots the current line and terminal geometry, registers the small native widgets, and writes Rust's returned bytes to the terminal. It does not decide layout or compose the UI. The shell loader runs the real completion widget once in a bounded `zpty` for a broad context, caches the `compadd` records, rejects stale responses against the line snapshot, and hands one protocol payload to the native module; Rust then filters later edits locally.
 
 The Rust crates keep the rest of the work separated. `keel-core` normalizes host data and maintains the session model, `keel-ui` measures and paints components, `keel-renderer` turns those components into a diffed ANSI transaction, and `keel-scheduler` defines invalidation and frame timing without starting a background runtime.
 
@@ -181,7 +182,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ## Current limitations
 
-- Completion capture follows Zsh's installed completion functions, is bounded to 512 records, and uses the `neo_frizbee` fuzzy matcher to rank the captured labels while preserving `compadd` descriptions.
+- Completion capture follows Zsh's installed completion functions, is bounded to 512 records, and uses [`neo_frizbee`](https://docs.rs/neo_frizbee/latest/neo_frizbee/), the matching engine used by [`fff`](https://github.com/dmtrKovalenko/fff), to rank the captured labels while preserving `compadd` descriptions. Cache hits report `0ms` because only native filtering runs.
+- The sub-millisecond target applies to cached filtering and rendering. A cache miss executes arbitrary Zsh completion code in an isolated `zpty`, so its first-result time remains provider-dependent and cannot be guaranteed below 1ms for every completion function.
 - Zsh still owns keyboard input and the editable buffer; Keel adds navigation and Tab insertion widgets while leaving command parsing, history, and execution in ZLE.
 - Running Keel requires the patched Zsh 5.9 build, which is why the project builds and ships its own private shell instead of loading into `/bin/zsh`.
 - The native build scripts currently implement Darwin and Linux link steps; other host operating systems are rejected explicitly.

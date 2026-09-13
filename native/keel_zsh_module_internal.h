@@ -15,6 +15,7 @@ extern size_t keel_module_line_finish(unsigned char *output, size_t capacity);
 extern int keel_module_has_suggestions(void);
 extern int keel_module_set_suggestions(const unsigned char *payload, size_t length,
                                        uint64_t completion_ms);
+extern int keel_module_refresh_suggestions(uint64_t completion_ms);
 extern int keel_module_move_selection(int delta);
 extern size_t keel_module_selected_replacement(unsigned char *output, size_t capacity);
 extern int keel_module_dismiss_overlay(void);
@@ -50,6 +51,7 @@ extern Widget accept_widget;
 extern Widget dismiss_widget;
 extern Widget clear_line_widget;
 extern Widget set_suggestions_widget;
+extern Widget refresh_suggestions_widget;
 extern KeelRuntime runtime;
 extern unsigned char patch_buffer[1024 * 1024];
 extern char line_buffer[256 * 1024];

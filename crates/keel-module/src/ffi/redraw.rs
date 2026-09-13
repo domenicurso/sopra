@@ -30,6 +30,7 @@ pub extern "C" fn keel_module_after_redraw(
             .clock
             .invalidate(InvalidationReason::HostRedisplay, now);
         state.app.apply(EditorEvent::Redisplay(snapshot.clone()));
+        state.app.refresh_suggestions();
         let completion_ms = state.completion_ms;
 
         let Some(probe) = build_scene(&state.app, 0, PopupPlacement::Below, completion_ms) else {

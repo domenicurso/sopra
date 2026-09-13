@@ -97,6 +97,13 @@ static int keel_set_suggestions(char **args)
                                        (uint64_t)completion_ms) ? 0 : 1;
 }
 
+static int keel_refresh_suggestions(char **args)
+{
+    if (args != NULL && args[0] != NULL)
+        return 1;
+    return keel_module_refresh_suggestions(0) ? 0 : 1;
+}
+
 void keel_delete_widgets(void)
 {
     if (dismiss_widget != NULL) {
@@ -122,6 +129,10 @@ void keel_delete_widgets(void)
     if (set_suggestions_widget != NULL) {
         deletezlefunction(set_suggestions_widget);
         set_suggestions_widget = NULL;
+    }
+    if (refresh_suggestions_widget != NULL) {
+        deletezlefunction(refresh_suggestions_widget);
+        refresh_suggestions_widget = NULL;
     }
     if (line_finish_widget != NULL) {
         deletezlefunction(line_finish_widget);
@@ -153,10 +164,13 @@ int keel_register_widgets(void)
     set_suggestions_widget = addzlefunction("keel-native-set-suggestions",
                                             keel_set_suggestions,
                                             KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
+    refresh_suggestions_widget = addzlefunction("keel-native-refresh-suggestions",
+                                                keel_refresh_suggestions,
+                                                KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
     if (line_init_widget == NULL || line_finish_widget == NULL ||
         select_previous_widget == NULL || select_next_widget == NULL ||
         accept_widget == NULL || dismiss_widget == NULL || clear_line_widget == NULL ||
-        set_suggestions_widget == NULL) {
+        set_suggestions_widget == NULL || refresh_suggestions_widget == NULL) {
         keel_delete_widgets();
         return 0;
     }

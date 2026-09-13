@@ -42,7 +42,6 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
     let bytes = unsafe { slice::from_raw_parts(payload, length) };
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        let context = completion_context(state.app.buffer.text(), state.app.buffer.cursor());
         let mut suggestions = Vec::with_capacity(MAX_COMPLETIONS.min(8));
 
         for record in bytes.split(|byte| *byte == COMPLETION_RECORD_SEPARATOR) {
@@ -62,12 +61,24 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
             if label.is_empty() || candidate.is_empty() {
                 continue;
             }
-            let replacement = replace_token(state.app.buffer.text(), &context, &candidate);
-            suggestions.push(Suggestion::with_replacement(label, detail, replacement));
+            suggestions.push(Suggestion::with_replacement(label, detail, candidate));
         }
 
         state.completion_ms = completion_ms;
         state.app.set_suggestions(suggestions);
+        1
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_module_refresh_suggestions(completion_ms: u64) -> i32 {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if !state.app.completion_source_available() {
+            return 0;
+        }
+        state.completion_ms = completion_ms;
+        state.app.refresh_suggestions();
         1
     })
 }
@@ -91,9 +102,11 @@ pub extern "C" fn keel_module_selected_replacement(output: *mut u8, capacity: us
     }
     STATE.with(|state| {
         let state = state.borrow();
-        let Some(replacement) = state.app.selected_replacement() else {
+        let Some(candidate) = state.app.selected_replacement() else {
             return 0;
         };
+        let context = completion_context(state.app.buffer.text(), state.app.buffer.cursor());
+        let replacement = replace_token(state.app.buffer.text(), &context, candidate);
         copy_payload(replacement.as_bytes(), output, capacity)
     })
 }

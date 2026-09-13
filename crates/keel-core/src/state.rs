@@ -20,6 +20,10 @@ pub struct AppState {
     pub keymap: String,
     pub last_status: i32,
     pub suggestions: Vec<Suggestion>,
+    pub(crate) completion_source: Vec<Suggestion>,
+    pub(crate) completion_source_key: Option<String>,
+    pub(crate) current_completion_context_key: String,
+    pub(crate) ranked_query: Option<String>,
     pub selected_suggestion: Option<usize>,
     pub(crate) suggestion_scroll: usize,
     pub overlay_dismissed: bool,
@@ -38,7 +42,7 @@ impl Default for AppState {
 impl AppState {
     pub fn from_snapshot(snapshot: &HostSnapshot) -> Self {
         let snapshot = snapshot.sanitized();
-        Self {
+        let mut state = Self {
             buffer: snapshot.line.buffer(),
             cursor: CursorState {
                 screen: snapshot.cursor,
@@ -49,6 +53,10 @@ impl AppState {
             keymap: snapshot.keymap,
             last_status: snapshot.last_status,
             suggestions: Vec::new(),
+            completion_source: Vec::new(),
+            completion_source_key: None,
+            current_completion_context_key: String::new(),
+            ranked_query: None,
             selected_suggestion: None,
             suggestion_scroll: 0,
             overlay_dismissed: false,
@@ -56,15 +64,18 @@ impl AppState {
             mode: EditorMode::ObservingZle,
             dirty: true,
             redisplay_generation: snapshot.redisplay_generation,
-        }
+        };
+        state.current_completion_context_key = state.completion_context_key();
+        state
     }
 
     pub fn observe(&mut self, snapshot: &HostSnapshot) -> bool {
         let snapshot = snapshot.sanitized();
         let next_buffer = snapshot.line.buffer();
+        let buffer_changed = self.buffer != next_buffer;
         let line_changed = self.buffer.text() != next_buffer.text();
         let suppressed = self.suppressed_overlay_text.as_deref() == Some(next_buffer.text());
-        let changed = self.buffer != next_buffer
+        let changed = buffer_changed
             || self.cursor.screen != snapshot.cursor
             || self.terminal != snapshot.terminal
             || self.cwd != snapshot.cwd
@@ -73,6 +84,9 @@ impl AppState {
             || self.redisplay_generation != snapshot.redisplay_generation;
 
         self.buffer = next_buffer;
+        if buffer_changed {
+            self.current_completion_context_key = self.completion_context_key();
+        }
         self.cursor.screen = snapshot.cursor;
         self.terminal = snapshot.terminal;
         self.cwd = snapshot.cwd;
@@ -84,6 +98,7 @@ impl AppState {
             self.overlay_dismissed = false;
             self.suppressed_overlay_text = None;
             self.suggestions.clear();
+            self.ranked_query = None;
             self.selected_suggestion = None;
             self.suggestion_scroll = 0;
         }

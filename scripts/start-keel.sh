@@ -9,7 +9,7 @@ zshrc_root="$repo_root/target/keel-zshrc"
 mkdir -p "$zshrc_root"
 
 printf '%s\n' \
-    "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
+    "PROMPT='%n in %~ > '" \
     "RPROMPT=''" \
     "autoload -Uz compinit" \
     "compinit -C" \

@@ -130,8 +130,10 @@ fn popup_limits_entries_and_renders_an_inline_scrollbar() {
     assert_eq!(thumb.bg, Color::White);
     assert!(!thumb.style().add_modifier.contains(Modifier::DIM));
     let track = buffer.cell((scrollbar_x, area.y + 10)).unwrap();
-    assert_eq!(track.bg, Color::White);
-    assert!(track.style().add_modifier.contains(Modifier::DIM));
+    assert_eq!(track.symbol(), "█");
+    assert_eq!(track.fg, Color::DarkGray);
+    assert_ne!(track.bg, Color::White);
+    assert!(!track.style().add_modifier.contains(Modifier::DIM));
 }
 
 #[test]

@@ -43,7 +43,15 @@ printf '%s\n' "$install_output" | grep -qx 'Keel installed'
 grep -q 'ZDOTDIR=' "$install_root/bin/keel"
 grep -qx 'keel-install-v1' "$install_root/.keel-install"
 grep -q 'source .*share/keel.zsh' "$install_root/etc/zsh/.zshrc"
-grep -Fq "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" "$install_root/etc/zsh/.zshrc"
+grep -Fq "PROMPT='%n in %~ > '" "$install_root/etc/zsh/.zshrc"
+for shell_file in \
+    keel-cache.zsh keel-capture.zsh keel-completion.zsh \
+    keel-completion-response.zsh keel-lifecycle.zsh keel-vars.zsh keel-widgets.zsh; do
+    if [[ ! -f "$install_root/share/$shell_file" ]]; then
+        echo "installer omitted $shell_file" >&2
+        exit 1
+    fi
+done
 "$install_root/bin/keel" -dic 'keel status; exit' | grep -qx 'keel: enabled'
 "$install_root/bin/keel" status | grep -q '^keel: installed at '
 "$install_root/bin/keel" help | grep -q '^usage: keel '
