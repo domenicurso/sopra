@@ -13,7 +13,7 @@ log_user 1
 send {keel-test al}
 expect_popup
 send "\003"
-after 250
+expect_native_prompt
 send {printf after-abort-ok}
 send "\r"
 expect {
@@ -29,7 +29,26 @@ expect {
 }
 expect_native_prompt
 
+send {keel-test al}
+expect_popup
 send "\003"
-after 250
+expect_native_prompt
+send {printf after-second-abort-ok}
+send "\r"
+expect {
+    -re {after-second-abort-ok} {}
+    timeout {
+        puts stderr "the second Ctrl-C left the abort guard latched"
+        exit 1
+    }
+    eof {
+        puts stderr "zsh exited after the second Ctrl-C"
+        exit 1
+    }
+}
+expect_native_prompt
+
+send "\003"
+expect_native_prompt
 send "exit\r"
 expect eof

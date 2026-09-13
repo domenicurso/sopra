@@ -143,6 +143,7 @@ _keel_completion_pre_redraw() {
 }
 
 _keel_completion_line_init() {
+    _KEEL_ABORTING=0
     _keel_completion_stop_pending
     _keel_completion_cache_clear
     _KEEL_COMPLETION_LAST_ID=''

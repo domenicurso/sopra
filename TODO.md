@@ -1,3 +1,17 @@
-- Formalize CI and install pipelines so that curl -fsSL ... | bash can be used
-- Update install script to give more granular progress indicators than just 'Building Keel /'
-  - Could be things like Building Keel (19/209) or a subtext like Patching Src/Zle/zle_refresh.c...
+# TODO
+
+- syntax highlighting
+- autoclose quotes and brackets and such
+- prompt customization
+- settings tui dialog
+- mouse support
+- proper text selection
+- autocomplete
+  - show location of functions as descriptions
+  - optimize for speed
+  - shows files and folders
+    - date modified is description
+  - command history
+- ai prompting
+  - alt+enter to submit
+- debug panel/tool

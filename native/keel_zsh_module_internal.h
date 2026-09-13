@@ -11,6 +11,7 @@ extern void keel_module_shutdown(void);
 extern size_t keel_module_before_redraw(unsigned char *output, size_t capacity);
 extern size_t keel_module_after_redraw(const void *snapshot, unsigned char *output,
                                        size_t capacity);
+extern uint16_t keel_module_last_scroll_rows(void);
 extern size_t keel_module_line_finish(unsigned char *output, size_t capacity);
 extern int keel_module_has_suggestions(void);
 extern int keel_module_set_suggestions(const unsigned char *payload, size_t length,
@@ -68,6 +69,8 @@ extern const char keymap_buffer[];
 void keel_before_redraw(void);
 void keel_after_redraw(void);
 void keel_observe_current_line(void);
+void keel_set_zle_line_origin(void);
+void keel_adjust_zle_line_origin(unsigned int rows);
 void keel_write_rust_payload(size_t length);
 void keel_write_cursor_style(int block);
 void keel_query_terminal_colors(void);

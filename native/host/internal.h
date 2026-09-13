@@ -7,5 +7,6 @@
 
 int keel_write_all(const unsigned char *data, size_t length);
 unsigned long long keel_elapsed_milliseconds_since(const struct timeval *started);
+int keel_capture_zle_line_origin(void);
 
 #endif

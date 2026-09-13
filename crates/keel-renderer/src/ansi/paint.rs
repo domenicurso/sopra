@@ -10,7 +10,6 @@ impl AnsiWriter {
         row_offset: i16,
         width: u16,
         height: u16,
-        scroll_rows: u16,
     ) -> Vec<u8> {
         if width == 0 || height == 0 {
             return Vec::new();
@@ -20,26 +19,19 @@ impl AnsiWriter {
         move_relative_rows(&mut output, row_offset);
         clear_surface_body(&mut output, origin_column, 0, width, height);
         output.push_str("\x1b[0m\x1b8");
-        move_relative_rows(&mut output, -(scroll_rows.min(i16::MAX as u16) as i16));
-        if scroll_rows > 0 {
-            let _ = write!(output, "\x1b[{}T", scroll_rows);
-            move_relative_rows(&mut output, scroll_rows.min(i16::MAX as u16) as i16);
-        }
         output.push_str("\x1b[?25h");
         output.into_bytes()
     }
 
-    pub(crate) fn paint(frame: &RenderedFrame, diff: &FrameDiff, force_full: bool) -> Vec<u8> {
-        if !force_full && !diff.changed() {
-            if frame.scroll_rows == 0 {
-                return Vec::new();
-            }
-            let mut output = String::new();
-            move_relative_rows(
-                &mut output,
-                -(frame.scroll_rows.min(i16::MAX as u16) as i16),
-            );
-            return output.into_bytes();
+    pub(crate) fn paint(
+        frame: &RenderedFrame,
+        diff: &FrameDiff,
+        force_full: bool,
+        current_cursor_row: u16,
+        scroll_rows: u16,
+    ) -> Vec<u8> {
+        if !force_full && !diff.changed() && scroll_rows == 0 {
+            return Vec::new();
         }
         let mut output = String::new();
         output.push_str("\x1b7\x1b[?25l");
@@ -48,17 +40,24 @@ impl AnsiWriter {
             clear_surface_body(
                 &mut output,
                 diff.previous_origin,
-                clear_row_offset(diff, frame.cursor_row),
+                clear_row_offset(diff, current_cursor_row),
                 diff.previous_area.width,
                 diff.previous_area.height,
             );
             output.push_str("\x1b8");
         }
-        if diff.scroll_rows_added() > 0 {
-            let _ = write!(output, "\x1b[{}S", diff.scroll_rows_added());
-        }
-        if diff.scroll_rows_removed() > 0 {
-            let _ = write!(output, "\x1b[{}T", diff.scroll_rows_removed());
+        if scroll_rows > 0 {
+            let below = frame
+                .terminal_rows
+                .saturating_sub(current_cursor_row.saturating_add(1));
+            move_relative_rows(&mut output, below.min(i16::MAX as u16) as i16);
+            for _ in 0..scroll_rows {
+                // IND advances a row without ONLCR turning LF into CRLF.
+                output.push_str("\x1bD");
+            }
+            let up = below.saturating_add(scroll_rows).min(i16::MAX as u16) as i16;
+            move_relative_rows(&mut output, -up);
+            output.push_str("\x1b7");
         }
         move_relative_rows(&mut output, frame.row_offset);
         move_to_column(&mut output, frame.origin_column);
@@ -80,10 +79,6 @@ impl AnsiWriter {
             }
         }
         output.push_str("\x1b[0m\x1b8");
-        move_relative_rows(
-            &mut output,
-            -(frame.scroll_rows.min(i16::MAX as u16) as i16),
-        );
         output.push_str("\x1b[?25h");
         output.into_bytes()
     }

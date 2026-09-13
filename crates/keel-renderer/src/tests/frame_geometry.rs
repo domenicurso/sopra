@@ -1,5 +1,5 @@
 use super::popup;
-use crate::{PatchOp, RenderContext, Renderer};
+use crate::{RenderContext, Renderer};
 
 #[test]
 fn terminal_resize_forces_a_full_repaint_even_when_the_scene_is_unchanged() {
@@ -31,14 +31,15 @@ fn terminal_resize_forces_a_full_repaint_even_when_the_scene_is_unchanged() {
 }
 
 #[test]
-fn scroll_reservation_emits_scroll_once_and_keeps_the_effective_anchor() {
+fn scroll_reservation_writes_scrollback_lines_and_keeps_the_post_scroll_anchor() {
     let mut renderer = Renderer::new();
     let scene = popup(&["run git"]);
     let first = renderer
         .render(
             &scene,
             RenderContext::new(80, 5, 0)
-                .terminal_rows(5)
+                .terminal_rows(8)
+                .cursor_row(4)
                 .scroll_rows(2)
                 .full_repaint(true),
         )
@@ -46,51 +47,38 @@ fn scroll_reservation_emits_scroll_once_and_keeps_the_effective_anchor() {
     let second = renderer
         .render(
             &scene,
-            RenderContext::new(80, 5, 0).terminal_rows(5).scroll_rows(2),
+            RenderContext::new(80, 5, 0).terminal_rows(8).cursor_row(2),
         )
         .unwrap();
 
-    assert!(
-        String::from_utf8(first.transaction.payload)
-            .unwrap()
-            .contains("\x1b[2S")
-    );
-    assert!(
-        !String::from_utf8(second.transaction.payload)
-            .unwrap()
-            .contains("\x1b[2S")
-    );
-    assert_eq!(first.frame.anchor_row, 0);
-    assert_eq!(second.frame.anchor_row, 0);
+    let first_payload = String::from_utf8(first.transaction.payload).unwrap();
+    assert_eq!(first.transaction.scroll_rows, 2);
+    assert_eq!(first.frame.cursor_row, 2);
+    assert_eq!(first.frame.anchor_row, 3);
+    assert_eq!(first_payload.matches("\x1bD").count(), 2);
+    assert!(!first_payload.contains('\n'));
+    assert!(!first_payload.contains("\x1b[2S"));
+    assert!(!first_payload.contains("\x1b[2T"));
+    assert_eq!(second.frame.anchor_row, 3);
+    assert!(second.transaction.payload.is_empty());
 }
 
 #[test]
-fn releasing_scroll_reservation_scrolls_the_terminal_back_down() {
+fn clearing_scrolled_surface_never_reverse_scrolls_the_terminal() {
     let mut renderer = Renderer::new();
     let scene = popup(&["run git"]);
     renderer
         .render(
             &scene,
             RenderContext::new(80, 5, 0)
-                .terminal_rows(5)
+                .terminal_rows(8)
+                .cursor_row(4)
                 .scroll_rows(2)
                 .full_repaint(true),
         )
         .unwrap();
-    let restored = renderer
-        .render(&scene, RenderContext::new(80, 5, 0).terminal_rows(5))
-        .unwrap();
+    let clear = String::from_utf8(renderer.clear_previous().unwrap()).unwrap();
 
-    assert_eq!(restored.diff.scroll_rows_removed(), 2);
-    assert!(
-        restored
-            .transaction
-            .ops
-            .contains(&PatchOp::ScrollDown { rows: 2 })
-    );
-    assert!(
-        String::from_utf8(restored.transaction.payload)
-            .unwrap()
-            .contains("\x1b[2T")
-    );
+    assert!(!clear.contains("\x1b[2S"));
+    assert!(!clear.contains("\x1b[2T"));
 }

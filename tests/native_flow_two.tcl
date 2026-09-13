@@ -28,7 +28,7 @@ after 200
 send "p"
 expect_popup
 send "\003"
-after 200
+expect_native_prompt
 
 send "printf native-ok\r"
 expect {
@@ -47,7 +47,7 @@ expect_native_prompt
 send "keel-test al"
 expect_popup
 send "\003"
-after 200
+expect_native_prompt
 send "printf resize-ok\r"
 expect {
     -re {resize-ok} {}

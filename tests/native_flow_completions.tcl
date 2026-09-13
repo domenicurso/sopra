@@ -16,7 +16,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # Generated providers expose their normal Zsh completion function lazily, so
 # command-owned descriptions and options use the same native capture path.
@@ -36,7 +36,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 send "keel-generated-cli --"
 expect {
     -re {verbose mode} {}
@@ -53,7 +53,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # The bundled _git provider supplies real subcommands and descriptions.
 send "git ch"
@@ -65,7 +65,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # Tab accepts an unselected sole result without changing the multi-result
 # rule that Down first selects item zero.

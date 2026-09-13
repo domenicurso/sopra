@@ -23,7 +23,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # Up/Down selects a Rust-owned item, and Tab replaces the ZLE line through
 # the native widget rather than printing a second prompt.
@@ -117,7 +117,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # Positional argument values come from the same _arguments call as options.
 send "keel-options r"
@@ -151,7 +151,7 @@ expect {
     }
 }
 send "\003"
-after 200
+expect_native_prompt
 
 # More than twelve matches use a scrollable native viewport rather than
 # growing into the rest of the terminal.
@@ -174,5 +174,4 @@ expect {
     }
 }
 send "\003"
-after 1000
 expect_native_prompt

@@ -12,7 +12,6 @@ if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
     cyan=$'\033[36m'
     dim=$'\033[2m'
     green=$'\033[32m'
-    yellow=$'\033[33m'
     red=$'\033[31m'
     reset=$'\033[0m'
 else
@@ -20,7 +19,6 @@ else
     cyan=''
     dim=''
     green=''
-    yellow=''
     red=''
     reset=''
 fi
@@ -49,7 +47,5 @@ run_step 'Installing Keel' install_files
 
 launch_command=$(printf '%q' "$install_prefix/bin/keel")
 printf '%b\n' "${bold}${cyan}Keel installed${reset}"
-printf '  %bprefix:%b %b%s%b\n' "$dim" "$reset" "$yellow" "$install_prefix" "$reset"
-printf '  %blaunch:%b %b%s -il%b\n' "$dim" "$reset" "$green" "$launch_command" "$reset"
-printf '  %bisolated:%b %bKEEL_SOURCE_USER_RC=0 %s -il%b\n' "$dim" "$reset" "$green" "$launch_command" "$reset"
-printf '  %bcommands:%b %bkeel status | keel enable | keel disable%b\n' "$dim" "$reset" "$green" "$reset"
+printf 'Launch Keel with %b%s -il%b.\n' "$green" "$launch_command" "$reset"
+printf 'After it starts, run %bkeel status%b to confirm the shell is enabled.\n' "$green" "$reset"

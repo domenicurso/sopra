@@ -20,8 +20,6 @@ impl Renderer {
         let next_anchor_row = next.map_or(0, |frame| frame.anchor_row);
         let previous_row_offset = previous.map_or(0, |frame| frame.row_offset);
         let next_row_offset = next.map_or(0, |frame| frame.row_offset);
-        let previous_scroll_rows = previous.map_or(0, |frame| frame.scroll_rows);
-        let next_scroll_rows = next.map_or(0, |frame| frame.scroll_rows);
         let terminal_changed = previous_terminal_columns != next_terminal_columns
             || previous_terminal_rows != next_terminal_rows;
         let width = previous_area.width.max(next_area.width);
@@ -79,8 +77,6 @@ impl Renderer {
             next_anchor_row,
             previous_row_offset,
             next_row_offset,
-            previous_scroll_rows,
-            next_scroll_rows,
             terminal_changed,
         }
     }

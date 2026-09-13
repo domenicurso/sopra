@@ -49,6 +49,7 @@ pub extern "C" fn keel_module_after_redraw(
         state.app.apply(EditorEvent::Redisplay(snapshot.clone()));
         state.app.refresh_suggestions();
         let completion_tenths_ms = state.completion_tenths_ms;
+        state.last_scroll_rows = 0;
 
         let Some(probe) = build_scene(&state.app, 0, PopupPlacement::Below, completion_tenths_ms)
         else {
@@ -56,7 +57,6 @@ pub extern "C" fn keel_module_after_redraw(
                 .renderer
                 .clear_previous_at(snapshot.cursor.row)
                 .unwrap_or_default();
-            state.reserved_scroll_rows = 0;
             state.clock.rendered(Instant::now());
             state.stats.last_payload_bytes = payload.len();
             state.stats.last_rows = 0;
@@ -74,19 +74,17 @@ pub extern "C" fn keel_module_after_redraw(
             .rows
             .saturating_sub(snapshot.cursor.row.saturating_add(1));
         let above = snapshot.cursor.row;
-        let Some(layout) = popup_layout(requested_height, below, above, state.reserved_scroll_rows)
-        else {
+        let Some(layout) = popup_layout(requested_height, below, above) else {
             let payload = state
                 .renderer
                 .clear_previous_at(snapshot.cursor.row)
                 .unwrap_or_default();
-            state.reserved_scroll_rows = 0;
             state.clock.rendered(Instant::now());
             state.stats.last_payload_bytes = payload.len();
             state.stats.last_rows = 0;
             return copy_payload(&payload, output, capacity);
         };
-        state.reserved_scroll_rows = layout.scroll_rows;
+        state.last_scroll_rows = layout.scroll_rows;
         let placement = layout.placement;
         let height = layout.height;
 
@@ -98,7 +96,7 @@ pub extern "C" fn keel_module_after_redraw(
             columns,
         );
         let Some(scene) = build_scene(&state.app, anchor, placement, completion_tenths_ms) else {
-            state.reserved_scroll_rows = 0;
+            state.last_scroll_rows = 0;
             return 0;
         };
         let row_offset = match placement {
@@ -109,10 +107,13 @@ pub extern "C" fn keel_module_after_redraw(
             .terminal_rows(snapshot.terminal.rows)
             .cursor_row(snapshot.cursor.row)
             .row_offset(row_offset)
-            .scroll_rows(state.reserved_scroll_rows);
+            .scroll_rows(state.last_scroll_rows);
         let rendered = match state.renderer.render(&scene, context) {
             Ok(rendered) => rendered,
-            Err(_) => return 0,
+            Err(_) => {
+                state.last_scroll_rows = 0;
+                return 0;
+            }
         };
         let payload = &rendered.transaction.payload;
         state.stats.redraws = state.stats.redraws.saturating_add(1);

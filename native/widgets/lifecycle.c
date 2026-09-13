@@ -4,6 +4,7 @@ int keel_widget_line_init(char **args)
 {
     (void)args;
     keel_module_init();
+    keel_set_zle_line_origin();
     runtime.line_active = 1;
     keel_reset_cursor_animation();
     return 0;

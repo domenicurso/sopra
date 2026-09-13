@@ -72,16 +72,9 @@ pub(crate) fn choose_popup_placement(
     }
 }
 
-pub(crate) fn popup_layout(
-    requested_height: u16,
-    below: u16,
-    above: u16,
-    reserved_scroll_rows: u16,
-) -> Option<PopupLayout> {
-    let current_below = below.saturating_add(reserved_scroll_rows);
-    let current_above = above.saturating_sub(reserved_scroll_rows);
-    let additional_scroll = requested_height.saturating_sub(current_below);
-    let scroll_rows = reserved_scroll_rows.saturating_add(additional_scroll.min(current_above));
+pub(crate) fn popup_layout(requested_height: u16, below: u16, above: u16) -> Option<PopupLayout> {
+    let required_scroll = requested_height.saturating_sub(below);
+    let scroll_rows = required_scroll.min(above);
     let available_below = below.saturating_add(scroll_rows);
     let available_above = above.saturating_sub(scroll_rows);
 

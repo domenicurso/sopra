@@ -1,5 +1,43 @@
 loader_frames=('-' '\' '|' '/')
 
+# Keep status events and timed frame events on one stream so one renderer can
+# update the text immediately without tying frame animation to build output.
+spinner_tick() {
+    local label=$1
+    local event_pipe=$2
+    local frame_index=0
+    local subtext='starting'
+    local event
+    local frame
+
+    while IFS= read -r event; do
+        case $event in
+            frame)
+                frame=${loader_frames[$((frame_index % ${#loader_frames[@]}))]}
+                frame_index=$((frame_index + 1))
+                render_step "$label" "$subtext" "$frame"
+                ;;
+            status:*)
+                subtext=${event#status:}
+                frame=${loader_frames[$((frame_index % ${#loader_frames[@]}))]}
+                render_step "$label" "$subtext" "$frame"
+                ;;
+        esac
+    done < "$event_pipe"
+}
+
+spinner_clock() {
+    local event_pipe=$1
+    local ready_file=$2
+
+    exec 5>"$event_pipe"
+    : > "$ready_file"
+    while :; do
+        sleep 0.1
+        printf '%s\n' frame >&5
+    done
+}
+
 render_step() {
     local label=$1
     local subtext=$2
@@ -24,16 +62,31 @@ run_step() {
     shift
     local status=0
     local subtext='starting'
-    local frame_index=0
     local line
+    local spinner_pid=''
+    local clock_pid=''
 
     step_dir=$(mktemp -d "${TMPDIR:-/tmp}/keel-step.XXXXXX")
     local step_pipe="$step_dir/output"
+    local event_pipe="$step_dir/events"
+    local clock_ready="$step_dir/clock-ready"
     mkfifo "$step_pipe"
+    if (( animate )); then
+        mkfifo "$event_pipe"
+        spinner_tick "$label" "$event_pipe" &
+        spinner_pid=$!
+        spinner_clock "$event_pipe" "$clock_ready" &
+        clock_pid=$!
+        while [[ ! -f $clock_ready ]]; do
+            sleep 0.01
+        done
+        printf 'status:%s\n' "$subtext" > "$event_pipe"
+    fi
     : > "$build_log"
 
     "$@" >"$step_pipe" 2>&1 &
     local pid=$!
+
     while IFS= read -r line || [[ -n $line ]]; do
         printf '%s\n' "$line" >> "$build_log"
         case $line in
@@ -57,11 +110,24 @@ run_step() {
                 ;;
         esac
 
-        local frame=${loader_frames[$((frame_index % ${#loader_frames[@]}))]}
-        render_step "$label" "$subtext" "$frame"
-        frame_index=$((frame_index + 1))
+        if (( animate )); then
+            printf 'status:%s\n' "$subtext" > "$event_pipe"
+        else
+            render_step "$label" "$subtext" ''
+        fi
     done < "$step_pipe"
     wait "$pid" || status=$?
+
+    if [[ -n $clock_pid ]]; then
+        kill "$clock_pid" 2>/dev/null || true
+        wait "$clock_pid" 2>/dev/null || true
+    fi
+    if [[ -n $spinner_pid ]]; then
+        kill "$spinner_pid" 2>/dev/null || true
+        wait "$spinner_pid" 2>/dev/null || true
+    fi
+
+    rm -f -- "$event_pipe" "$clock_ready"
     rm -rf -- "$step_dir"
     step_dir=''
 

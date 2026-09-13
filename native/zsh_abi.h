@@ -49,7 +49,7 @@ extern int zterm_lines;
 extern int zlecs;
 extern int zlell;
 extern wchar_t *zleline;
-
+extern void ungetbytes(char *value, int length);
 /* Exported by the Keel-enabled Zsh build, immediately after redisplay. */
 extern unsigned int keel_zsh_abi_version;
 extern KeelRedrawCallback keel_pre_redraw_callback;

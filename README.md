@@ -155,7 +155,7 @@ The Rust crates keep the rest of the work separated. `keel-core` normalizes host
 
 Before Zsh redraws, Keel clears the previous surface. After Zsh has drawn its ordinary prompt and line, the post-redraw hook receives the actual visual cursor position, so the next surface can anchor to the host cursor rather than guessing from prompt strings.
 
-On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Tab accepts a selected completion by updating the ZLE buffer, while Enter executes the resulting line. Escape dismisses the popup, Ctrl-C clears the current line in place, and empty Enter only redisplays it; none of these paths prints a synthetic prompt. Keel never enters the alternate screen, clears the terminal, rewrites scrollback, wraps the shell in another PTY, or starts a daemon.
+On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Tab accepts a selected completion by updating the ZLE buffer, while Enter executes the resulting line. Escape dismisses the popup, Ctrl-C clears the current line in place, and empty Enter only redisplays it; none of these paths prints a synthetic prompt. Keel never enters the alternate screen, clears the terminal, reverses terminal scrollback, wraps the shell in another PTY, or starts a daemon.
 
 For the lower-level rendering contract, see [the architecture notes](docs/architecture.md) and [the renderer notes](docs/renderer.md).
 

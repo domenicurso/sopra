@@ -69,7 +69,6 @@ pub struct RenderedFrame {
     pub cursor_row: u16,
     pub anchor_row: u16,
     pub row_offset: i16,
-    pub scroll_rows: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,8 +90,6 @@ pub struct FrameDiff {
     pub next_anchor_row: u16,
     pub previous_row_offset: i16,
     pub next_row_offset: i16,
-    pub previous_scroll_rows: u16,
-    pub next_scroll_rows: u16,
     pub terminal_changed: bool,
 }
 
@@ -102,27 +99,15 @@ impl FrameDiff {
             || !self.cleared_rows.is_empty()
             || self.previous_area != self.next_area
             || self.terminal_changed
-            || self.previous_scroll_rows != self.next_scroll_rows
             || self.origin_changed()
     }
 
     pub fn origin_changed(&self) -> bool {
         self.terminal_changed
-            || self.previous_scroll_rows != self.next_scroll_rows
             || self.previous_origin != self.next_origin
             || self.previous_anchor_row != self.next_anchor_row
             || (self.previous_cursor_row == self.next_cursor_row
                 && self.previous_row_offset != self.next_row_offset)
-    }
-
-    pub fn scroll_rows_added(&self) -> u16 {
-        self.next_scroll_rows
-            .saturating_sub(self.previous_scroll_rows)
-    }
-
-    pub fn scroll_rows_removed(&self) -> u16 {
-        self.previous_scroll_rows
-            .saturating_sub(self.next_scroll_rows)
     }
 }
 
@@ -131,9 +116,6 @@ pub enum PatchOp {
     SaveCursor,
     HideCursor,
     ScrollUp {
-        rows: u16,
-    },
-    ScrollDown {
         rows: u16,
     },
     MoveToSurface,
@@ -160,6 +142,7 @@ pub struct RenderTransaction {
     pub row_offset: i16,
     pub width: u16,
     pub height: u16,
+    pub scroll_rows: u16,
     pub ops: Vec<PatchOp>,
     pub payload: Vec<u8>,
 }

@@ -10,6 +10,40 @@
 static int have_last_cursor_position;
 static uint16_t last_cursor_column;
 static uint16_t last_cursor_row;
+static int have_zle_line_origin;
+static uint16_t zle_line_origin;
+
+void keel_set_zle_line_origin(void)
+{
+    int terminal_row = keel_capture_zle_line_origin();
+
+    have_zle_line_origin = terminal_row > 0;
+    if (have_zle_line_origin) {
+        zle_line_origin = (uint16_t)(terminal_row - 1);
+    }
+}
+
+void keel_adjust_zle_line_origin(unsigned int rows)
+{
+    if (!have_zle_line_origin || rows == 0)
+        return;
+    zle_line_origin = rows >= zle_line_origin ? 0 :
+                                                   (uint16_t)(zle_line_origin - rows);
+}
+
+static uint16_t physical_cursor_row(void)
+{
+    uint32_t row;
+
+    if (!have_zle_line_origin || keel_zle_cursor_line <= 0)
+        return have_zle_line_origin ? zle_line_origin :
+                                      (uint16_t)(keel_zle_cursor_line > 0 ?
+                                                     keel_zle_cursor_line : 0);
+    row = (uint32_t)zle_line_origin + (uint32_t)keel_zle_cursor_line;
+    if (zterm_lines > 0 && row >= (uint32_t)zterm_lines)
+        row = (uint32_t)zterm_lines - 1;
+    return row > UINT16_MAX ? UINT16_MAX : (uint16_t)row;
+}
 
 static void reset_animation_if_cursor_moved(const KeelNativeHostSnapshot *snapshot)
 {
@@ -68,8 +102,7 @@ static void fill_host_snapshot(KeelNativeHostSnapshot *snapshot)
     snapshot->terminal_rows = (uint16_t)(zterm_lines > 0 ? zterm_lines : 1);
     snapshot->cursor_column = (uint16_t)(keel_zle_cursor_column > 0 ?
                                             keel_zle_cursor_column : 0);
-    snapshot->cursor_row = (uint16_t)(keel_zle_cursor_line > 0 ?
-                                         keel_zle_cursor_line : 0);
+    snapshot->cursor_row = physical_cursor_row();
     snapshot->cwd = (const unsigned char *)cwd_buffer;
     snapshot->cwd_len = strlen(cwd_buffer);
     snapshot->keymap = (const unsigned char *)keymap_buffer;
@@ -134,6 +167,7 @@ void keel_after_redraw(void)
 {
     KeelNativeHostSnapshot snapshot;
     size_t length;
+    uint16_t scroll_rows;
 
     if (!runtime.active || !runtime.line_active || runtime.in_callback || !zleactive || SHTTY < 0)
         return;
@@ -143,6 +177,8 @@ void keel_after_redraw(void)
 
     runtime.in_callback = 1;
     length = keel_module_after_redraw(&snapshot, patch_buffer, sizeof(patch_buffer));
+    scroll_rows = keel_module_last_scroll_rows();
+    keel_adjust_zle_line_origin(scroll_rows);
     keel_write_rust_payload(length);
     keel_write_cursor_style(1);
     runtime.in_callback = 0;

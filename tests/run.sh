@@ -42,8 +42,14 @@ fi
 install_root="$repo_root/target/keel-install"
 install_output=$(KEEL_INSTALL_PREFIX="$install_root" "$repo_root/install.sh")
 printf '%s\n' "$install_output" | grep -q '^Keel installed$'
-printf '%s\n' "$install_output" | grep -q '^Building Keel: Compiling native module (1/20): '
+printf '%s\n' "$install_output" | grep -q '^Building Keel: Compiling native module (1/21): '
 printf '%s\n' "$install_output" | grep -q '^Installing Keel: Installing shell loader (1/10): '
+printf '%s\n' "$install_output" | grep -Fxq "Launch Keel with $install_root/bin/keel -il."
+printf '%s\n' "$install_output" | grep -Fxq 'After it starts, run keel status to confirm the shell is enabled.'
+if printf '%s\n' "$install_output" | grep -Eq '^  (prefix|launch|isolated|commands):'; then
+    echo "installer summary still uses labeled fields" >&2
+    exit 1
+fi
 grep -q 'ZDOTDIR=' "$install_root/bin/keel"
 grep -qx 'keel-install-v1' "$install_root/.keel-install"
 grep -q 'source .*share/keel.zsh' "$install_root/etc/zsh/.zshrc"

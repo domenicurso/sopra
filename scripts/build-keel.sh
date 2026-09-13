@@ -21,6 +21,7 @@ native_sources=(
     module/entry.c
     module/state.c
     host/io.c
+    host/position.c
     host/snapshot.c
     host/selection.c
     cursor/state.c

@@ -38,8 +38,9 @@ impl Renderer {
         let area = Rect::new(0, 0, width, height);
         let mut buffer = Buffer::empty(area);
         scene.render(area, &mut buffer);
-        let row_offset = effective_row_offset(context.row_offset, context.scroll_rows);
-        let anchor_row = surface_row(context.cursor_row, row_offset);
+        let scroll_rows = context.scroll_rows.min(context.cursor_row);
+        let cursor_row = context.cursor_row.saturating_sub(scroll_rows);
+        let anchor_row = surface_row(cursor_row, context.row_offset);
         let frame = RenderedFrame {
             area,
             used_size: keel_ui::Size::new(width, height),
@@ -47,19 +48,31 @@ impl Renderer {
             terminal_columns: context.terminal_columns,
             terminal_rows: context.terminal_rows,
             origin_column,
-            cursor_row: context.cursor_row,
+            cursor_row,
             anchor_row,
-            row_offset,
-            scroll_rows: context.scroll_rows,
+            row_offset: context.row_offset,
         };
         let diff = self.diff(Some(&frame));
-        let payload = AnsiWriter::paint(&frame, &diff, context.force_full);
+        let payload = AnsiWriter::paint(
+            &frame,
+            &diff,
+            context.force_full,
+            context.cursor_row,
+            scroll_rows,
+        );
         let transaction = RenderTransaction {
             origin_column,
-            row_offset,
+            row_offset: context.row_offset,
             width,
             height,
-            ops: patch_ops(&diff, &frame, context.force_full),
+            scroll_rows,
+            ops: patch_ops(
+                &diff,
+                &frame,
+                context.force_full,
+                context.cursor_row,
+                scroll_rows,
+            ),
             payload,
         };
         let rendered = RenderedRegion {
@@ -84,7 +97,6 @@ impl Renderer {
             clear_row_offset(&previous, cursor_row),
             previous.area.width,
             previous.area.height,
-            previous.scroll_rows,
         ))
     }
 
@@ -101,11 +113,6 @@ fn surface_row(cursor_row: u16, row_offset: i16) -> u16 {
     }
 }
 
-fn effective_row_offset(row_offset: i16, scroll_rows: u16) -> i16 {
-    (i32::from(row_offset) - i32::from(scroll_rows)).clamp(i32::from(i16::MIN), i32::from(i16::MAX))
-        as i16
-}
-
 fn row_delta(surface_row: u16, cursor_row: u16) -> i16 {
     (i32::from(surface_row) - i32::from(cursor_row)).clamp(i32::from(i16::MIN), i32::from(i16::MAX))
         as i16
@@ -119,32 +126,35 @@ fn clear_row_offset(frame: &RenderedFrame, cursor_row: u16) -> i16 {
     }
 }
 
-fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<PatchOp> {
-    if !force_full && !diff.changed() {
+fn clear_diff_row_offset(diff: &FrameDiff, cursor_row: u16) -> i16 {
+    if diff.previous_cursor_row == cursor_row {
+        diff.previous_row_offset
+    } else {
+        row_delta(diff.previous_anchor_row, cursor_row)
+    }
+}
+
+fn patch_ops(
+    diff: &FrameDiff,
+    frame: &RenderedFrame,
+    force_full: bool,
+    cursor_row: u16,
+    scroll_rows: u16,
+) -> Vec<PatchOp> {
+    if !force_full && !diff.changed() && scroll_rows == 0 {
         return Vec::new();
     }
     let mut ops = vec![PatchOp::SaveCursor, PatchOp::HideCursor];
     if diff.origin_changed() && diff.previous_area.height > 0 {
         ops.push(PatchOp::ClearSurface {
             origin_column: diff.previous_origin,
-            row_offset: if diff.previous_cursor_row == frame.cursor_row {
-                diff.previous_row_offset
-            } else {
-                row_delta(diff.previous_anchor_row, frame.cursor_row)
-            },
+            row_offset: clear_diff_row_offset(diff, cursor_row),
             width: diff.previous_area.width,
             height: diff.previous_area.height,
         });
     }
-    if diff.scroll_rows_added() > 0 {
-        ops.push(PatchOp::ScrollUp {
-            rows: diff.scroll_rows_added(),
-        });
-    }
-    if diff.scroll_rows_removed() > 0 {
-        ops.push(PatchOp::ScrollDown {
-            rows: diff.scroll_rows_removed(),
-        });
+    if scroll_rows > 0 {
+        ops.push(PatchOp::ScrollUp { rows: scroll_rows });
     }
     ops.push(PatchOp::MoveToSurface);
     let clear_width = frame.area.width.max(diff.previous_area.width);
