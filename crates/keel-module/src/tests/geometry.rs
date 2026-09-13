@@ -1,5 +1,5 @@
 use super::snapshot;
-use crate::render::{choose_popup_placement, popup_geometry};
+use crate::render::{choose_popup_placement, popup_geometry, popup_layout};
 use keel_ui::PopupPlacement;
 
 #[test]
@@ -79,4 +79,37 @@ fn popup_geometry_aligns_inner_content_with_the_completion_token() {
     let (clamped_origin, clamped_anchor) = popup_geometry(78, 4, 24, 80);
     assert_eq!(clamped_origin, 56);
     assert_eq!(clamped_anchor, 22);
+}
+
+#[test]
+fn popup_layout_scrolls_the_host_when_below_space_is_short() {
+    let layout = popup_layout(8, 2, 10, 0).unwrap();
+    assert_eq!(layout.placement, PopupPlacement::Below);
+    assert_eq!(layout.height, 8);
+    assert_eq!(layout.scroll_rows, 6);
+}
+
+#[test]
+fn popup_layout_keeps_an_existing_reservation_stable() {
+    let layout = popup_layout(8, 2, 10, 6).unwrap();
+    assert_eq!(layout.placement, PopupPlacement::Below);
+    assert_eq!(layout.scroll_rows, 6);
+}
+
+#[test]
+fn pre_redraw_moves_back_to_the_host_cursor_after_terminal_scroll() {
+    crate::keel_module_init();
+    let mut output = [0_u8; 16 * 1024];
+    let mut raw = snapshot(b"sh", 2);
+    raw.terminal_rows = 5;
+    raw.cursor_row = 3;
+    assert_eq!(
+        crate::keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()),
+        0
+    );
+    super::set_test_suggestions();
+    assert!(crate::keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()) > 0);
+
+    let size = crate::keel_module_before_redraw(output.as_mut_ptr(), output.len());
+    assert_eq!(&output[..size], b"\x1b[3B");
 }

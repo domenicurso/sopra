@@ -43,6 +43,7 @@ extern int keel_module_observe(const KeelNativeHostSnapshot *snapshot);
 typedef struct {
     int active;
     int in_callback;
+    int line_active;
 } KeelRuntime;
 
 extern Widget line_init_widget;
@@ -54,6 +55,9 @@ extern Widget dismiss_widget;
 extern Widget clear_line_widget;
 extern Widget set_suggestions_widget;
 extern Widget refresh_suggestions_widget;
+extern Widget cursor_start_widget;
+extern Widget cursor_read_widget;
+extern Widget cursor_stop_widget;
 extern KeelRuntime runtime;
 extern unsigned char patch_buffer[1024 * 1024];
 extern char line_buffer[256 * 1024];
@@ -67,6 +71,7 @@ void keel_observe_current_line(void);
 void keel_write_rust_payload(size_t length);
 void keel_write_cursor_style(int block);
 void keel_query_terminal_colors(void);
+void keel_clear_fake_cursor_cell(void);
 void keel_reset_cursor_animation(void);
 int keel_start_cursor_animation(void);
 void keel_stop_cursor_animation(void);

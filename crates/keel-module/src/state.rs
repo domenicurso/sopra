@@ -12,6 +12,7 @@ pub(crate) struct ModuleState {
     pub(crate) clock: FrameClock,
     pub(crate) stats: KeelNativeStats,
     pub(crate) completion_tenths_ms: u64,
+    pub(crate) reserved_scroll_rows: u16,
 }
 
 impl ModuleState {
@@ -22,6 +23,7 @@ impl ModuleState {
             clock: FrameClock::new(),
             stats: KeelNativeStats::default(),
             completion_tenths_ms: 0,
+            reserved_scroll_rows: 0,
         }
     }
 

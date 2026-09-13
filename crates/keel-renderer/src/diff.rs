@@ -8,6 +8,10 @@ impl Renderer {
         let previous = self.previous.as_ref();
         let previous_area = previous.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
         let next_area = next.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
+        let previous_terminal_columns = previous.map_or(0, |frame| frame.terminal_columns);
+        let next_terminal_columns = next.map_or(0, |frame| frame.terminal_columns);
+        let previous_terminal_rows = previous.map_or(0, |frame| frame.terminal_rows);
+        let next_terminal_rows = next.map_or(0, |frame| frame.terminal_rows);
         let previous_origin = previous.map_or(0, |frame| frame.origin_column);
         let next_origin = next.map_or(0, |frame| frame.origin_column);
         let previous_cursor_row = previous.map_or(0, |frame| frame.cursor_row);
@@ -16,6 +20,10 @@ impl Renderer {
         let next_anchor_row = next.map_or(0, |frame| frame.anchor_row);
         let previous_row_offset = previous.map_or(0, |frame| frame.row_offset);
         let next_row_offset = next.map_or(0, |frame| frame.row_offset);
+        let previous_scroll_rows = previous.map_or(0, |frame| frame.scroll_rows);
+        let next_scroll_rows = next.map_or(0, |frame| frame.scroll_rows);
+        let terminal_changed = previous_terminal_columns != next_terminal_columns
+            || previous_terminal_rows != next_terminal_rows;
         let width = previous_area.width.max(next_area.width);
         let height = previous_area.height.max(next_area.height);
         let mut changed_cells = 0;
@@ -49,12 +57,20 @@ impl Renderer {
             }
         }
 
+        if terminal_changed {
+            changed_rows = (0..next_area.height).collect();
+        }
+
         FrameDiff {
             changed_cells,
             changed_rows,
             cleared_rows,
             previous_area,
             next_area,
+            previous_terminal_columns,
+            next_terminal_columns,
+            previous_terminal_rows,
+            next_terminal_rows,
             previous_origin,
             next_origin,
             previous_cursor_row,
@@ -63,6 +79,9 @@ impl Renderer {
             next_anchor_row,
             previous_row_offset,
             next_row_offset,
+            previous_scroll_rows,
+            next_scroll_rows,
+            terminal_changed,
         }
     }
 }

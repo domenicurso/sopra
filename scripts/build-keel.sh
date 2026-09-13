@@ -18,11 +18,26 @@ output="$repo_root/target/debug/keel.so"
 cc=${CC:-cc}
 native_objects=()
 native_sources=(
-    keel_zsh_module.c
-    keel_zsh_render.c
-    keel_zsh_widgets.c
-    keel_zsh_completion_capture.c
-    keel_zsh_completion_worker.c
+    module/entry.c
+    module/state.c
+    host/io.c
+    host/snapshot.c
+    host/selection.c
+    cursor/state.c
+    cursor/cell.c
+    cursor/cell_io.c
+    cursor/color.c
+    cursor/animation.c
+    widgets/lifecycle.c
+    widgets/cursor.c
+    widgets/selection.c
+    widgets/line.c
+    widgets/registry.c
+    completion/state.c
+    completion/process.c
+    completion/response.c
+    completion/widgets.c
+    completion/capture.c
 )
 
 source_count=${#native_sources[@]}
@@ -31,6 +46,7 @@ for source in "${native_sources[@]}"; do
     source_index=$((source_index + 1))
     object="$repo_root/target/debug/${source%.c}.o"
     progress "Compiling native module ($source_index/$source_count): $source"
+    mkdir -p "$(dirname "$object")"
     "$cc" -std=c11 -Wall -Wextra -Werror -fPIC \
         -I "$repo_root/native" \
         -c "$repo_root/native/$source" \

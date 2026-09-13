@@ -6,6 +6,8 @@ typeset -g _KEEL_ZSH_LOADED=1
 typeset -g _KEEL_ZSH_DIR=${${(%):-%N}:A:h}
 source "$_KEEL_ZSH_DIR/keel-vars.zsh"
 source "$_KEEL_ZSH_DIR/keel-cache.zsh"
+source "$_KEEL_ZSH_DIR/completion/keel-help-parser.zsh"
+source "$_KEEL_ZSH_DIR/completion/keel-help-provider.zsh"
 
 if [[ ! -o interactive ]]; then
     return 0
@@ -20,6 +22,7 @@ zmodload -i zsh/zle || return 1
 zmodload -i zsh/parameter || return 1
 zmodload -i zsh/datetime || true
 autoload -Uz add-zle-hook-widget || return 1
+autoload -Uz add-zsh-hook || return 1
 
 if [[ -n ${KEEL_MODULE_PATH:-} ]]; then
     module_path=("$KEEL_MODULE_PATH" ${module_path:-})
@@ -38,17 +41,20 @@ source "$_KEEL_ZSH_DIR/keel-lifecycle.zsh"
 
 add-zle-hook-widget line-init keel-native-line-init
 add-zle-hook-widget line-finish keel-native-line-finish
+add-zle-hook-widget line-init _keel_cursor_line_init
+add-zle-hook-widget line-finish _keel_cursor_line_finish
 add-zle-hook-widget line-pre-redraw _keel_completion_pre_redraw
 add-zle-hook-widget line-init _keel_completion_line_init
 add-zle-hook-widget line-finish _keel_completion_line_finish
-add-zle-hook-widget line-init _keel_cursor_line_init
-add-zle-hook-widget line-finish _keel_cursor_line_finish
 zle -N _keel_accept_widget
 zle -N _keel_select_previous_widget
 zle -N _keel_select_next_widget
 zle -N _keel_dismiss_widget
+zle -N _keel_interrupt_widget
 zle -N _keel_accept_enter_widget
 zle -N _keel_accept_linefeed_widget
 zle -N _keel_completion_apply_widget
 _KEEL_ZSH_HOOKS=1
+add-zsh-hook zshexit _keel_zshexit
+_keel_install_trapint
 _keel_bind_keys

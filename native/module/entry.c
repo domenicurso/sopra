@@ -1,22 +1,6 @@
-#include "keel_zsh_module_internal.h"
+#include "../keel_zsh_module_internal.h"
 
 #include <locale.h>
-
-Widget line_init_widget;
-Widget line_finish_widget;
-Widget select_previous_widget;
-Widget select_next_widget;
-Widget accept_widget;
-Widget dismiss_widget;
-Widget clear_line_widget;
-Widget set_suggestions_widget;
-Widget refresh_suggestions_widget;
-KeelRuntime runtime;
-unsigned char patch_buffer[1024 * 1024];
-char line_buffer[256 * 1024];
-wchar_t wide_line_buffer[sizeof(line_buffer)];
-char cwd_buffer[4096];
-const char keymap_buffer[] = "main";
 
 int setup_(Module module)
 {
@@ -48,10 +32,12 @@ int boot_(Module module)
         return 1;
     runtime.active = 1;
     runtime.in_callback = 0;
+    runtime.line_active = 0;
     keel_reset_cursor_animation();
     keel_pre_redraw_callback = keel_before_redraw;
     keel_post_redraw_callback = keel_after_redraw;
     keel_completion_match_callback = keel_completion_capture_match;
+    keel_query_terminal_colors();
     keel_module_init();
     return 0;
 }
@@ -62,13 +48,16 @@ int cleanup_(Module module)
 
     (void)module;
     keel_stop_cursor_animation();
+    runtime.line_active = 0;
+    if (SHTTY >= 0)
+        keel_clear_fake_cursor_cell();
     if (runtime.active && SHTTY >= 0) {
         runtime.in_callback = 1;
         length = keel_module_line_finish(patch_buffer, sizeof(patch_buffer));
         keel_write_rust_payload(length);
-        keel_write_cursor_style(0);
         runtime.in_callback = 0;
     }
+    keel_write_cursor_style(0);
     runtime.active = 0;
     keel_pre_redraw_callback = NULL;
     keel_post_redraw_callback = NULL;
@@ -82,5 +71,6 @@ int cleanup_(Module module)
 int finish_(Module module)
 {
     (void)module;
+    keel_write_cursor_style(0);
     return 0;
 }

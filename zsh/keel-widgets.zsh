@@ -7,7 +7,23 @@ _keel_original_binding() {
         escape) print -r -- "${_KEEL_SAVED_ESCAPE_BINDINGS[$map]:-undefined-key}" ;;
         enter) print -r -- "${_KEEL_SAVED_ENTER_BINDINGS[$map]:-accept-line}" ;;
         linefeed) print -r -- "${_KEEL_SAVED_LINEFEED_BINDINGS[$map]:-accept-line}" ;;
+        interrupt) print -r -- "${_KEEL_SAVED_INTERRUPT_BINDINGS[$map]:-undefined-key}" ;;
     esac
+}
+
+_keel_interrupt_widget() {
+    _keel_abort_line
+    return 0
+}
+
+_keel_abort_line() {
+    (( _KEEL_ABORTING )) && return 0
+    _KEEL_ABORTING=1
+    _keel_cursor_stop
+    _keel_completion_stop_pending
+    zle keel-native-line-finish 2>/dev/null || true
+    zle send-break
+    _KEEL_ABORTING=0
 }
 
 _keel_accept_widget() {
@@ -103,7 +119,7 @@ _keel_bind_keys() {
         _keel_bind_key "$map" '^[[A' _keel_select_previous_widget _KEEL_SAVED_UP_BINDINGS
         _keel_bind_key "$map" '^[[B' _keel_select_next_widget _KEEL_SAVED_DOWN_BINDINGS
         _keel_bind_key "$map" '^[' _keel_dismiss_widget _KEEL_SAVED_ESCAPE_BINDINGS
-        _keel_bind_key "$map" '^C' keel-native-clear-line _KEEL_SAVED_INTERRUPT_BINDINGS
+        _keel_bind_key "$map" '^C' _keel_interrupt_widget _KEEL_SAVED_INTERRUPT_BINDINGS
         _keel_bind_key "$map" '^M' _keel_accept_enter_widget _KEEL_SAVED_ENTER_BINDINGS
         _keel_bind_key "$map" '^J' _keel_accept_linefeed_widget _KEEL_SAVED_LINEFEED_BINDINGS
     done

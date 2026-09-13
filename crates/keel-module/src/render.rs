@@ -3,6 +3,13 @@ use keel_ui::{MAX_VISIBLE_ITEMS, PopupItem, PopupPlacement, Scene, SuggestionPop
 
 use crate::abi::POPUP_MIN_ROWS;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PopupLayout {
+    pub(crate) placement: PopupPlacement,
+    pub(crate) height: u16,
+    pub(crate) scroll_rows: u16,
+}
+
 pub(crate) fn build_scene(
     app: &AppState,
     anchor: u16,
@@ -23,7 +30,7 @@ pub(crate) fn build_scene(
     let footer = format!(
         "{}/{}; {}.{}ms",
         app.selected_suggestion
-            .map_or_else(|| "0".to_string(), |selected| (selected + 1).to_string()),
+            .map_or_else(|| " ".to_string(), |selected| (selected + 1).to_string()),
         items.len(),
         completion_tenths_ms / 10,
         completion_tenths_ms % 10,
@@ -63,6 +70,36 @@ pub(crate) fn choose_popup_placement(
     } else {
         None
     }
+}
+
+pub(crate) fn popup_layout(
+    requested_height: u16,
+    below: u16,
+    above: u16,
+    reserved_scroll_rows: u16,
+) -> Option<PopupLayout> {
+    let current_below = below.saturating_add(reserved_scroll_rows);
+    let current_above = above.saturating_sub(reserved_scroll_rows);
+    let additional_scroll = requested_height.saturating_sub(current_below);
+    let scroll_rows = reserved_scroll_rows.saturating_add(additional_scroll.min(current_above));
+    let available_below = below.saturating_add(scroll_rows);
+    let available_above = above.saturating_sub(scroll_rows);
+
+    if available_below >= requested_height {
+        return Some(PopupLayout {
+            placement: PopupPlacement::Below,
+            height: requested_height,
+            scroll_rows,
+        });
+    }
+
+    choose_popup_placement(requested_height, available_below, available_above).map(
+        |(placement, height)| PopupLayout {
+            placement,
+            height,
+            scroll_rows,
+        },
+    )
 }
 
 pub(crate) fn popup_geometry(

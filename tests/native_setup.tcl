@@ -87,7 +87,7 @@ proc expect_native_prompt {} {
 
 proc expect_popup {} {
     expect {
-        -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+        -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
         timeout {
             puts stderr "autocomplete surface did not render"
             exit 1

@@ -18,4 +18,5 @@ pub use suggestion::{CompletionProvider, Suggestion};
 mod tests {
     mod editor;
     mod selection;
+    mod selection_behavior;
 }

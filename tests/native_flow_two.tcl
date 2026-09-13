@@ -25,7 +25,7 @@ send "keel-test al"
 expect_popup
 send "\033"
 after 200
-send "x"
+send "p"
 expect_popup
 send "\003"
 after 200

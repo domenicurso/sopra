@@ -38,10 +38,12 @@ _keel_completion_load_generated() {
     (( $+_KEEL_COMPLETION_PROVIDER_TRIED[$command_name] )) && return 1
     _KEEL_COMPLETION_PROVIDER_TRIED[$command_name]=1
     (( $+commands[$command_name] || $+functions[$command_name] )) || return 1
-    generated=$("$command_name" completion zsh 2>/dev/null) || return 1
-    [[ $generated == *'#compdef'* ]] || return 1
-    eval "$generated" 2>/dev/null || return 1
-    (( $+_comps[$command_name] ))
+    if generated=$("$command_name" completion zsh 2>/dev/null) &&
+        [[ $generated == *'#compdef'* ]]; then
+        eval "$generated" 2>/dev/null || return 1
+        (( $+_comps[$command_name] )) && return 0
+    fi
+    _keel_completion_load_help_provider "$command_name"
 }
 
 _keel_completion_request() {

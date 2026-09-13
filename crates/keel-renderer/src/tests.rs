@@ -1,4 +1,5 @@
 mod ansi;
+mod frame_geometry;
 mod frames;
 
 use keel_ui::{PopupItem, Scene, SuggestionPopup};

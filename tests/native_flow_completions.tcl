@@ -9,7 +9,7 @@ expect {
     }
 }
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "standard Zsh options did not render"
         exit 1
@@ -29,7 +29,7 @@ expect {
     }
 }
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "generated provider popup did not finish rendering"
         exit 1
@@ -46,7 +46,7 @@ expect {
     }
 }
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "generated option popup did not finish rendering"
         exit 1
@@ -78,7 +78,7 @@ expect {
     }
 }
 expect {
-    -re {0/1; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/1; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "sole completion popup did not finish rendering"
         exit 1
@@ -99,7 +99,7 @@ expect_native_prompt
 # ranked set instead of retaining the old numeric index.
 send "keel-test a"
 expect {
-    -re {0/3; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/3; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "selection refinement setup did not render"
         exit 1

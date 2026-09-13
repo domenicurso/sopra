@@ -38,21 +38,25 @@ impl Renderer {
         let area = Rect::new(0, 0, width, height);
         let mut buffer = Buffer::empty(area);
         scene.render(area, &mut buffer);
-        let anchor_row = surface_row(context.cursor_row, context.row_offset);
+        let row_offset = effective_row_offset(context.row_offset, context.scroll_rows);
+        let anchor_row = surface_row(context.cursor_row, row_offset);
         let frame = RenderedFrame {
             area,
             used_size: keel_ui::Size::new(width, height),
             buffer,
+            terminal_columns: context.terminal_columns,
+            terminal_rows: context.terminal_rows,
             origin_column,
             cursor_row: context.cursor_row,
             anchor_row,
-            row_offset: context.row_offset,
+            row_offset,
+            scroll_rows: context.scroll_rows,
         };
         let diff = self.diff(Some(&frame));
         let payload = AnsiWriter::paint(&frame, &diff, context.force_full);
         let transaction = RenderTransaction {
             origin_column,
-            row_offset: context.row_offset,
+            row_offset,
             width,
             height,
             ops: patch_ops(&diff, &frame, context.force_full),
@@ -80,6 +84,7 @@ impl Renderer {
             clear_row_offset(&previous, cursor_row),
             previous.area.width,
             previous.area.height,
+            previous.scroll_rows,
         ))
     }
 
@@ -94,6 +99,11 @@ fn surface_row(cursor_row: u16, row_offset: i16) -> u16 {
     } else {
         cursor_row.saturating_sub(row_offset.unsigned_abs())
     }
+}
+
+fn effective_row_offset(row_offset: i16, scroll_rows: u16) -> i16 {
+    (i32::from(row_offset) - i32::from(scroll_rows)).clamp(i32::from(i16::MIN), i32::from(i16::MAX))
+        as i16
 }
 
 fn row_delta(surface_row: u16, cursor_row: u16) -> i16 {
@@ -124,6 +134,16 @@ fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<P
             },
             width: diff.previous_area.width,
             height: diff.previous_area.height,
+        });
+    }
+    if diff.scroll_rows_added() > 0 {
+        ops.push(PatchOp::ScrollUp {
+            rows: diff.scroll_rows_added(),
+        });
+    }
+    if diff.scroll_rows_removed() > 0 {
+        ops.push(PatchOp::ScrollDown {
+            rows: diff.scroll_rows_removed(),
         });
     }
     ops.push(PatchOp::MoveToSurface);

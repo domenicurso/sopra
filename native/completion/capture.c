@@ -1,6 +1,7 @@
-#include "keel_zsh_module_internal.h"
+#include "../keel_zsh_module_internal.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -119,8 +120,8 @@ void keel_completion_capture_match(char *original, char *display, char *ignored_
     size_t index;
 
     (void)flags;
-    if (!capture_active || capture_count == KEEL_COMPLETION_LIMIT ||
-        original == NULL || original[0] == '\0' || match == NULL)
+    if (!capture_active || capture_count == KEEL_COMPLETION_LIMIT || original == NULL ||
+        original[0] == '\0' || match == NULL)
         return;
     detail = description_for(original, display);
     if (detail == NULL)
@@ -145,11 +146,10 @@ void keel_completion_capture_match(char *original, char *display, char *ignored_
     capture_count++;
 }
 
-static int write_all(const unsigned char *bytes, size_t length)
+static int write_capture(const unsigned char *bytes, size_t length)
 {
     while (length > 0) {
         ssize_t written = write(STDOUT_FILENO, bytes, length);
-
         if (written < 0 && errno == EINTR)
             continue;
         if (written <= 0)
@@ -172,8 +172,8 @@ void keel_completion_capture_finish(const char *request, const char *elapsed)
                              request, elapsed);
     if (header_length <= 0 || (size_t)header_length >= sizeof(header))
         return;
-    if (!write_all(header, (size_t)header_length) ||
-        !write_all(capture_buffer, capture_length))
+    if (!write_capture(header, (size_t)header_length) ||
+        !write_capture(capture_buffer, capture_length))
         return;
-    (void)write_all((const unsigned char *)"\x1d", 1);
+    (void)write_capture((const unsigned char *)"\x1d", 1);
 }

@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+set repo [lindex $argv 0]
+set zsh_bin [lindex $argv 1]
+
+if {$repo eq "" || $zsh_bin eq ""} {
+    puts stderr "usage: color_protocol.exp REPO_ROOT ZSH_BIN"
+    exit 2
+}
+
+set env(TERM) xterm-256color
+set env(LANG) C.UTF-8
+set env(LC_ALL) C.UTF-8
+set env(LC_CTYPE) C.UTF-8
+set env(KEEL_MODULE_PATH) "$repo/target/debug"
+set startup_dir "/tmp/keel-color-protocol-[pid]"
+file mkdir $startup_dir
+set startup_file [open [file join $startup_dir .zshrc] w]
+puts $startup_file "PROMPT='color-prompt> '"
+puts $startup_file "RPROMPT=''"
+puts $startup_file "source '$repo/zsh/keel.zsh'"
+close $startup_file
+set env(ZDOTDIR) $startup_dir
+log_user 0
+set esc [format "%c" 27]
+set query "${esc}]11;?${esc}\\${esc}]12;?${esc}\\"
+set reply "${esc}]11;rgb:1010/2020/3030${esc}\\${esc}]12;rgb:ffff/ffff/ffff${esc}\\"
+
+spawn $zsh_bin -di
+expect {
+    -ex $query {
+        send -raw -- $reply
+    }
+    timeout { puts stderr "terminal color query was not emitted"; exit 1 }
+        eof { puts stderr "zsh exited before terminal color query"; exit 1 }
+}
+expect {
+    -re {color-prompt> } {}
+    timeout { puts stderr "timed out waiting for color test prompt"; exit 1 }
+    eof { puts stderr "zsh exited before color test prompt"; exit 1 }
+}
+
+send -- "echo color-ok\r"
+expect {
+    -re {color-ok} {}
+    -re {rgb:1010} { puts stderr "OSC color response leaked into ZLE input"; exit 1 }
+    timeout { puts stderr "typed input was not accepted after OSC response"; exit 1 }
+    eof { puts stderr "zsh exited after OSC response"; exit 1 }
+}
+send -- "exit\r"
+expect eof

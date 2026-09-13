@@ -7,7 +7,7 @@ use keel_ui::{Constraints, PopupPlacement};
 
 use crate::abi::{KeelNativeHostSnapshot, MAX_POPUP_ROWS, POPUP_MIN_ROWS};
 use crate::protocol::{copy_payload, read_snapshot};
-use crate::render::{build_scene, choose_popup_placement, popup_geometry};
+use crate::render::{build_scene, popup_geometry, popup_layout};
 use crate::state::STATE;
 
 #[unsafe(no_mangle)]
@@ -56,6 +56,7 @@ pub extern "C" fn keel_module_after_redraw(
                 .renderer
                 .clear_previous_at(snapshot.cursor.row)
                 .unwrap_or_default();
+            state.reserved_scroll_rows = 0;
             state.clock.rendered(Instant::now());
             state.stats.last_payload_bytes = payload.len();
             state.stats.last_rows = 0;
@@ -63,23 +64,31 @@ pub extern "C" fn keel_module_after_redraw(
         };
         let columns = snapshot.terminal.columns.max(1);
         let natural = probe.measure(Constraints::new(columns, u16::MAX));
-        let requested_height = natural.height.clamp(POPUP_MIN_ROWS, MAX_POPUP_ROWS);
+        let requested_height = natural
+            .height
+            .min(MAX_POPUP_ROWS)
+            .min(snapshot.terminal.rows.saturating_sub(1).max(1))
+            .max(POPUP_MIN_ROWS.min(snapshot.terminal.rows.max(1)));
         let below = snapshot
             .terminal
             .rows
             .saturating_sub(snapshot.cursor.row.saturating_add(1));
         let above = snapshot.cursor.row;
-        let Some((placement, height)) = choose_popup_placement(requested_height, below, above)
+        let Some(layout) = popup_layout(requested_height, below, above, state.reserved_scroll_rows)
         else {
             let payload = state
                 .renderer
                 .clear_previous_at(snapshot.cursor.row)
                 .unwrap_or_default();
+            state.reserved_scroll_rows = 0;
             state.clock.rendered(Instant::now());
             state.stats.last_payload_bytes = payload.len();
             state.stats.last_rows = 0;
             return copy_payload(&payload, output, capacity);
         };
+        state.reserved_scroll_rows = layout.scroll_rows;
+        let placement = layout.placement;
+        let height = layout.height;
 
         let width = natural.width.min(columns).max(1);
         let (origin, anchor) = popup_geometry(
@@ -89,6 +98,7 @@ pub extern "C" fn keel_module_after_redraw(
             columns,
         );
         let Some(scene) = build_scene(&state.app, anchor, placement, completion_tenths_ms) else {
+            state.reserved_scroll_rows = 0;
             return 0;
         };
         let row_offset = match placement {
@@ -96,8 +106,10 @@ pub extern "C" fn keel_module_after_redraw(
             PopupPlacement::Above => -(height as i16),
         };
         let context = RenderContext::new(columns, height, origin)
+            .terminal_rows(snapshot.terminal.rows)
             .cursor_row(snapshot.cursor.row)
-            .row_offset(row_offset);
+            .row_offset(row_offset)
+            .scroll_rows(state.reserved_scroll_rows);
         let rendered = match state.renderer.render(&scene, context) {
             Ok(rendered) => rendered,
             Err(_) => return 0,

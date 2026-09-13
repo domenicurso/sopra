@@ -7,6 +7,8 @@ for script in \
     "$repo_root/scripts/build-keel.sh" \
     "$repo_root/scripts/build-zsh.sh" \
     "$repo_root/scripts/install-keel.sh" \
+    "$repo_root/scripts/install/files.sh" \
+    "$repo_root/scripts/install/output.sh" \
     "$repo_root/scripts/uninstall-keel.sh" \
     "$repo_root/scripts/start-keel.sh" \
     "$repo_root/uninstall.sh" \
@@ -40,8 +42,8 @@ fi
 install_root="$repo_root/target/keel-install"
 install_output=$(KEEL_INSTALL_PREFIX="$install_root" "$repo_root/install.sh")
 printf '%s\n' "$install_output" | grep -q '^Keel installed$'
-printf '%s\n' "$install_output" | grep -q '^Building Keel: Compiling native module (1/5): '
-printf '%s\n' "$install_output" | grep -q '^Installing Keel: Installing shell loader (1/8): '
+printf '%s\n' "$install_output" | grep -q '^Building Keel: Compiling native module (1/20): '
+printf '%s\n' "$install_output" | grep -q '^Installing Keel: Installing shell loader (1/10): '
 grep -q 'ZDOTDIR=' "$install_root/bin/keel"
 grep -qx 'keel-install-v1' "$install_root/.keel-install"
 grep -q 'source .*share/keel.zsh' "$install_root/etc/zsh/.zshrc"
@@ -49,7 +51,8 @@ grep -Fq "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
     "$install_root/etc/zsh/.zshrc"
 for shell_file in \
     keel-cache.zsh keel-capture.zsh keel-completion.zsh \
-    keel-completion-response.zsh keel-lifecycle.zsh keel-vars.zsh keel-widgets.zsh; do
+    keel-completion-response.zsh keel-lifecycle.zsh keel-vars.zsh keel-widgets.zsh \
+    completion/keel-help-parser.zsh completion/keel-help-provider.zsh; do
     if [[ ! -f "$install_root/share/$shell_file" ]]; then
         echo "installer omitted $shell_file" >&2
         exit 1

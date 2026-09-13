@@ -32,6 +32,25 @@ _keel_unbind_keys() {
     _KEEL_ZSH_KEYS=0
 }
 
+_keel_install_trapint() {
+    (( _KEEL_TRAPINT_INSTALLED )) && return 0
+    if (( $+functions[TRAPINT] )); then
+        _KEEL_SAVED_TRAPINT_DEFINED=1
+        _KEEL_SAVED_TRAPINT=${functions[TRAPINT]}
+        functions[_keel_saved_trapint]=${functions[TRAPINT]}
+    fi
+    TRAPINT() {
+        if (( _KEEL_ZSH_HOOKS )); then
+            _keel_abort_line
+        fi
+        if (( _KEEL_SAVED_TRAPINT_DEFINED )); then
+            _keel_saved_trapint
+        fi
+        return 0
+    }
+    _KEEL_TRAPINT_INSTALLED=1
+}
+
 _keel_cursor_stop() {
     if [[ -n $_KEEL_CURSOR_FD ]]; then
         zle -F "$_KEEL_CURSOR_FD" 2>/dev/null || true
@@ -61,6 +80,23 @@ _keel_cursor_line_finish() {
     _keel_cursor_stop
 }
 
+_keel_restore_trapint() {
+    (( _KEEL_TRAPINT_INSTALLED )) || return 0
+    if (( _KEEL_SAVED_TRAPINT_DEFINED )); then
+        functions[TRAPINT]=$_KEEL_SAVED_TRAPINT
+        unfunction _keel_saved_trapint 2>/dev/null || true
+    else
+        unfunction TRAPINT 2>/dev/null || true
+    fi
+    _KEEL_TRAPINT_INSTALLED=0
+}
+
+_keel_zshexit() {
+    (( _KEEL_ZSH_HOOKS )) || return 0
+    zmodload -u keel 2>/dev/null || true
+    _KEEL_ZSH_HOOKS=0
+}
+
 _keel_disable() {
     if (( _KEEL_ZSH_HOOKS )); then
         _keel_cursor_stop
@@ -70,6 +106,7 @@ _keel_disable() {
         add-zle-hook-widget -d line-finish _keel_completion_line_finish
         add-zle-hook-widget -d line-init _keel_cursor_line_init
         add-zle-hook-widget -d line-finish _keel_cursor_line_finish
+        _keel_restore_trapint
         add-zle-hook-widget -d line-init keel-native-line-init
         add-zle-hook-widget -d line-finish keel-native-line-finish
         _keel_unbind_keys
@@ -101,6 +138,7 @@ _keel_enable() {
     add-zle-hook-widget line-finish _keel_completion_line_finish
     add-zle-hook-widget line-init _keel_cursor_line_init
     add-zle-hook-widget line-finish _keel_cursor_line_finish
+    _keel_install_trapint
     _keel_bind_keys
     _KEEL_ZSH_HOOKS=1
 }

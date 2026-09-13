@@ -16,7 +16,7 @@ expect {
     }
 }
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "large command inventory popup did not finish rendering"
         exit 1
@@ -36,7 +36,7 @@ expect {
     }
 }
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "initial completion popup did not finish rendering"
         exit 1
@@ -46,7 +46,7 @@ expect {
 # Rust-side fuzzy filter is immediate instead of starting another worker.
 send [format "%c" 127]
 expect {
-    -re {[0-9]+/[0-9]+; 0\.0ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; 0\.0ms} {}
     timeout {
         puts stderr "cached fuzzy filtering was not immediate"
         exit 1
@@ -110,7 +110,7 @@ expect {
     }
 }
 expect {
-    -re {select output format.*0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {select output format.*(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "Zsh option descriptions were not captured"
         exit 1
@@ -122,7 +122,7 @@ after 200
 # Positional argument values come from the same _arguments call as options.
 send "keel-options r"
 expect {
-    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "Zsh positional arguments were not captured"
         exit 1
@@ -144,7 +144,7 @@ expect_native_prompt
 # Rust, so a non-contiguous query can find an option that prefix matching misses.
 send "keel-fuzzy mchs"
 expect {
-    -re {print only matching files.*0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    -re {print only matching files.*(?:[0-9]+)?/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "fuzzy completion did not find the non-prefix option"
         exit 1
@@ -157,7 +157,7 @@ after 200
 # growing into the rest of the terminal.
 send "keel-many "
 expect {
-    -re {item-11.*0/20; [0-9]+\.[0-9]ms} {}
+    -re {item-11.*(?:[0-9]+)?/20; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "the first completion viewport did not contain twelve entries"
         exit 1
