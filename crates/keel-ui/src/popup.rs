@@ -1,3 +1,4 @@
+use keel_core::SuggestionKind;
 use ratatui::{buffer::Buffer, layout::Rect};
 use unicode_width::UnicodeWidthStr;
 
@@ -13,6 +14,7 @@ pub const MAX_POPUP_WIDTH: u16 = 48;
 pub struct PopupItem {
     pub label: String,
     pub detail: String,
+    pub kind: SuggestionKind,
     pub match_indices: Vec<usize>,
 }
 
@@ -21,8 +23,14 @@ impl PopupItem {
         Self {
             label: label.into(),
             detail: detail.into(),
+            kind: SuggestionKind::Generic,
             match_indices: Vec::new(),
         }
+    }
+
+    pub fn with_kind(mut self, kind: SuggestionKind) -> Self {
+        self.kind = kind;
+        self
     }
 
     pub fn with_match_indices(mut self, indices: impl Into<Vec<usize>>) -> Self {

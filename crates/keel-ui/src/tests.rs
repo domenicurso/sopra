@@ -106,6 +106,51 @@ fn selection_reverses_only_the_term_and_keeps_details_dim() {
 }
 
 #[test]
+fn path_matches_are_green_over_their_role_color() {
+    let scene = Scene::new(
+        SuggestionPopup::new(
+            "1/2; 1ms",
+            vec![
+                PopupItem::new("file.txt", "").with_kind(keel_core::SuggestionKind::File),
+                PopupItem::new("folder/", "").with_kind(keel_core::SuggestionKind::Directory),
+            ],
+            None,
+        )
+        .query("f"),
+    );
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 20, 4));
+    scene.render(Rect::new(0, 0, 20, 4), &mut buffer);
+
+    assert_eq!(buffer.cell((2, 1)).unwrap().fg, Color::Green);
+    assert_eq!(buffer.cell((3, 1)).unwrap().fg, Color::LightYellow);
+    assert_eq!(buffer.cell((2, 2)).unwrap().fg, Color::Green);
+    assert_eq!(buffer.cell((3, 2)).unwrap().fg, Color::LightBlue);
+}
+
+#[test]
+fn path_highlighting_uses_only_the_active_segment() {
+    let scene = Scene::new(
+        SuggestionPopup::new(
+            "1/1; 1ms",
+            vec![PopupItem::new("keel-core", "").with_kind(keel_core::SuggestionKind::Directory)],
+            None,
+        )
+        .query("./crates/"),
+    );
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 20, 3));
+    scene.render(Rect::new(0, 0, 20, 3), &mut buffer);
+
+    let first_character = buffer.cell((2, 1)).unwrap();
+    assert_eq!(first_character.fg, Color::LightBlue);
+    assert!(
+        !first_character
+            .style()
+            .add_modifier
+            .contains(Modifier::UNDERLINED)
+    );
+}
+
+#[test]
 fn popup_visual_snapshot_is_stable() {
     let scene = Scene::new(SuggestionPopup::new(
         "1/2; Up/Down to select",
@@ -144,11 +189,36 @@ fn popup_limits_entries_and_renders_an_inline_scrollbar() {
     assert_eq!(thumb.symbol(), " ");
     assert_eq!(thumb.bg, Color::White);
     assert!(!thumb.style().add_modifier.contains(Modifier::DIM));
+    let thumb_top = buffer.cell((scrollbar_x, area.y + 1)).unwrap();
+    assert_eq!(thumb_top.symbol(), "▄");
+    assert_eq!(thumb_top.fg, Color::White);
+    assert_eq!(thumb_top.bg, Color::DarkGray);
+    let thumb_bottom = buffer.cell((scrollbar_x, area.y + 8)).unwrap();
+    assert_eq!(thumb_bottom.symbol(), "▂");
+    assert_eq!(thumb_bottom.fg, Color::DarkGray);
+    assert_eq!(thumb_bottom.bg, Color::White);
     let track = buffer.cell((scrollbar_x, area.y + 10)).unwrap();
     assert_eq!(track.symbol(), "█");
     assert_eq!(track.fg, Color::DarkGray);
     assert_ne!(track.bg, Color::White);
     assert!(!track.style().add_modifier.contains(Modifier::DIM));
+
+    let top_scene = Scene::new(
+        SuggestionPopup::new(
+            "0/20; 3ms",
+            (0..20)
+                .map(|index| PopupItem::new(format!("item-{index:02}"), "detail"))
+                .collect(),
+            None,
+        )
+        .viewport(0, MAX_VISIBLE_ITEMS),
+    );
+    let mut top_buffer = Buffer::empty(area);
+    top_scene.render(area, &mut top_buffer);
+    let thumb_exit = top_buffer.cell((scrollbar_x, area.y + 8)).unwrap();
+    assert_eq!(thumb_exit.symbol(), "▆");
+    assert_eq!(thumb_exit.fg, Color::DarkGray);
+    assert_eq!(thumb_exit.bg, Color::White);
 }
 
 #[test]

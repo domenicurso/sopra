@@ -24,6 +24,7 @@ pub(crate) fn build_scene(
         .iter()
         .map(|suggestion| {
             PopupItem::new(&suggestion.label, &suggestion.detail)
+                .with_kind(suggestion.kind())
                 .with_match_indices(suggestion.match_indices().to_vec())
         })
         .collect::<Vec<_>>();

@@ -12,7 +12,7 @@ pub use events::{EditorAction, EditorEvent};
 pub use geometry::{ScreenPoint, TerminalSize};
 pub use host::{HostLine, HostSnapshot};
 pub use state::{AppState, CursorState, EditorMode};
-pub use suggestion::{CompletionProvider, Suggestion};
+pub use suggestion::{CompletionProvider, Suggestion, SuggestionKind};
 
 #[cfg(test)]
 mod tests {

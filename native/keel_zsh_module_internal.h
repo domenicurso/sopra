@@ -91,6 +91,8 @@ void keel_completion_capture_finish(const char *request, const char *elapsed);
 void keel_completion_capture_match(char *original, char *display, char *ignored_prefix,
                                    char *prefix, char *path_prefix, char *match,
                                    char *path_suffix, char *suffix,
-                                   char *ignored_suffix, int flags, char *group);
+                                   char *ignored_suffix, int flags, char *group,
+                                   char *path_root, unsigned long mode,
+                                   unsigned long followed_mode);
 
 #endif

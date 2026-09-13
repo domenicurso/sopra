@@ -9,7 +9,8 @@
 
 static int have_last_cursor_position;
 static uint16_t last_cursor_column;
-static uint16_t last_cursor_row;
+static size_t last_cursor_units;
+static int last_cursor_line;
 static int have_zle_line_origin;
 static uint16_t zle_line_origin;
 
@@ -48,11 +49,12 @@ static uint16_t physical_cursor_row(void)
 static void reset_animation_if_cursor_moved(const KeelNativeHostSnapshot *snapshot)
 {
     if (!have_last_cursor_position || last_cursor_column != snapshot->cursor_column ||
-        last_cursor_row != snapshot->cursor_row) {
+        last_cursor_units != snapshot->cursor_units || last_cursor_line != keel_zle_cursor_line) {
         keel_reset_cursor_animation();
     }
     last_cursor_column = snapshot->cursor_column;
-    last_cursor_row = snapshot->cursor_row;
+    last_cursor_units = snapshot->cursor_units;
+    last_cursor_line = keel_zle_cursor_line;
     have_last_cursor_position = 1;
 }
 
@@ -123,8 +125,18 @@ void keel_observe_current_line(void)
 
 void keel_write_rust_payload(size_t length)
 {
-    if (length > 0 && length <= sizeof(patch_buffer) && SHTTY >= 0)
-        (void)keel_write_all(patch_buffer, length);
+    static const unsigned char show_cursor[] = "\033[?25h";
+    size_t visible_length = length;
+
+    if (length == 0 || length > sizeof(patch_buffer) || SHTTY < 0)
+        return;
+    /* The native fake cursor owns visibility for the entire active ZLE line. */
+    if (visible_length >= sizeof(show_cursor) - 1 &&
+        memcmp(patch_buffer + visible_length - (sizeof(show_cursor) - 1), show_cursor,
+               sizeof(show_cursor) - 1) == 0)
+        visible_length -= sizeof(show_cursor) - 1;
+    if (visible_length > 0)
+        (void)keel_write_all(patch_buffer, visible_length);
 }
 
 void keel_write_cursor_style(int block)
@@ -138,11 +150,16 @@ void keel_write_cursor_style(int block)
         return;
     if (block && !runtime.line_active)
         return;
-    keel_restore_fake_cursor_cell();
     if (block) {
-        (void)keel_write_all(sequence, length);
-        keel_write_fake_cursor_cell();
+        if (keel_fake_cursor_cell_active) {
+            (void)keel_write_all(sequence, length);
+            keel_refresh_fake_cursor_cell();
+        } else {
+            (void)keel_write_all(sequence, length);
+            keel_write_fake_cursor_cell();
+        }
     } else {
+        keel_restore_fake_cursor_cell();
         (void)keel_write_all(sequence, length);
         keel_restore_terminal_cursor_color();
     }

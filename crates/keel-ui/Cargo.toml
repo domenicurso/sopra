@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+keel-core = { path = "../keel-core" }
 ratatui.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true

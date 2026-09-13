@@ -1,3 +1,4 @@
+use keel_core::SuggestionKind;
 use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,8 @@ pub enum StyleToken {
     Border,
     Footer,
     Selection,
+    File,
+    Directory,
     Cursor,
 }
 
@@ -43,6 +46,10 @@ impl StyleToken {
                 .fg(Color::White)
                 .add_modifier(Modifier::DIM),
             Self::Selection => Style::default().add_modifier(Modifier::REVERSED),
+            Self::File => Style::default().fg(Color::LightYellow),
+            Self::Directory => Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
             Self::Cursor => TerminalColors::default().cursor_style(),
         }
     }
@@ -128,6 +135,14 @@ fn color_rgb(color: Color) -> [u8; 3] {
         Color::White => [255, 255, 255],
         Color::Indexed(index) => [index, index, index],
         Color::Rgb(red, green, blue) => [red, green, blue],
+    }
+}
+
+pub(crate) fn role_style(kind: SuggestionKind) -> Style {
+    match kind {
+        SuggestionKind::Generic => Style::default(),
+        SuggestionKind::File => StyleToken::File.style(),
+        SuggestionKind::Directory => StyleToken::Directory.style(),
     }
 }
 

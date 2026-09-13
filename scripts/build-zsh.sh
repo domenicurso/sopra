@@ -5,7 +5,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 version=5.9
 prefix=${KEEL_ZSH_PREFIX:-"$repo_root/target/keel-zsh"}
 archive="$repo_root/target/zsh-$version.tar.xz"
-marker="$prefix/.keel-dynamic-$version-v18"
+marker="$prefix/.keel-dynamic-$version-v19"
 
 progress() {
     if [[ ${KEEL_PROGRESS:-0} == 1 ]]; then
@@ -91,4 +91,4 @@ if [[ "$(uname -s)" == Darwin ]]; then
     install_name_tool -add_rpath '@loader_path/../lib/zsh' "$prefix/bin/zsh"
 fi
 progress 'Writing patched Zsh build marker'
-printf '%s\n' "zsh=$version" "dynamic=1" "patch=semantic-anchors-v2" "abi=3" "module-exports=v1" "cflags=probe-compat-v1" "tcsetpgrp=assumed-v1" > "$marker"
+printf '%s\n' "zsh=$version" "dynamic=1" "patch=semantic-anchors-v2" "abi=4" "module-exports=v1" "cflags=probe-compat-v1" "tcsetpgrp=assumed-v1" > "$marker"

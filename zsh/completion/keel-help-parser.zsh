@@ -2,6 +2,7 @@ typeset -gA _KEEL_HELP_OPTIONS
 typeset -gA _KEEL_HELP_OPTION_DETAILS
 typeset -gA _KEEL_HELP_POSITIONALS
 typeset -gA _KEEL_HELP_POSITIONAL_DETAILS
+typeset -gA _KEEL_HELP_POSITIONAL_KINDS
 typeset -gA _KEEL_HELP_OPTION_KINDS
 typeset -gA _KEEL_HELP_OPTION_VALUES
 typeset -gA _KEEL_HELP_HELP_LOADED
@@ -33,6 +34,7 @@ _keel_help_append_positional() {
     local command_name=$1
     local value=$2
     local detail=$3
+    local kind=${4:-}
     local field=$'\x1f'
 
     [[ -n $value ]] || return 0
@@ -41,6 +43,7 @@ _keel_help_append_positional() {
     fi
     _KEEL_HELP_POSITIONALS[$command_name]+="${_KEEL_HELP_POSITIONALS[$command_name]:+$field}$value"
     _KEEL_HELP_POSITIONAL_DETAILS[${command_name}${field}${value}]=$detail
+    [[ -n $kind ]] && _KEEL_HELP_POSITIONAL_KINDS[${command_name}${field}${value}]=$kind
 }
 
 _keel_help_append_values() {
@@ -76,7 +79,7 @@ _keel_help_parse_line() {
     local command_name=$1
     local section=$2
     local line=$3
-    local trimmed spec detail token option list
+    local trimmed spec detail detail_lower token option list path_kind
     local -a spec_words
 
     _keel_help_trim "$line"
@@ -99,10 +102,20 @@ _keel_help_parse_line() {
             option=${token%%[=<]*}
             [[ $option == -* ]] || continue
             _keel_help_append "$command_name" "$option" "$detail"
-            if [[ $spec == *'<'* || $spec == *'='* ||
-                  $detail == *'directory'* || $detail == *'Path'* ||
-                  $detail == *'path'* || $detail == *'file'* ]]; then
-                _KEEL_HELP_OPTION_KINDS[${command_name}$'\x1f'$option]=path
+            detail_lower=${detail:l}
+            path_kind=''
+            if [[ $detail_lower == *file* &&
+                  ( $detail_lower == *directory* || $detail_lower == *folder* ) ]]; then
+                path_kind=both
+            elif [[ $detail_lower == *directory* || $detail_lower == *folder* ||
+                    $detail_lower == *' dir'* ]]; then
+                path_kind=directories
+            elif [[ $detail_lower == *path* || $detail_lower == *file* ||
+                    $spec == *'<'* || $spec == *'='* ]]; then
+                path_kind=files
+            fi
+            if [[ -n $path_kind ]]; then
+                _KEEL_HELP_OPTION_KINDS[${command_name}$'\x1f'$option]=$path_kind
             fi
             if [[ $detail == *'Accepted values'*:* ]]; then
                 list=${detail#*:}
@@ -121,6 +134,17 @@ _keel_help_parse_line() {
         [[ $spec != "$trimmed" ]] || return 0
         _keel_help_trim "$detail"
         detail=$REPLY
+        detail_lower=${detail:l}
+        path_kind=''
+        if [[ $detail_lower == *file* &&
+              ( $detail_lower == *directory* || $detail_lower == *folder* ) ]]; then
+            path_kind=both
+        elif [[ $detail_lower == *directory* || $detail_lower == *folder* ||
+                $detail_lower == *' dir'* ]]; then
+            path_kind=directories
+        elif [[ $detail_lower == *path* || $detail_lower == *file* ]]; then
+            path_kind=files
+        fi
         if [[ $detail == *'Accepted values'*:* ]]; then
             list=${detail#*:}
             _keel_help_append_values "$command_name" '' "$list" "$detail"
@@ -128,6 +152,8 @@ _keel_help_parse_line() {
             list=${detail#*Valid options:}
             _keel_help_append_values "$command_name" '' "$list" "$detail"
         fi
+        [[ -n $path_kind ]] &&
+            _KEEL_HELP_POSITIONAL_KINDS[${command_name}$'\x1f'$spec]=$path_kind
         return 0
     fi
 

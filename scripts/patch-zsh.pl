@@ -67,7 +67,7 @@ my $abi = <<'EOF';
 
 /* Keel's native module checks this before using the callback ABI. */
 /**/
-mod_export unsigned int keel_zsh_abi_version = 3;
+mod_export unsigned int keel_zsh_abi_version = 4;
 /**/
 
 /* Keel observes the completed ZLE redisplay without owning ZLE itself. */
@@ -113,7 +113,8 @@ EOF
 my $completion_types = <<'EOF';
 typedef void (*KeelCompletionMatchCallback)(
     char *, char *, char *, char *, char *,
-    char *, char *, char *, char *, int, char *);
+    char *, char *, char *, char *, int, char *, char *,
+    unsigned long, unsigned long);
 extern int keel_completion_option_mode;
 EOF
 
@@ -134,7 +135,8 @@ my $match_callback = <<'EOF';
 		 keel_completion_match_callback)(
 		    cm->orig, cm->disp, cm->ipre, cm->pre,
 		    cm->ppre, cm->str, cm->psuf, cm->suf,
-		    cm->isuf, cm->flags, mgroup->name);
+		    cm->isuf, cm->flags, mgroup->name, cm->prpre,
+		    (unsigned long)cm->mode, (unsigned long)cm->fmode);
 EOF
 
 $zle = replace_after(

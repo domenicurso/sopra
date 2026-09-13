@@ -12,7 +12,7 @@ use crate::{
     matching::match_spans,
     popup::{PopupPlacement, SuggestionPopup},
     scrollbar::render_scrollbar,
-    style::{StyleToken, border_style, detail_style, footer_style, matching_style},
+    style::{StyleToken, border_style, detail_style, footer_style, matching_style, role_style},
 };
 
 const ELLIPSIS: &str = "…";
@@ -109,10 +109,11 @@ pub(crate) fn render_popup(popup: &SuggestionPopup, area: Rect, buffer: &mut Buf
     let mut lines = Vec::with_capacity(visible_count);
     for (offset, item) in popup.items[viewport_start..end].iter().enumerate() {
         let selected = popup.selected == Some(viewport_start + offset);
+        let term_style = role_style(item.kind);
         let term_style = if selected {
-            StyleToken::Selection.style()
+            term_style.add_modifier(StyleToken::Selection.style().add_modifier)
         } else {
-            Style::default()
+            term_style
         };
         let mut spans = match_spans(
             &item.label,

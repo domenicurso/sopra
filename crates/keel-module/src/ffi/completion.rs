@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::slice;
 
-use keel_core::Suggestion;
+use keel_core::{Suggestion, SuggestionKind};
 
 use crate::abi::{
     COMPLETION_FIELD_SEPARATOR, COMPLETION_RECORD_SEPARATOR, MAX_COMPLETIONS, MAX_HOST_BYTES,
@@ -22,9 +22,9 @@ pub extern "C" fn keel_module_has_suggestions() -> i32 {
 
 /// Install the completion engine's latest result without asking ZLE to render it.
 ///
-/// The payload is a sequence of `label\x1fdetail\x1fcandidate\x1e` records. The
-/// candidate is the completion token, so the module can derive the authoritative
-/// full line from the current Rust-owned snapshot.
+/// The payload is a sequence of `label\x1fdetail\x1fcandidate[\x1fkind]\x1e`
+/// records. The candidate is the completion token, so the module can derive the
+/// authoritative full line from the current Rust-owned snapshot.
 ///
 /// # Safety
 ///
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
             if record.is_empty() || suggestions.len() == MAX_COMPLETIONS {
                 break;
             }
-            let mut fields = record.splitn(3, |byte| *byte == COMPLETION_FIELD_SEPARATOR);
+            let mut fields = record.splitn(4, |byte| *byte == COMPLETION_FIELD_SEPARATOR);
             let Some(label) = protocol_text(fields.next().unwrap_or_default()) else {
                 continue;
             };
@@ -60,6 +60,7 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
             let Some(candidate) = protocol_text(fields.next().unwrap_or_default()) else {
                 continue;
             };
+            let kind = parse_kind(fields.next());
             if label.is_empty() || candidate.is_empty() {
                 continue;
             }
@@ -68,16 +69,28 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
                 if existing.detail.is_empty() && !detail.is_empty() {
                     existing.detail = detail;
                 }
+                if existing.kind() == SuggestionKind::Generic && kind != SuggestionKind::Generic {
+                    *existing = existing.clone().with_kind(kind);
+                }
                 continue;
             }
             replacements.insert(candidate.clone(), suggestions.len());
-            suggestions.push(Suggestion::with_replacement(label, detail, candidate));
+            suggestions
+                .push(Suggestion::with_replacement(label, detail, candidate).with_kind(kind));
         }
 
         state.completion_tenths_ms = completion_tenths_ms;
         state.app.set_suggestions(suggestions);
         1
     })
+}
+
+fn parse_kind(field: Option<&[u8]>) -> SuggestionKind {
+    match field {
+        Some(b"file") => SuggestionKind::File,
+        Some(b"directory") => SuggestionKind::Directory,
+        _ => SuggestionKind::Generic,
+    }
 }
 
 #[unsafe(no_mangle)]

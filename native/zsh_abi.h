@@ -22,9 +22,9 @@ typedef int (*ZleIntFunc)(char **);
 typedef void (*KeelRedrawCallback)(void);
 typedef void (*KeelCompletionMatchCallback)(
     char *, char *, char *, char *, char *, char *, char *, char *, char *, int,
-    char *);
+    char *, char *, unsigned long, unsigned long);
 
-#define KEEL_ZSH_ABI_VERSION 3u
+#define KEEL_ZSH_ABI_VERSION 4u
 #define KEEL_NATIVE_ABI_VERSION 1u
 #define KEEL_MAX_HOST_BYTES (4u * 1024u * 1024u)
 #define KEEL_FDT_MODULE 3

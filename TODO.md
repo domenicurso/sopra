@@ -7,9 +7,6 @@
 - mouse support
 - proper text selection
 - autocomplete
-  - optimize for speed
-  - shows files and folders
-    - date modified is description
   - command history
 - ai prompting
   - alt+enter to submit

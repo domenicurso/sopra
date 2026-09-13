@@ -23,6 +23,7 @@ Keel is a terminal augmentation prototype. The current MVP renders a small autoc
 - Diffs successive overlay frames in place and eases a hidden-cursor cell between the terminal background and its queried cursor color instead of relying on binary terminal blinking; edits hold it fully visible briefly, then fade it no dimmer than 40%.
 - Tracks Unicode input by grapheme and display width, so the host line can contain multi-codepoint characters without making the Rust model lose its place.
 - Captures each broad completion context once, then performs cached fuzzy filtering and ranking in native code so the common edit path is sub-millisecond.
+- Keeps path completions aware of file and directory roles, shows relative modification times, compacts shared path prefixes for the popup, and resolves misspelled parent segments with bounded fuzzy search while preserving the full insertion path.
 - Exposes a `keel` command with `status`, `enable`, `disable`, and `help` subcommands inside an active session.
 
 ### Who is it for?
@@ -191,7 +192,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 ## Current limitations
 
-- Completion capture follows Zsh's installed completion functions, accepts up to 16,384 finalized matches, and uses [`neo_frizbee`](https://docs.rs/neo_frizbee/latest/neo_frizbee/), the matching engine used by [`fff`](https://github.com/dmtrKovalenko/fff), to rank labels while preserving insertion text and descriptions. Command matches add the resolved executable path, and shell-function matches add their defining source path, when the provider has no per-item description. Durations include tenths of a millisecond, and cache hits report `0.0ms` because only native filtering runs.
+- Completion capture follows Zsh's installed completion functions, accepts up to 16,384 finalized matches, and uses [`neo_frizbee`](https://docs.rs/neo_frizbee/latest/neo_frizbee/), the matching engine used by [`fff`](https://github.com/dmtrKovalenko/fff), to rank labels while preserving insertion text and descriptions. File and directory matches carry their role and relative modification time, while the popup can shorten shared path prefixes without changing the full inserted path. Command matches add the resolved executable path, and shell-function matches add their defining source path, when the provider has no per-item description. Durations include tenths of a millisecond, and cache hits report `0.0ms` because only native filtering runs.
 - The sub-millisecond target applies to cached filtering and rendering. A cache miss executes arbitrary completion code in a forked copy of the live Zsh, so the parent remains responsive but first-result time remains provider-dependent.
 - Zsh still owns keyboard input and the editable buffer; Keel adds navigation and Tab insertion widgets while leaving command parsing, history, and execution in ZLE.
 - Running Keel requires the patched Zsh 5.9 build, which is why the project builds and ships its own private shell instead of loading into `/bin/zsh`.

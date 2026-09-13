@@ -13,6 +13,7 @@ extern int keel_fake_cursor_cell_active;
 
 void keel_capture_fake_cursor_text(void);
 void keel_write_fake_cursor_cell(void);
+void keel_refresh_fake_cursor_cell(void);
 void keel_restore_fake_cursor_cell(void);
 void keel_query_terminal_colors(void);
 int keel_cursor_blended_color(unsigned char color[3]);

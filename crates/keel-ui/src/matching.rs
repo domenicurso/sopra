@@ -42,7 +42,8 @@ pub(crate) fn match_spans(
 fn fuzzy_positions(graphemes: &[&str], query: &str) -> Vec<bool> {
     let mut matched = vec![false; graphemes.len()];
     let mut search_start = 0;
-    for wanted in query
+    let active_segment = query.rsplit('/').next().unwrap_or(query);
+    for wanted in active_segment
         .graphemes(true)
         .filter(|grapheme| !grapheme.chars().all(char::is_whitespace))
     {
