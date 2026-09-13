@@ -22,7 +22,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
     'print $(printf substitution-ok)' | grep -qx substitution-ok
 KEEL_MODULE_PATH="$repo_root/target/debug" \
     "$repo_root/target/keel-zsh/bin/zsh" -dfc \
-    'module_path=($KEEL_MODULE_PATH ${module_path:-}); zmodload zsh/zle && zmodload keel && print keel-loaded' \
+    'module_path=($KEEL_MODULE_PATH ${module_path:-}); zmodload zsh/zle && zmodload keel && zmodload zsh/complete && print keel-loaded' \
     | grep -qx keel-loaded
 stock_zsh=${KEEL_STOCK_ZSH:-/bin/zsh}
 if [[ -x "$stock_zsh" ]] && KEEL_MODULE_PATH="$repo_root/target/debug" \
@@ -39,11 +39,14 @@ if [[ -x "$stock_zsh" ]]; then
 fi
 install_root="$repo_root/target/keel-install"
 install_output=$(KEEL_INSTALL_PREFIX="$install_root" "$repo_root/install.sh")
-printf '%s\n' "$install_output" | grep -qx 'Keel installed'
+printf '%s\n' "$install_output" | grep -q '^Keel installed$'
+printf '%s\n' "$install_output" | grep -q '^Building Keel: Compiling native module (1/5): '
+printf '%s\n' "$install_output" | grep -q '^Installing Keel: Installing shell loader (1/8): '
 grep -q 'ZDOTDIR=' "$install_root/bin/keel"
 grep -qx 'keel-install-v1' "$install_root/.keel-install"
 grep -q 'source .*share/keel.zsh' "$install_root/etc/zsh/.zshrc"
-grep -Fq "PROMPT='%n in %~ > '" "$install_root/etc/zsh/.zshrc"
+grep -Fq "PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
+    "$install_root/etc/zsh/.zshrc"
 for shell_file in \
     keel-cache.zsh keel-capture.zsh keel-completion.zsh \
     keel-completion-response.zsh keel-lifecycle.zsh keel-vars.zsh keel-widgets.zsh; do
@@ -52,7 +55,7 @@ for shell_file in \
         exit 1
     fi
 done
-"$install_root/bin/keel" -dic 'keel status; exit' | grep -qx 'keel: enabled'
+KEEL_SOURCE_USER_RC=0 "$install_root/bin/keel" -dic 'keel status; exit' | grep -qx 'keel: enabled'
 "$install_root/bin/keel" status | grep -q '^keel: installed at '
 "$install_root/bin/keel" help | grep -q '^usage: keel '
 if "$install_root/bin/keel" disable >/dev/null 2>&1; then

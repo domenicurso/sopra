@@ -1,18 +1,52 @@
+# The command-position provider is captured without a fixed 512-item prefix,
+# so fuzzy ranking can find a command near the end of a large inherited set.
+send "kgn699"
+expect {
+    -re {699} {}
+    timeout {
+        puts stderr "large command inventory was truncated before fuzzy ranking"
+        exit 1
+    }
+}
+expect {
+    -re {alias} {}
+    timeout {
+        puts stderr "command source description was not captured"
+        exit 1
+    }
+}
+expect {
+    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    timeout {
+        puts stderr "large command inventory popup did not finish rendering"
+        exit 1
+    }
+}
+send "\003"
+after 200
+
 # Up/Down selects a Rust-owned item, and Tab replaces the ZLE line through
 # the native widget rather than printing a second prompt.
 send "keel-test al"
 expect {
-    -re {first result.*0/[0-9]+; [0-9]+ms} {}
+    -re {first result} {}
     timeout {
         puts stderr "compadd descriptions were not captured"
         exit 1
     }
 }
+expect {
+    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    timeout {
+        puts stderr "initial completion popup did not finish rendering"
+        exit 1
+    }
+}
 # Editing the same completion token reuses the broad provider result, so the
-# Rust-side fuzzy filter is immediate instead of starting another zpty.
+# Rust-side fuzzy filter is immediate instead of starting another worker.
 send [format "%c" 127]
 expect {
-    -re {[0-9]+/[0-9]+; 0ms} {}
+    -re {[0-9]+/[0-9]+; 0\.0ms} {}
     timeout {
         puts stderr "cached fuzzy filtering was not immediate"
         exit 1
@@ -20,7 +54,7 @@ expect {
 }
 send [format "%c%c%c" 27 91 66]
 expect {
-    -re {1/[0-9]+; [0-9]+ms} {}
+    -re {1/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "selection movement did not redraw the selected item"
         exit 1
@@ -76,7 +110,7 @@ expect {
     }
 }
 expect {
-    -re {select output format.*0/[0-9]+; [0-9]+ms} {}
+    -re {select output format.*0/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "Zsh option descriptions were not captured"
         exit 1
@@ -85,11 +119,32 @@ expect {
 send "\003"
 after 200
 
+# Positional argument values come from the same _arguments call as options.
+send "keel-options r"
+expect {
+    -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
+    timeout {
+        puts stderr "Zsh positional arguments were not captured"
+        exit 1
+    }
+}
+send [format "%c%c%c" 27 91 66]
+send "\t"
+send "\r"
+expect {
+    -re {keel-options:run} {}
+    timeout {
+        puts stderr "Zsh positional completion did not insert its candidate"
+        exit 1
+    }
+}
+expect_native_prompt
+
 # The completion set is captured from the real provider and fuzzy-ranked in
 # Rust, so a non-contiguous query can find an option that prefix matching misses.
 send "keel-fuzzy mchs"
 expect {
-    -re {print only matching files.*0/[0-9]+; [0-9]+ms} {}
+    -re {print only matching files.*0/[0-9]+; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "fuzzy completion did not find the non-prefix option"
         exit 1
@@ -102,7 +157,7 @@ after 200
 # growing into the rest of the terminal.
 send "keel-many "
 expect {
-    -re {item-11.*0/20; [0-9]+ms} {}
+    -re {item-11.*0/20; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "the first completion viewport did not contain twelve entries"
         exit 1
@@ -112,7 +167,7 @@ for {set i 0} {$i < 11} {incr i} {
     send [format "%c%c%c" 27 91 66]
 }
 expect {
-    -re {11/20; [0-9]+ms} {}
+    -re {11/20; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "long completion selection did not scroll the viewport"
         exit 1

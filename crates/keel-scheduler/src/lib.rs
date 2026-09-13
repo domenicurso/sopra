@@ -1,5 +1,56 @@
 use std::time::{Duration, Instant};
 
+const DEFAULT_CURSOR_BLINK_PERIOD: Duration = Duration::from_millis(1_800);
+const MIN_CURSOR_OPACITY: f32 = 0.4;
+
+/// A cursor visibility cycle with a smooth transition at each edge.
+///
+/// The returned opacity is one at the beginning of a cycle, eases to a dimmed
+/// state at the midpoint, and eases back to one by the end. Keeping the sample
+/// continuous lets a renderer produce real intermediate frames instead of
+/// treating blinking as a boolean state change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorBlink {
+    period: Duration,
+}
+
+impl CursorBlink {
+    pub const fn new(period: Duration) -> Self {
+        Self { period }
+    }
+
+    pub const fn period(self) -> Duration {
+        self.period
+    }
+
+    pub fn opacity_at(self, elapsed: Duration) -> f32 {
+        if self.period.is_zero() {
+            return 1.0;
+        }
+
+        let period = self.period.as_secs_f64();
+        let phase = (elapsed.as_secs_f64() % period) / period;
+        let half_cycle = phase * 2.0;
+        let visibility = if half_cycle <= 1.0 {
+            1.0 - smoothstep(half_cycle as f32)
+        } else {
+            smoothstep((half_cycle - 1.0) as f32)
+        };
+        MIN_CURSOR_OPACITY + visibility * (1.0 - MIN_CURSOR_OPACITY)
+    }
+}
+
+impl Default for CursorBlink {
+    fn default() -> Self {
+        Self::new(DEFAULT_CURSOR_BLINK_PERIOD)
+    }
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidationReason {
     HostRedisplay,
@@ -23,6 +74,8 @@ pub struct FrameClock {
     next_frame: Option<Instant>,
     animation_interval: Option<Duration>,
     editing: bool,
+    animation_started: Option<Instant>,
+    cursor_blink: CursorBlink,
 }
 
 impl Default for FrameClock {
@@ -38,19 +91,42 @@ impl FrameClock {
             next_frame: None,
             animation_interval: None,
             editing: false,
+            animation_started: None,
+            cursor_blink: CursorBlink::new(DEFAULT_CURSOR_BLINK_PERIOD),
         }
     }
 
     pub fn set_editing(&mut self, editing: bool, now: Instant) {
+        let was_editing = self.editing;
         self.editing = editing;
         if editing {
+            if !was_editing || self.animation_started.is_none() {
+                self.animation_started = Some(now);
+            }
             if let Some(interval) = self.animation_interval {
                 self.next_frame = Some(now + interval);
             }
         } else {
             self.pending = false;
             self.next_frame = None;
+            self.animation_started = None;
         }
+    }
+
+    pub fn set_cursor_blink(&mut self, blink: CursorBlink) {
+        self.cursor_blink = blink;
+    }
+
+    pub fn cursor_opacity(&self, now: Instant) -> f32 {
+        if !self.editing {
+            return 1.0;
+        }
+        self.animation_started
+            .map(|started| {
+                self.cursor_blink
+                    .opacity_at(now.saturating_duration_since(started))
+            })
+            .unwrap_or(1.0)
     }
 
     pub fn invalidate(&mut self, reason: InvalidationReason, now: Instant) {
@@ -166,5 +242,43 @@ mod tests {
         clock.set_animation_interval(Some(Duration::from_millis(50)), now);
         clock.invalidate(InvalidationReason::Animation, now);
         assert_eq!(clock.decision(now), FrameDecision::Idle);
+    }
+
+    #[test]
+    fn cursor_blink_has_intermediate_opacity_values() {
+        let blink = CursorBlink::new(Duration::from_millis(1_000));
+
+        assert_eq!(blink.opacity_at(Duration::ZERO), 1.0);
+        assert_eq!(
+            blink.opacity_at(Duration::from_millis(500)),
+            MIN_CURSOR_OPACITY
+        );
+        assert_eq!(blink.opacity_at(Duration::from_millis(1_000)), 1.0);
+        assert!(blink.opacity_at(Duration::from_millis(125)) > MIN_CURSOR_OPACITY);
+        assert!(blink.opacity_at(Duration::from_millis(125)) < 1.0);
+        assert!(blink.opacity_at(Duration::from_millis(625)) > MIN_CURSOR_OPACITY);
+        assert!(blink.opacity_at(Duration::from_millis(625)) < 1.0);
+    }
+
+    #[test]
+    fn editing_clock_exposes_the_interpolated_cursor_opacity() {
+        let now = Instant::now();
+        let mut clock = FrameClock::new();
+        clock.set_cursor_blink(CursorBlink::new(Duration::from_millis(1_000)));
+        clock.set_editing(true, now);
+
+        let opacity = clock.cursor_opacity(now + Duration::from_millis(125));
+        assert!(opacity > 0.0 && opacity < 1.0);
+    }
+
+    #[test]
+    fn refreshing_editing_state_does_not_restart_the_cursor_animation() {
+        let now = Instant::now();
+        let mut clock = FrameClock::new();
+        clock.set_editing(true, now);
+        clock.set_editing(true, now + Duration::from_millis(125));
+
+        let opacity = clock.cursor_opacity(now + Duration::from_millis(125));
+        assert!(opacity > 0.0 && opacity < 1.0);
     }
 }

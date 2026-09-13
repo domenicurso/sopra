@@ -11,7 +11,7 @@ pub(crate) struct ModuleState {
     pub(crate) renderer: Renderer,
     pub(crate) clock: FrameClock,
     pub(crate) stats: KeelNativeStats,
-    pub(crate) completion_ms: u64,
+    pub(crate) completion_tenths_ms: u64,
 }
 
 impl ModuleState {
@@ -21,7 +21,7 @@ impl ModuleState {
             renderer: Renderer::new(),
             clock: FrameClock::new(),
             stats: KeelNativeStats::default(),
-            completion_ms: 0,
+            completion_tenths_ms: 0,
         }
     }
 

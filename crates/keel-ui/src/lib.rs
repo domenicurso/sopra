@@ -19,7 +19,7 @@ pub use layout::{Align, Column, HorizontalAlignment, Row};
 pub use paragraph::Paragraph;
 pub use popup::{MAX_VISIBLE_ITEMS, PopupItem, PopupPlacement, SuggestionPopup};
 pub use ratatui_component::{RatatuiComponent, ratatui_component};
-pub use style::StyleToken;
+pub use style::{StyleToken, TerminalColors};
 
 #[cfg(test)]
 mod tests;

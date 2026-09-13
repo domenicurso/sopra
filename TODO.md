@@ -1,0 +1,3 @@
+- Formalize CI and install pipelines so that curl -fsSL ... | bash can be used
+- Update install script to give more granular progress indicators than just 'Building Keel /'
+  - Could be things like Building Keel (19/209) or a subtext like Patching Src/Zle/zle_refresh.c...

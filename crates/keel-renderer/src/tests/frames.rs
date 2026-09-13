@@ -94,6 +94,53 @@ fn moving_surface_restores_host_cursor_before_clearing_the_old_offset() {
 }
 
 #[test]
+fn moving_host_cursor_row_repaints_the_surface_at_its_new_absolute_row() {
+    let mut renderer = Renderer::new();
+    let scene = popup(&["run git"]);
+    renderer
+        .render(
+            &scene,
+            RenderContext::new(80, 12, 2)
+                .cursor_row(0)
+                .full_repaint(true),
+        )
+        .unwrap();
+    let moved = renderer
+        .render(&scene, RenderContext::new(80, 12, 2).cursor_row(3))
+        .unwrap();
+
+    assert!(moved.diff.origin_changed());
+    let payload = String::from_utf8(moved.transaction.payload).unwrap();
+    assert!(payload.contains("\x1b[2A"));
+    assert!(payload.contains("\x1b[1B"));
+}
+
+#[test]
+fn changing_relative_offset_without_moving_surface_does_not_repaint() {
+    let mut renderer = Renderer::new();
+    let scene = popup(&["run git"]);
+    renderer
+        .render(
+            &scene,
+            RenderContext::new(80, 12, 2)
+                .cursor_row(1)
+                .row_offset(1)
+                .full_repaint(true),
+        )
+        .unwrap();
+    let moved_host_cursor = renderer
+        .render(
+            &scene,
+            RenderContext::new(80, 12, 2).cursor_row(2).row_offset(0),
+        )
+        .unwrap();
+
+    assert_eq!(moved_host_cursor.frame.anchor_row, 2);
+    assert!(!moved_host_cursor.diff.changed());
+    assert!(moved_host_cursor.transaction.payload.is_empty());
+}
+
+#[test]
 fn shrinking_surface_clears_old_rows() {
     let mut renderer = Renderer::new();
     let previous = renderer

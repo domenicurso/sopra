@@ -47,7 +47,7 @@ impl AnsiWriter {
             clear_surface_body(
                 &mut output,
                 diff.previous_origin,
-                diff.previous_row_offset,
+                clear_row_offset(diff, frame.cursor_row),
                 diff.previous_area.width,
                 diff.previous_area.height,
             );
@@ -105,6 +105,15 @@ fn clear_surface_body(
             output.push_str("\x1b[1B");
             move_to_column(output, origin_column);
         }
+    }
+}
+
+fn clear_row_offset(diff: &FrameDiff, cursor_row: u16) -> i16 {
+    if diff.previous_cursor_row == cursor_row {
+        diff.previous_row_offset
+    } else {
+        (i32::from(diff.previous_anchor_row) - i32::from(cursor_row))
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
     }
 }
 

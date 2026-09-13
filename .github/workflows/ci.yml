@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-14
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install integration-test dependencies on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends build-essential expect libncurses-dev zsh
+
+      - name: Install integration-test dependencies on macOS
+        if: runner.os == 'macOS'
+        run: brew install expect
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run validation suite
+        run: ./tests/run.sh
+
+  piped-install:
+    name: Validate piped installer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends build-essential libncurses-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Create a source archive for the current revision
+        run: git archive --format=tar.gz --prefix=keel-main/ --output="$RUNNER_TEMP/keel.tar.gz" HEAD
+
+      - name: Install through curl and bash
+        env:
+          KEEL_INSTALL_PREFIX: ${{ runner.temp }}/keel-install
+          KEEL_SOURCE_URL: file://${{ runner.temp }}/keel.tar.gz
+        run: curl -fsSL file://"$GITHUB_WORKSPACE/install.sh" | bash
+
+      - name: Check installed launcher
+        env:
+          KEEL_INSTALL_PREFIX: ${{ runner.temp }}/keel-install
+        run: |
+          test -x "$KEEL_INSTALL_PREFIX/bin/keel"
+          "$KEEL_INSTALL_PREFIX/bin/keel" status

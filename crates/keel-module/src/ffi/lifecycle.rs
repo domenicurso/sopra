@@ -14,17 +14,11 @@ pub extern "C" fn keel_module_shutdown() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn keel_module_before_redraw(output: *mut u8, capacity: usize) -> usize {
+pub extern "C" fn keel_module_before_redraw(output: *mut u8, _capacity: usize) -> usize {
     if output.is_null() {
         return 0;
     }
-    STATE.with(|state| {
-        let mut state = state.borrow_mut();
-        let payload = state.renderer.clear_previous().unwrap_or_default();
-        state.stats.clears = state.stats.clears.saturating_add(1);
-        state.stats.last_payload_bytes = payload.len();
-        copy_payload(&payload, output, capacity)
-    })
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -33,7 +27,7 @@ pub extern "C" fn keel_module_line_init() {
         let mut state = state.borrow_mut();
         state.app = keel_core::AppState::default();
         state.clock = FrameClock::new();
-        state.completion_ms = 0;
+        state.completion_tenths_ms = 0;
     });
 }
 

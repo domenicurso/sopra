@@ -10,6 +10,10 @@ impl Renderer {
         let next_area = next.map_or(Rect::new(0, 0, 0, 0), |frame| frame.area);
         let previous_origin = previous.map_or(0, |frame| frame.origin_column);
         let next_origin = next.map_or(0, |frame| frame.origin_column);
+        let previous_cursor_row = previous.map_or(0, |frame| frame.cursor_row);
+        let next_cursor_row = next.map_or(0, |frame| frame.cursor_row);
+        let previous_anchor_row = previous.map_or(0, |frame| frame.anchor_row);
+        let next_anchor_row = next.map_or(0, |frame| frame.anchor_row);
         let previous_row_offset = previous.map_or(0, |frame| frame.row_offset);
         let next_row_offset = next.map_or(0, |frame| frame.row_offset);
         let width = previous_area.width.max(next_area.width);
@@ -53,6 +57,10 @@ impl Renderer {
             next_area,
             previous_origin,
             next_origin,
+            previous_cursor_row,
+            next_cursor_row,
+            previous_anchor_row,
+            next_anchor_row,
             previous_row_offset,
             next_row_offset,
         }

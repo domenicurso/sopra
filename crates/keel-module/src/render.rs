@@ -7,7 +7,7 @@ pub(crate) fn build_scene(
     app: &AppState,
     anchor: u16,
     placement: PopupPlacement,
-    completion_ms: u64,
+    completion_tenths_ms: u64,
 ) -> Option<Scene> {
     if !app.suggestions_visible() {
         return None;
@@ -21,11 +21,12 @@ pub(crate) fn build_scene(
         })
         .collect::<Vec<_>>();
     let footer = format!(
-        "{}/{}; {}ms",
+        "{}/{}; {}.{}ms",
         app.selected_suggestion
             .map_or_else(|| "0".to_string(), |selected| (selected + 1).to_string()),
         items.len(),
-        completion_ms,
+        completion_tenths_ms / 10,
+        completion_tenths_ms % 10,
     );
     Some(Scene::new(
         SuggestionPopup::new(footer, items, app.selected_suggestion)

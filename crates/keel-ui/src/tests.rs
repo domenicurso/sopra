@@ -143,3 +143,39 @@ fn input_line_handles_unicode_cursor_positions() {
     let rendered = snapshot(&scene, 80);
     assert!(rendered.starts_with("keel> a🙂"));
 }
+
+#[test]
+fn input_cursor_uses_intermediate_styles_during_a_blink_transition() {
+    let size = Size::new(8, 1);
+    let area = Rect::new(0, 0, size.width, size.height);
+
+    let mut hidden = Buffer::empty(area);
+    Scene::new(InputLine::new("> ", "hi", 2).cursor_opacity(0.0)).render(area, &mut hidden);
+    let mut halfway = Buffer::empty(area);
+    Scene::new(InputLine::new("> ", "hi", 2).cursor_opacity(0.5)).render(area, &mut halfway);
+    let mut visible = Buffer::empty(area);
+    Scene::new(InputLine::new("> ", "hi", 2).cursor_opacity(1.0)).render(area, &mut visible);
+
+    let hidden = hidden.cell((4, 0)).unwrap();
+    let halfway = halfway.cell((4, 0)).unwrap();
+    let visible = visible.cell((4, 0)).unwrap();
+    assert_ne!(halfway.style(), hidden.style());
+    assert_ne!(halfway.style(), visible.style());
+    assert!(matches!(halfway.bg, Color::Rgb(_, _, _)));
+}
+
+#[test]
+fn input_cursor_blends_against_the_supplied_terminal_colors() {
+    let colors = TerminalColors::new(Color::Rgb(10, 20, 30), Color::Rgb(210, 220, 230));
+    let scene = Scene::new(
+        InputLine::new("> ", "hi", 2)
+            .terminal_colors(colors)
+            .cursor_opacity(0.5),
+    );
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 8, 1));
+    scene.render(Rect::new(0, 0, 8, 1), &mut buffer);
+
+    let cursor = buffer.cell((4, 0)).unwrap();
+    assert_eq!(cursor.fg, Color::Rgb(10, 20, 30));
+    assert_eq!(cursor.bg, Color::Rgb(110, 120, 130));
+}

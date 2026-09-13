@@ -1,5 +1,5 @@
-pub(crate) const MAX_HOST_BYTES: usize = 256 * 1024;
-pub(crate) const MAX_COMPLETIONS: usize = 512;
+pub(crate) const MAX_HOST_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_COMPLETIONS: usize = 16_384;
 pub(crate) const MAX_POPUP_ROWS: u16 = keel_ui::MAX_VISIBLE_ITEMS as u16 + 2;
 pub(crate) const POPUP_MIN_ROWS: u16 = 3;
 pub(crate) const COMPLETION_FIELD_SEPARATOR: u8 = 0x1f;

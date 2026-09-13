@@ -38,11 +38,14 @@ impl Renderer {
         let area = Rect::new(0, 0, width, height);
         let mut buffer = Buffer::empty(area);
         scene.render(area, &mut buffer);
+        let anchor_row = surface_row(context.cursor_row, context.row_offset);
         let frame = RenderedFrame {
             area,
             used_size: keel_ui::Size::new(width, height),
             buffer,
             origin_column,
+            cursor_row: context.cursor_row,
+            anchor_row,
             row_offset: context.row_offset,
         };
         let diff = self.diff(Some(&frame));
@@ -66,10 +69,15 @@ impl Renderer {
     }
 
     pub fn clear_previous(&mut self) -> Option<Vec<u8>> {
+        let cursor_row = self.previous.as_ref()?.cursor_row;
+        self.clear_previous_at(cursor_row)
+    }
+
+    pub fn clear_previous_at(&mut self, cursor_row: u16) -> Option<Vec<u8>> {
         let previous = self.previous.take()?;
         Some(AnsiWriter::clear_surface(
             previous.origin_column,
-            previous.row_offset,
+            clear_row_offset(&previous, cursor_row),
             previous.area.width,
             previous.area.height,
         ))
@@ -77,6 +85,27 @@ impl Renderer {
 
     pub fn previous_frame(&self) -> Option<&RenderedFrame> {
         self.previous.as_ref()
+    }
+}
+
+fn surface_row(cursor_row: u16, row_offset: i16) -> u16 {
+    if row_offset >= 0 {
+        cursor_row.saturating_add(row_offset as u16)
+    } else {
+        cursor_row.saturating_sub(row_offset.unsigned_abs())
+    }
+}
+
+fn row_delta(surface_row: u16, cursor_row: u16) -> i16 {
+    (i32::from(surface_row) - i32::from(cursor_row)).clamp(i32::from(i16::MIN), i32::from(i16::MAX))
+        as i16
+}
+
+fn clear_row_offset(frame: &RenderedFrame, cursor_row: u16) -> i16 {
+    if frame.cursor_row == cursor_row {
+        frame.row_offset
+    } else {
+        row_delta(frame.anchor_row, cursor_row)
     }
 }
 
@@ -88,7 +117,11 @@ fn patch_ops(diff: &FrameDiff, frame: &RenderedFrame, force_full: bool) -> Vec<P
     if diff.origin_changed() && diff.previous_area.height > 0 {
         ops.push(PatchOp::ClearSurface {
             origin_column: diff.previous_origin,
-            row_offset: diff.previous_row_offset,
+            row_offset: if diff.previous_cursor_row == frame.cursor_row {
+                diff.previous_row_offset
+            } else {
+                row_delta(diff.previous_anchor_row, frame.cursor_row)
+            },
             width: diff.previous_area.width,
             height: diff.previous_area.height,
         });

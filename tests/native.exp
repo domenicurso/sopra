@@ -2,4 +2,5 @@
 set test_dir [file dirname [info script]]
 source [file join $test_dir native_setup.tcl]
 source [file join $test_dir native_flow_one.tcl]
+source [file join $test_dir native_flow_completions.tcl]
 source [file join $test_dir native_flow_two.tcl]

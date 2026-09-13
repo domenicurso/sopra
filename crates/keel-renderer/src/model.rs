@@ -7,6 +7,7 @@ pub struct RenderContext {
     pub terminal_columns: u16,
     pub max_height: u16,
     pub origin_column: u16,
+    pub cursor_row: u16,
     pub row_offset: i16,
     pub force_full: bool,
 }
@@ -21,9 +22,15 @@ impl RenderContext {
             },
             max_height: if max_height == 0 { 1 } else { max_height },
             origin_column,
+            cursor_row: 0,
             row_offset: 1,
             force_full: false,
         }
+    }
+
+    pub const fn cursor_row(mut self, cursor_row: u16) -> Self {
+        self.cursor_row = cursor_row;
+        self
     }
 
     pub const fn row_offset(mut self, row_offset: i16) -> Self {
@@ -43,6 +50,8 @@ pub struct RenderedFrame {
     pub used_size: Size,
     pub buffer: Buffer,
     pub origin_column: u16,
+    pub cursor_row: u16,
+    pub anchor_row: u16,
     pub row_offset: i16,
 }
 
@@ -55,6 +64,10 @@ pub struct FrameDiff {
     pub next_area: Rect,
     pub previous_origin: u16,
     pub next_origin: u16,
+    pub previous_cursor_row: u16,
+    pub next_cursor_row: u16,
+    pub previous_anchor_row: u16,
+    pub next_anchor_row: u16,
     pub previous_row_offset: i16,
     pub next_row_offset: i16,
 }
@@ -64,12 +77,14 @@ impl FrameDiff {
         self.changed_cells > 0
             || !self.cleared_rows.is_empty()
             || self.previous_area != self.next_area
-            || self.previous_origin != self.next_origin
-            || self.previous_row_offset != self.next_row_offset
+            || self.origin_changed()
     }
 
     pub fn origin_changed(&self) -> bool {
-        self.previous_origin != self.next_origin || self.previous_row_offset != self.next_row_offset
+        self.previous_origin != self.next_origin
+            || self.previous_anchor_row != self.next_anchor_row
+            || (self.previous_cursor_row == self.next_cursor_row
+                && self.previous_row_offset != self.next_row_offset)
     }
 }
 

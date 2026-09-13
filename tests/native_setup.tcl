@@ -11,7 +11,9 @@ set env(TERM) xterm-256color
 set env(LANG) C.UTF-8
 set env(LC_ALL) C.UTF-8
 set env(LC_CTYPE) C.UTF-8
-set env(KEEL_MODULE_PATH) "$repo/target/debug"
+if {![info exists env(KEEL_MODULE_PATH)]} {
+    set env(KEEL_MODULE_PATH) "$repo/target/debug"
+}
 set startup_dir "/tmp/keel-native-zshrc-[pid]"
 file mkdir $startup_dir
 set startup_file [open [file join $startup_dir .zshrc] w]
@@ -20,6 +22,7 @@ puts $startup_file "RPROMPT=''"
 puts $startup_file "autoload -Uz compinit"
 puts $startup_file "compinit -C"
 puts $startup_file "zstyle ':completion:*' verbose yes"
+puts $startup_file "zstyle ':completion:*:options' verbose yes"
 puts $startup_file {typeset -a _keel_test_values=(alpha alpine beta)}
 puts $startup_file {typeset -a _keel_test_descriptions=('first result' 'second result' 'third result')}
 puts $startup_file {_keel_test_complete() { compadd -d _keel_test_descriptions -- "${_keel_test_values[@]}"; }}
@@ -34,14 +37,39 @@ puts $startup_file {keel-test() { print -r -- "keel-test:$*"; }}
 puts $startup_file {keel-many() { print -r -- "keel-many:$*"; }}
 puts $startup_file {keel-options() { print -r -- "keel-options:$*"; }}
 puts $startup_file {keel-fuzzy() { print -r -- "keel-fuzzy:$*"; }}
+puts $startup_file {keel-generated-cli() {
+    if [[ $1 == completion && $2 == zsh ]]; then
+        print -r -- '#compdef keel-generated-cli'
+        print -r -- '_keel_generated_cli_complete() {
+            local -a values descriptions
+            if [[ $words[CURRENT] == --* ]]; then
+                values=(--verbose --format)
+                descriptions=("verbose mode" "output format")
+            else
+                values=(run inspect)
+                descriptions=("run command" "inspect command")
+            fi
+            compadd -d descriptions -- "${values[@]}"
+        }'
+        print -r -- 'compdef _keel_generated_cli_complete keel-generated-cli'
+    else
+        print -r -- "keel-generated-cli:$*"
+    fi
+}}
+puts $startup_file {for _keel_index in {000..699}; do alias "keel-generated-${_keel_index}=true"; done}
 puts $startup_file "compdef _keel_test_complete keel-test"
 puts $startup_file "compdef _keel_many_complete keel-many"
 puts $startup_file "compdef _keel_options_complete keel-options"
 puts $startup_file "compdef _keel_fuzzy_complete keel-fuzzy"
+puts $startup_file "compdef _grep grep"
 puts $startup_file "source '$repo/zsh/keel.zsh'"
 close $startup_file
 set env(ZDOTDIR) $startup_dir
-log_user 0
+if {[info exists env(KEEL_TEST_LOG)]} {
+    log_user 1
+} else {
+    log_user 0
+}
 
 proc expect_native_prompt {} {
     expect {
@@ -59,7 +87,7 @@ proc expect_native_prompt {} {
 
 proc expect_popup {} {
     expect {
-        -re {0/[0-9]+; [0-9]+ms} {}
+        -re {0/[0-9]+; [0-9]+\.[0-9]ms} {}
         timeout {
             puts stderr "autocomplete surface did not render"
             exit 1

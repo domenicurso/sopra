@@ -88,7 +88,7 @@ fn selected_candidate_uses_the_latest_host_line() {
 }
 
 #[test]
-fn pre_redraw_clears_the_previous_surface() {
+fn pre_redraw_keeps_the_previous_surface_for_incremental_diffing() {
     crate::keel_module_init();
     let mut output = [0_u8; 16 * 1024];
     let raw = snapshot(b"sh", 2);
@@ -99,8 +99,11 @@ fn pre_redraw_clears_the_previous_surface() {
     set_test_suggestions();
     assert!(crate::keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()) > 0);
     let size = crate::keel_module_before_redraw(output.as_mut_ptr(), output.len());
-    assert!(size > 0);
-    assert!(String::from_utf8_lossy(&output[..size]).contains("\x1b["));
+    assert_eq!(size, 0);
+    assert_eq!(
+        crate::keel_module_after_redraw(&raw, output.as_mut_ptr(), output.len()),
+        0
+    );
 }
 
 #[test]
@@ -129,9 +132,8 @@ fn selected_replacement_and_overlay_suppression_are_host_safe() {
         &replacement[..replacement_length],
         replacement_length as u16,
     );
-    assert_eq!(
-        crate::keel_module_after_redraw(&next, output.as_mut_ptr(), output.len()),
-        0
-    );
+    let size = crate::keel_module_after_redraw(&next, output.as_mut_ptr(), output.len());
+    assert!(size > 0);
+    assert!(String::from_utf8_lossy(&output[..size]).contains("\x1b["));
     assert_eq!(crate::keel_module_has_suggestions(), 0);
 }

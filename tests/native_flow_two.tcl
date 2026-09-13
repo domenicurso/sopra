@@ -3,7 +3,7 @@ send "keel-test b"
 expect_popup
 send [format "%c%c%c" 27 91 66]
 expect {
-    -re {1/1; [0-9]+ms} {}
+    -re {1/1; [0-9]+\.[0-9]ms} {}
     timeout {
         puts stderr "single real completion did not become selectable"
         exit 1

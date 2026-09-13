@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::slice;
 
 use keel_core::Suggestion;
@@ -33,7 +34,7 @@ pub extern "C" fn keel_module_has_suggestions() -> i32 {
 pub unsafe extern "C" fn keel_module_set_suggestions(
     payload: *const u8,
     length: usize,
-    completion_ms: u64,
+    completion_tenths_ms: u64,
 ) -> i32 {
     if payload.is_null() || length > MAX_HOST_BYTES {
         return 0;
@@ -43,6 +44,7 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         let mut suggestions = Vec::with_capacity(MAX_COMPLETIONS.min(8));
+        let mut replacements = HashMap::new();
 
         for record in bytes.split(|byte| *byte == COMPLETION_RECORD_SEPARATOR) {
             if record.is_empty() || suggestions.len() == MAX_COMPLETIONS {
@@ -61,23 +63,31 @@ pub unsafe extern "C" fn keel_module_set_suggestions(
             if label.is_empty() || candidate.is_empty() {
                 continue;
             }
+            if let Some(&index) = replacements.get(&candidate) {
+                let existing: &mut Suggestion = &mut suggestions[index];
+                if existing.detail.is_empty() && !detail.is_empty() {
+                    existing.detail = detail;
+                }
+                continue;
+            }
+            replacements.insert(candidate.clone(), suggestions.len());
             suggestions.push(Suggestion::with_replacement(label, detail, candidate));
         }
 
-        state.completion_ms = completion_ms;
+        state.completion_tenths_ms = completion_tenths_ms;
         state.app.set_suggestions(suggestions);
         1
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn keel_module_refresh_suggestions(completion_ms: u64) -> i32 {
+pub extern "C" fn keel_module_refresh_suggestions(completion_tenths_ms: u64) -> i32 {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         if !state.app.completion_source_available() {
             return 0;
         }
-        state.completion_ms = completion_ms;
+        state.completion_tenths_ms = completion_tenths_ms;
         state.app.refresh_suggestions();
         1
     })

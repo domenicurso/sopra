@@ -13,6 +13,7 @@ if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
     dim=$'\033[2m'
     green=$'\033[32m'
     yellow=$'\033[33m'
+    red=$'\033[31m'
     reset=$'\033[0m'
 else
     bold=''
@@ -20,6 +21,7 @@ else
     dim=''
     green=''
     yellow=''
+    red=''
     reset=''
 fi
 
@@ -29,35 +31,87 @@ if [[ -t 1 && ${TERM:-dumb} != dumb ]]; then
 fi
 
 build_log=$(mktemp "${TMPDIR:-/tmp}/keel-install.XXXXXX")
+step_dir=''
 cleanup() {
     rm -f "$build_log"
+    if [[ -n $step_dir ]]; then
+        rm -rf -- "$step_dir"
+    fi
 }
 trap cleanup EXIT
 
 loader_frames=('-' '\' '|' '/')
+render_step() {
+    local label=$1
+    local subtext=$2
+    local frame=$3
+
+    if (( animate )); then
+        if [[ -n $subtext ]]; then
+            printf '\r\033[K%b%s%b %b%s%b %s' \
+                "$cyan" "$label" "$reset" "$dim" "$subtext" "$reset" "$frame"
+        else
+            printf '\r\033[K%b%s%b %s' "$cyan" "$label" "$reset" "$frame"
+        fi
+    elif [[ -n $subtext ]]; then
+        printf '%s: %s\n' "$label" "$subtext"
+    else
+        printf '%s\n' "$label"
+    fi
+}
+
 run_step() {
     local label=$1
     shift
     local status=0
+    local subtext='starting'
+    local frame_index=0
+    local line
 
-    if (( animate )); then
-        "$@" >"$build_log" 2>&1 &
-        local pid=$!
-        local frame_index=0
-        while kill -0 "$pid" 2>/dev/null; do
-            local frame=${loader_frames[$((frame_index % ${#loader_frames[@]}))]}
-            printf '\r\033[K%b%s%b %s' "$cyan" "$label" "$reset" "$frame"
-            sleep 0.1
-            frame_index=$((frame_index + 1))
-        done
-        wait "$pid" || status=$?
-    else
-        printf '%s\n' "$label"
-        "$@" >"$build_log" 2>&1 || status=$?
-    fi
+    step_dir=$(mktemp -d "${TMPDIR:-/tmp}/keel-step.XXXXXX")
+    local step_pipe="$step_dir/output"
+    mkfifo "$step_pipe"
+    : > "$build_log"
+
+    "$@" >"$step_pipe" 2>&1 &
+    local pid=$!
+    while IFS= read -r line || [[ -n $line ]]; do
+        printf '%s\n' "$line" >> "$build_log"
+        case $line in
+            keel-progress:*)
+                subtext=${line#keel-progress:}
+                ;;
+            patching\ file\ *)
+                subtext=${line#patching file }
+                subtext=${subtext#\'}
+                subtext=${subtext%\'}
+                subtext="Patching $subtext"
+                ;;
+            Patching\ file\ *)
+                subtext=${line#Patching file }
+                subtext=${subtext#\'}
+                subtext=${subtext%\'}
+                subtext="Patching $subtext"
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        local frame=${loader_frames[$((frame_index % ${#loader_frames[@]}))]}
+        render_step "$label" "$subtext" "$frame"
+        frame_index=$((frame_index + 1))
+    done < "$step_pipe"
+    wait "$pid" || status=$?
+    rm -rf -- "$step_dir"
+    step_dir=''
 
     if (( status != 0 )); then
-        printf '%b\n' "${bold}${cyan}${label} failed${reset}" >&2
+        if (( animate )); then
+            printf '\r\033[K%b%s%b\n' "${bold}${red}" "$label failed" "$reset" >&2
+        else
+            printf '%s failed\n' "$label" >&2
+        fi
         cat "$build_log" >&2
         return "$status"
     fi
@@ -67,17 +121,30 @@ run_step() {
     fi
 }
 
-run_step 'Building Keel' env KEEL_ZSH_PREFIX="$zsh_prefix" "$repo_root/scripts/build-keel.sh"
+run_step 'Building Keel' env KEEL_PROGRESS=1 KEEL_ZSH_PREFIX="$zsh_prefix" "$repo_root/scripts/build-keel.sh"
 
 install_files() {
+    progress() {
+        printf 'keel-progress:%s\n' "$*"
+    }
+
+    progress 'Creating installation directories'
     mkdir -p "$install_prefix/bin" "$install_prefix/share" "$module_dir" "$startup_dir"
+    progress 'Installing native module'
     install -m 0755 "$repo_root/target/debug/keel.so" "$module_dir/keel.so"
+    local shell_files=("$repo_root"/zsh/*.zsh)
+    local shell_count=${#shell_files[@]}
+    local shell_index=0
     for shell_file in "$repo_root"/zsh/*.zsh; do
+        shell_index=$((shell_index + 1))
+        progress "Installing shell loader ($shell_index/$shell_count): $(basename "$shell_file")"
         install -m 0644 "$shell_file" "$install_prefix/share/$(basename "$shell_file")"
     done
+    progress 'Writing installation marker'
     printf 'keel-install-v1\n' > "$install_prefix/.keel-install"
 
     launcher="$install_prefix/bin/keel"
+    progress 'Writing Keel launcher'
     quoted_prefix=$(printf '%q' "$install_prefix")
     quoted_startup_dir=$(printf '%q' "$startup_dir")
     printf '%s\n' \
@@ -122,11 +189,11 @@ install_files() {
         > "$startup_dir/.zprofile"
 
     printf '%s\n' \
-        '# Import the user rc only when explicitly requested; it may run network/plugin setup.' \
-        'if [[ ${KEEL_SOURCE_USER_RC:-0} == 1 && -r "$HOME/.zshrc" ]]; then' \
+        '# Reuse the user rc by default so functions, completions, aliases, and prompt stay intact.' \
+        'if [[ ${KEEL_SOURCE_USER_RC:-1} == 1 && -r "$HOME/.zshrc" ]]; then' \
         '    source "$HOME/.zshrc"' \
         'fi' \
-        'if [[ ${KEEL_SOURCE_USER_RC:-0} != 1 ]]; then' \
+        'if [[ ${KEEL_SOURCE_USER_RC:-1} != 1 ]]; then' \
         "    PROMPT='%F{green}%n%f in %F{cyan}%~%f %F{yellow}>%f '" \
         "    RPROMPT=''" \
         'fi' \
@@ -138,6 +205,7 @@ install_files() {
     printf '%s\n' \
         'if [[ -r "$HOME/.zlogin" ]]; then source "$HOME/.zlogin"; fi' \
         > "$startup_dir/.zlogin"
+    progress 'Writing Zsh startup files'
 }
 
 run_step 'Installing Keel' install_files
@@ -146,4 +214,5 @@ launch_command=$(printf '%q' "$install_prefix/bin/keel")
 printf '%b\n' "${bold}${cyan}Keel installed${reset}"
 printf '  %bprefix:%b %b%s%b\n' "$dim" "$reset" "$yellow" "$install_prefix" "$reset"
 printf '  %blaunch:%b %b%s -il%b\n' "$dim" "$reset" "$green" "$launch_command" "$reset"
+printf '  %bisolated:%b %bKEEL_SOURCE_USER_RC=0 %s -il%b\n' "$dim" "$reset" "$green" "$launch_command" "$reset"
 printf '  %bcommands:%b %bkeel status | keel enable | keel disable%b\n' "$dim" "$reset" "$green" "$reset"

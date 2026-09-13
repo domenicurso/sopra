@@ -8,6 +8,8 @@ static int keel_line_init(char **args)
 {
     (void)args;
     keel_module_init();
+    keel_query_terminal_colors();
+    keel_reset_cursor_animation();
     return 0;
 }
 
@@ -16,7 +18,10 @@ static int keel_line_finish(char **args)
     size_t length;
 
     (void)args;
-    if (!runtime.active || SHTTY < 0)
+    if (!runtime.active)
+        return 0;
+    keel_stop_cursor_animation();
+    if (SHTTY < 0)
         return 0;
     runtime.in_callback = 1;
     length = keel_module_line_finish(patch_buffer, sizeof(patch_buffer));
@@ -25,6 +30,33 @@ static int keel_line_finish(char **args)
     runtime.in_callback = 0;
     return 0;
 }
+
+static int keel_start_cursor(char **args)
+{
+    if (args != NULL && args[0] != NULL)
+        return 1;
+    return keel_start_cursor_animation() ? 0 : 1;
+}
+
+static int keel_read_cursor(char **args)
+{
+    if (args != NULL && args[0] != NULL)
+        return 1;
+    keel_cursor_animation_tick();
+    return 0;
+}
+
+static int keel_stop_cursor(char **args)
+{
+    if (args != NULL && args[0] != NULL)
+        return 1;
+    keel_stop_cursor_animation();
+    return 0;
+}
+
+static Widget cursor_start_widget;
+static Widget cursor_read_widget;
+static Widget cursor_stop_widget;
 
 static int keel_select_previous(char **args)
 {
@@ -63,11 +95,20 @@ static int keel_dismiss_overlay(char **args)
 
 static int keel_clear_line(char **args)
 {
+    size_t length;
+
     (void)args;
+    keel_completion_worker_shutdown();
     if (zleline != NULL) {
         zleline[0] = L'\0';
         zlell = 0;
         zlecs = 0;
+    }
+    if (runtime.active && SHTTY >= 0) {
+        runtime.in_callback = 1;
+        length = keel_module_line_finish(patch_buffer, sizeof(patch_buffer));
+        keel_write_rust_payload(length);
+        runtime.in_callback = 0;
     }
     return 0;
 }
@@ -76,7 +117,7 @@ static int keel_set_suggestions(char **args)
 {
     char *end;
     const char *payload;
-    unsigned long long completion_ms = 0;
+    unsigned long long completion_tenths_ms = 0;
     size_t length;
 
     if (args == NULL || args[0] == NULL || args[0][0] != 'K')
@@ -84,7 +125,7 @@ static int keel_set_suggestions(char **args)
     payload = args[0] + 1;
     if (args[1] != NULL) {
         errno = 0;
-        completion_ms = strtoull(args[1], &end, 10);
+        completion_tenths_ms = strtoull(args[1], &end, 10);
         if (errno != 0 || end == args[1] || *end != '\0')
             return 1;
     }
@@ -93,8 +134,9 @@ static int keel_set_suggestions(char **args)
     length = strlen(payload);
     if (length > KEEL_MAX_HOST_BYTES)
         return 1;
+    keel_observe_current_line();
     return keel_module_set_suggestions((const unsigned char *)payload, length,
-                                       (uint64_t)completion_ms) ? 0 : 1;
+                                       (uint64_t)completion_tenths_ms) ? 0 : 1;
 }
 
 static int keel_refresh_suggestions(char **args)
@@ -106,6 +148,7 @@ static int keel_refresh_suggestions(char **args)
 
 void keel_delete_widgets(void)
 {
+    keel_delete_completion_widgets();
     if (dismiss_widget != NULL) {
         deletezlefunction(dismiss_widget);
         dismiss_widget = NULL;
@@ -133,6 +176,18 @@ void keel_delete_widgets(void)
     if (refresh_suggestions_widget != NULL) {
         deletezlefunction(refresh_suggestions_widget);
         refresh_suggestions_widget = NULL;
+    }
+    if (cursor_stop_widget != NULL) {
+        deletezlefunction(cursor_stop_widget);
+        cursor_stop_widget = NULL;
+    }
+    if (cursor_read_widget != NULL) {
+        deletezlefunction(cursor_read_widget);
+        cursor_read_widget = NULL;
+    }
+    if (cursor_start_widget != NULL) {
+        deletezlefunction(cursor_start_widget);
+        cursor_start_widget = NULL;
     }
     if (line_finish_widget != NULL) {
         deletezlefunction(line_finish_widget);
@@ -167,10 +222,25 @@ int keel_register_widgets(void)
     refresh_suggestions_widget = addzlefunction("keel-native-refresh-suggestions",
                                                 keel_refresh_suggestions,
                                                 KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
+    cursor_start_widget = addzlefunction("keel-native-start-cursor-animation",
+                                         keel_start_cursor,
+                                         KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
+    cursor_read_widget = addzlefunction("keel-native-read-cursor-animation",
+                                        keel_read_cursor,
+                                        KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
+    cursor_stop_widget = addzlefunction("keel-native-stop-cursor-animation",
+                                        keel_stop_cursor,
+                                        KEEL_ZLE_NOTCOMMAND | KEEL_ZLE_NOLAST);
+    if (!keel_register_completion_widgets()) {
+        keel_delete_widgets();
+        return 0;
+    }
     if (line_init_widget == NULL || line_finish_widget == NULL ||
         select_previous_widget == NULL || select_next_widget == NULL ||
         accept_widget == NULL || dismiss_widget == NULL || clear_line_widget == NULL ||
-        set_suggestions_widget == NULL || refresh_suggestions_widget == NULL) {
+        set_suggestions_widget == NULL || refresh_suggestions_widget == NULL ||
+        cursor_start_widget == NULL || cursor_read_widget == NULL ||
+        cursor_stop_widget == NULL) {
         keel_delete_widgets();
         return 0;
     }

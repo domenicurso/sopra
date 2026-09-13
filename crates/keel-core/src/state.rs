@@ -74,6 +74,7 @@ impl AppState {
         let next_buffer = snapshot.line.buffer();
         let buffer_changed = self.buffer != next_buffer;
         let line_changed = self.buffer.text() != next_buffer.text();
+        let previous_context_key = self.current_completion_context_key.clone();
         let suppressed = self.suppressed_overlay_text.as_deref() == Some(next_buffer.text());
         let changed = buffer_changed
             || self.cursor.screen != snapshot.cursor
@@ -87,6 +88,8 @@ impl AppState {
         if buffer_changed {
             self.current_completion_context_key = self.completion_context_key();
         }
+        let completion_context_changed =
+            previous_context_key != self.current_completion_context_key;
         self.cursor.screen = snapshot.cursor;
         self.terminal = snapshot.terminal;
         self.cwd = snapshot.cwd;
@@ -97,10 +100,12 @@ impl AppState {
         } else if line_changed {
             self.overlay_dismissed = false;
             self.suppressed_overlay_text = None;
-            self.suggestions.clear();
-            self.ranked_query = None;
-            self.selected_suggestion = None;
-            self.suggestion_scroll = 0;
+            if completion_context_changed || self.buffer.text().is_empty() {
+                self.suggestions.clear();
+                self.ranked_query = None;
+                self.selected_suggestion = None;
+                self.suggestion_scroll = 0;
+            }
         }
         if self
             .selected_suggestion

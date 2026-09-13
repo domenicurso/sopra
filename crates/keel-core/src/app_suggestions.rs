@@ -12,11 +12,13 @@ impl AppState {
     }
 
     pub fn suggestions_visible(&self) -> bool {
-        !self.overlay_dismissed && !self.suggestions.is_empty()
+        !self.buffer.text().is_empty() && !self.overlay_dismissed && !self.suggestions.is_empty()
     }
 
     pub fn selected_replacement(&self) -> Option<&str> {
-        self.selected().map(Suggestion::replacement)
+        self.selected()
+            .or_else(|| (self.suggestions.len() == 1).then(|| &self.suggestions[0]))
+            .map(Suggestion::replacement)
     }
 
     pub fn completion_source_available(&self) -> bool {
@@ -49,9 +51,7 @@ impl AppState {
         let suffix = &text[cursor..];
         let token_end = suffix.find(char::is_whitespace).unwrap_or(suffix.len());
         let line_suffix = &suffix[token_end..];
-        let option_prefix = if token_prefix.starts_with("--") {
-            "--"
-        } else if token_prefix.starts_with('-') {
+        let option_prefix = if token_prefix.starts_with('-') {
             "-"
         } else {
             ""

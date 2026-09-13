@@ -32,12 +32,44 @@ _keel_unbind_keys() {
     _KEEL_ZSH_KEYS=0
 }
 
+_keel_cursor_stop() {
+    if [[ -n $_KEEL_CURSOR_FD ]]; then
+        zle -F "$_KEEL_CURSOR_FD" 2>/dev/null || true
+    fi
+    _KEEL_CURSOR_FD=''
+    zle keel-native-stop-cursor-animation 2>/dev/null || true
+}
+
+_keel_cursor_tick() {
+    local fd=$1
+    [[ $fd == "$_KEEL_CURSOR_FD" ]] || return 0
+    zle keel-native-read-cursor-animation
+}
+
+_keel_cursor_line_init() {
+    _keel_cursor_stop
+    zle keel-native-start-cursor-animation || return 0
+    _KEEL_CURSOR_FD=$REPLY
+    [[ $_KEEL_CURSOR_FD == <-> ]] || {
+        _keel_cursor_stop
+        return 0
+    }
+    zle -F "$_KEEL_CURSOR_FD" _keel_cursor_tick || _keel_cursor_stop
+}
+
+_keel_cursor_line_finish() {
+    _keel_cursor_stop
+}
+
 _keel_disable() {
     if (( _KEEL_ZSH_HOOKS )); then
+        _keel_cursor_stop
         _keel_completion_stop_pending
         add-zle-hook-widget -d line-pre-redraw _keel_completion_pre_redraw
         add-zle-hook-widget -d line-init _keel_completion_line_init
         add-zle-hook-widget -d line-finish _keel_completion_line_finish
+        add-zle-hook-widget -d line-init _keel_cursor_line_init
+        add-zle-hook-widget -d line-finish _keel_cursor_line_finish
         add-zle-hook-widget -d line-init keel-native-line-init
         add-zle-hook-widget -d line-finish keel-native-line-finish
         _keel_unbind_keys
@@ -67,6 +99,8 @@ _keel_enable() {
     add-zle-hook-widget line-pre-redraw _keel_completion_pre_redraw
     add-zle-hook-widget line-init _keel_completion_line_init
     add-zle-hook-widget line-finish _keel_completion_line_finish
+    add-zle-hook-widget line-init _keel_cursor_line_init
+    add-zle-hook-widget line-finish _keel_cursor_line_finish
     _keel_bind_keys
     _KEEL_ZSH_HOOKS=1
 }

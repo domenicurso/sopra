@@ -48,8 +48,10 @@ int boot_(Module module)
         return 1;
     runtime.active = 1;
     runtime.in_callback = 0;
+    keel_reset_cursor_animation();
     keel_pre_redraw_callback = keel_before_redraw;
     keel_post_redraw_callback = keel_after_redraw;
+    keel_completion_match_callback = keel_completion_capture_match;
     keel_module_init();
     return 0;
 }
@@ -59,6 +61,7 @@ int cleanup_(Module module)
     size_t length;
 
     (void)module;
+    keel_stop_cursor_animation();
     if (runtime.active && SHTTY >= 0) {
         runtime.in_callback = 1;
         length = keel_module_line_finish(patch_buffer, sizeof(patch_buffer));
@@ -69,6 +72,8 @@ int cleanup_(Module module)
     runtime.active = 0;
     keel_pre_redraw_callback = NULL;
     keel_post_redraw_callback = NULL;
+    keel_completion_match_callback = NULL;
+    keel_completion_worker_shutdown();
     keel_module_shutdown();
     keel_delete_widgets();
     return 0;
