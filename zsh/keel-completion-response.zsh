@@ -87,7 +87,8 @@ _keel_completion_apply_widget() {
             zle keel-native-refresh-suggestions && applied=1
         fi
         if (( ! applied )); then
-            zle keel-native-set-suggestions "K$_KEEL_COMPLETION_RESPONSE_PAYLOAD" "$_KEEL_COMPLETION_RESPONSE_TENTHS_MS" && applied=1
+            zle keel-native-set-suggestions "K$_KEEL_COMPLETION_RESPONSE_PAYLOAD" \
+                "$_KEEL_COMPLETION_RESPONSE_TENTHS_MS" && applied=1
         fi
         (( applied )) && _KEEL_COMPLETION_NATIVE_CACHE_KEY=$_KEEL_COMPLETION_RESPONSE_CACHE_KEY
     fi

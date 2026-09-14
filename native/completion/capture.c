@@ -1,4 +1,4 @@
-#include "../keel_zsh_module_internal.h"
+#include "internal.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -222,6 +222,19 @@ static char path_kind_for(const char *original, int flags, unsigned long mode,
     return effective_mode != 0 && S_ISDIR((mode_t)effective_mode) ? 'd' : 'f';
 }
 
+static int is_positional_placeholder(const char *value)
+{
+    size_t index;
+
+    if (value == NULL || value[0] != '$' || value[1] == '\0')
+        return 0;
+    for (index = 1; value[index] != '\0'; index++) {
+        if (value[index] < '0' || value[index] > '9')
+            return 0;
+    }
+    return 1;
+}
+
 static int format_relative_mtime(char *output, size_t capacity, time_t modified)
 {
     long long delta = (long long)time(NULL) - (long long)modified;
@@ -332,14 +345,22 @@ void keel_completion_capture_match(char *original, char *display, char *ignored_
     };
     size_t start = capture_length;
 
+    (void)path_root;
+
     if (!capture_active || capture_count == KEEL_COMPLETION_LIMIT || original == NULL ||
         original[0] == '\0' || match == NULL)
         return;
     if (!build_candidate(candidate, sizeof(candidate) / sizeof(candidate[0])))
         return;
+    /* Some generated CLI providers expose an optional positional argument as
+     * a shell-style `$0` placeholder. It is metadata about the command's
+     * argument, not a completion the user can insert; the path-aware source
+     * supplies the real entries once the argument is active. */
+    if (is_positional_placeholder(original))
+        return;
     kind = path_kind_for(original, flags, mode, followed_mode, NULL);
     if (kind != '\0')
-        has_metadata = stat_completion_path(path_root, original, &metadata);
+        has_metadata = stat_completion_path(NULL, (char *)candidate_buffer, &metadata);
     /* Approximate Zsh providers can emit the typed fuzzy path as if it were
      * a completion. Only retain path records that resolve to a real entry;
      * the explicit fuzzy resolver supplies the actual matching paths. */
@@ -347,6 +368,9 @@ void keel_completion_capture_match(char *original, char *display, char *ignored_
         return;
     if (kind != '\0' && has_metadata)
         kind = path_kind_for(original, flags, mode, followed_mode, &metadata);
+    if ((keel_completion_path_mode == 1 && kind == 'f') ||
+        (keel_completion_path_mode == 2 && kind == 'd'))
+        return;
     label = kind == '\0' ? original : (char *)candidate_buffer;
     detail = description_for(original, display);
     if (kind != '\0' && has_metadata &&

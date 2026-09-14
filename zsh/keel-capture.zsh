@@ -18,6 +18,7 @@ _keel_completion_broad_context() {
     token_suffix=${rest_after_cursor%%[[:space:]]*}
     line_suffix=${rest_after_cursor#${token_suffix}}
     typeset -g _KEEL_COMPLETION_LONG_OPTION_PROBE=0
+    typeset -g _KEEL_COMPLETION_COMMAND_QUERY=0
     path_token=$token_prefix
     if [[ $path_token == -*=*/* ]]; then
         path_token=${path_token#*=}
@@ -33,6 +34,14 @@ _keel_completion_broad_context() {
         typeset -g _KEEL_COMPLETION_BROAD_BUFFER="${context_prefix}${path_prefix}${line_suffix}"
         typeset -g _KEEL_COMPLETION_BROAD_CURSOR=$(( ${#context_prefix} + ${#path_prefix} ))
         return 0
+    fi
+    # Keep the first token in command-name completion mode even when it is an
+    # exact executable. The current token still needs fuzzy matches, while
+    # its argument provider must wait for a separating space.
+    if [[ -n $token_prefix && -z $line_suffix &&
+          $token_prefix != -* && $token_prefix != */* &&
+          -z ${context_prefix//[[:space:]]/} ]]; then
+        typeset -g _KEEL_COMPLETION_COMMAND_QUERY=1
     fi
     if [[ $token_prefix == --* ]]; then
         typeset -g _KEEL_COMPLETION_LONG_OPTION_PROBE=1
@@ -81,6 +90,7 @@ _keel_completion_path_kind_for_context() {
     integer positional_index
 
     typeset -g _KEEL_COMPLETION_PATH_KIND=both
+    typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=0
     words=("${(@z)line_prefix}")
     command_name=${words[1]:t}
     [[ -n $command_name ]] || return 0
@@ -96,6 +106,7 @@ _keel_completion_path_kind_for_context() {
     case $map_kind in
         directories|files|both)
             typeset -g _KEEL_COMPLETION_PATH_KIND=$map_kind
+            typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=1
             return 0
             ;;
     esac
@@ -110,6 +121,7 @@ _keel_completion_path_kind_for_context() {
     case $positional_kind in
         directories|files|both)
             typeset -g _KEEL_COMPLETION_PATH_KIND=$positional_kind
+            typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=1
             return 0
             ;;
     esac
@@ -117,6 +129,7 @@ _keel_completion_path_kind_for_context() {
     case $command_name in
         cd|chdir|pushd)
             typeset -g _KEEL_COMPLETION_PATH_KIND=directories
+            typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=1
             return 0
             ;;
     esac
@@ -126,9 +139,68 @@ _keel_completion_path_kind_for_context() {
     if [[ $body == *'_directories'* || $body == *'_files -/'* ]] ||
         { [[ $body == *'_path_files'* ]] && [[ $body == *'-/'* ]]; }; then
         typeset -g _KEEL_COMPLETION_PATH_KIND=directories
+        typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=1
     elif [[ $body == *'_files'* || $body == *'_path_files'* ]]; then
         typeset -g _KEEL_COMPLETION_PATH_KIND=both
+        typeset -g _KEEL_COMPLETION_PATH_ARGUMENT=1
     fi
+}
+
+_keel_completion_path_is_exact() {
+    emulate -L zsh
+    setopt localoptions nullglob globdots
+
+    local path=$1
+    local rest cursor component entry matched
+
+    [[ -n $path ]] || return 0
+    if [[ $path == /* ]]; then
+        cursor=/
+        rest=${path#/}
+    elif [[ $path == '~' || $path == '~/'* ]]; then
+        cursor=$HOME
+        rest=${path#\~}
+        rest=${rest#/}
+    else
+        cursor=$PWD
+        rest=$path
+    fi
+
+    for component in "${(@s:/:)rest}"; do
+        [[ -n $component && $component != . ]] || continue
+        if [[ $component == .. ]]; then
+            cursor="$cursor/.."
+            continue
+        fi
+        matched=''
+        for entry in "$cursor"/*(N); do
+            [[ ${entry:t} == "$component" ]] || continue
+            matched=$entry
+            break
+        done
+        [[ -n $matched ]] || return 1
+        cursor=$matched
+    done
+    [[ -d $cursor ]]
+}
+
+_keel_completion_path_parent_is_fuzzy() {
+    emulate -L zsh
+
+    local current_buffer=$1
+    local current_cursor=$2
+    local line_prefix=${current_buffer[1,current_cursor]}
+    local token_prefix=${line_prefix##*[[:space:]]}
+    local path_token=$token_prefix
+    local parent
+
+    [[ $path_token == */* ]] || return 1
+    if [[ $path_token == -*=*/* ]]; then
+        path_token=${path_token#*=}
+    fi
+    parent=${path_token%/*}
+    [[ -n $parent ]] || parent=/
+    ! _keel_completion_path_is_exact "$parent"
 }
 
 _keel_completion_fuzzy_path_candidates() {
@@ -139,9 +211,11 @@ _keel_completion_fuzzy_path_candidates() {
     local leaf=$2
     local kind=${3:-both}
     local display_prefix rest base entry name candidate
-    local branch branch_name component
-    integer index
+    local branch branch_name component flat_index_value
+    integer index ordinal max_ordinal flat_index
     local -a requested branch_paths branch_names next_paths next_names entries
+    local -a entry_paths entry_names branch_counts
+    local -A entry_by_branch_ordinal
 
     typeset -ga _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES
     _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES=()
@@ -218,27 +292,14 @@ _keel_completion_fuzzy_path_candidates() {
         (( ${#branch_paths} )) || return 0
     done
 
-    if [[ -z $leaf ]]; then
-        # A trailing slash means the working segment is empty. If the
-        # preceding segment was fuzzy, complete that segment itself instead
-        # of descending into every matched directory.
-        for index in {1..${#branch_paths}}; do
-            branch=${branch_paths[index]}
-            branch_name=${branch_names[index]}
-            [[ -d $branch ]] || continue
-            candidate="${display_prefix}${branch_name}${branch_name:+/}"
-            [[ -n $candidate ]] || continue
-            _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES+=("$candidate")
-            (( ${#_KEEL_COMPLETION_FUZZY_PATH_CANDIDATES} >= 256 )) && break
-        done
-        typeset -Ua _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES
-        return 0
-    fi
-
+    entry_paths=()
+    entry_names=()
+    branch_counts=()
+    max_ordinal=0
     for index in {1..${#branch_paths}}; do
         branch=${branch_paths[index]}
-        branch_name=${branch_names[index]}
         entries=("$branch"/*(N))
+        ordinal=0
         for entry in "${entries[@]}"; do
             name=${entry:t}
             [[ $name == .* && $leaf != .* ]] && continue
@@ -249,12 +310,30 @@ _keel_completion_fuzzy_path_candidates() {
             if [[ $kind == files && -d $entry ]]; then
                 continue
             fi
-            candidate="${display_prefix}${branch_name}${branch_name:+/}$name"
-            [[ -d $entry ]] && candidate+=/
-            _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES+=("$candidate")
-            (( ${#_KEEL_COMPLETION_FUZZY_PATH_CANDIDATES} >= 256 )) && break
+            (( ordinal++ ))
+            entry_paths+=("$entry")
+            entry_names+=("$name")
+            branch_counts[index]=$ordinal
+            entry_by_branch_ordinal["$index:$ordinal"]=${#entry_paths}
+            (( ordinal > max_ordinal )) && max_ordinal=ordinal
+            (( ordinal >= 256 )) && break
         done
-        (( ${#_KEEL_COMPLETION_FUZZY_PATH_CANDIDATES} >= 256 )) && break
+    done
+
+    # Interleave branches before applying the global cap. This keeps a broad
+    # fuzzy parent useful when one branch contains a very large directory.
+    for (( ordinal = 1; ordinal <= max_ordinal; ordinal++ )); do
+        for index in {1..${#branch_paths}}; do
+            flat_index_value=${entry_by_branch_ordinal["$index:$ordinal"]-}
+            [[ -n $flat_index_value ]] || continue
+            flat_index=$flat_index_value
+            branch_name=${branch_names[index]}
+            name=${entry_names[flat_index]}
+            candidate="${display_prefix}${branch_name}${branch_name:+/}$name"
+            [[ -d ${entry_paths[flat_index]} ]] && candidate+=/
+            _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES+=("$candidate")
+            (( ${#_KEEL_COMPLETION_FUZZY_PATH_CANDIDATES} >= 256 )) && break 2
+        done
     done
     typeset -Ua _KEEL_COMPLETION_FUZZY_PATH_CANDIDATES
 }
@@ -268,22 +347,31 @@ _keel_completion_fuzzy_path_complete() {
     local token_prefix=${line_prefix##*[[:space:]]}
     local path_token=$token_prefix
     local insertion_prefix=''
-    local parent leaf expanded_parent candidate
+    local parent leaf
+    integer path_like=0
+    local saved_prefix saved_iprefix saved_suffix saved_isuffix
+    integer compadd_status
     local -a candidates
 
-    if [[ $path_token == -*=*/* ]]; then
+    if [[ $path_token == -*=* ]]; then
         insertion_prefix=${path_token%%=*}=
         path_token=${path_token#*=}
     fi
-    [[ $path_token == */* ]] || return 0
-    parent=${path_token%/*}
-    leaf=${path_token##*/}
-    [[ -n $parent ]] || parent=/
-    expanded_parent=$parent
-    [[ $expanded_parent == '~/'* ]] && expanded_parent=${~expanded_parent}
-    [[ -d $expanded_parent ]] && return 0
-
     _keel_completion_path_kind_for_context "$current_buffer" "$current_cursor"
+    if [[ $path_token == */* ]]; then
+        path_like=1
+        parent=${path_token%/*}
+        leaf=${path_token##*/}
+        [[ -n $parent ]] || parent=/
+    elif [[ $path_token == . || $path_token == .. || $path_token == '~' ]]; then
+        path_like=1
+        parent=$path_token
+        leaf=''
+    else
+        parent=''
+        leaf=$path_token
+    fi
+    (( _KEEL_COMPLETION_PATH_ARGUMENT || path_like )) || return 0
     _keel_completion_fuzzy_path_candidates "$parent" "$leaf" \
         "$_KEEL_COMPLETION_PATH_KIND"
     candidates=("${_KEEL_COMPLETION_FUZZY_PATH_CANDIDATES[@]}")
@@ -291,7 +379,21 @@ _keel_completion_fuzzy_path_complete() {
     if [[ -n $insertion_prefix ]]; then
         candidates=("${(@)candidates/#/$insertion_prefix}")
     fi
+    saved_prefix=$PREFIX
+    saved_iprefix=$IPREFIX
+    saved_suffix=$SUFFIX
+    saved_isuffix=$ISUFFIX
+    PREFIX=''
+    IPREFIX=''
+    SUFFIX=''
+    ISUFFIX=''
     compadd -U -f -- "${candidates[@]}"
+    compadd_status=$?
+    PREFIX=$saved_prefix
+    IPREFIX=$saved_iprefix
+    SUFFIX=$saved_suffix
+    ISUFFIX=$saved_isuffix
+    return $compadd_status
 }
 
 _keel_completion_prepare_provider() {
@@ -315,12 +417,33 @@ _keel_completion_capture_sync() {
 
     local request=$1
     local completion_widget
-    local current_buffer current_cursor broad_buffer broad_cursor command_name
+    local current_buffer current_cursor broad_buffer broad_cursor command_name path_mode
+    local -a command_words
     local -F started finished
     integer elapsed_tenths_ms=0
     typeset -g _KEEL_COMPLETION_CAPTURE=1
 
     _keel_completion_capture_post() {
+        local fuzzy_path=0
+
+        _keel_completion_path_parent_is_fuzzy \
+            "$_KEEL_COMPLETION_CAPTURE_BUFFER" "$_KEEL_COMPLETION_CAPTURE_CURSOR" &&
+            fuzzy_path=1
+        _keel_completion_path_kind_for_context \
+            "$_KEEL_COMPLETION_CAPTURE_BUFFER" "$_KEEL_COMPLETION_CAPTURE_CURSOR"
+        if (( _KEEL_COMPLETION_PATH_ARGUMENT && ! fuzzy_path )); then
+            case $_KEEL_COMPLETION_PATH_KIND in
+                directories)
+                    _directories
+                    ;;
+                files)
+                    _files -f
+                    ;;
+                both)
+                    _files
+                    ;;
+            esac
+        fi
         _keel_completion_fuzzy_path_complete \
             "$_KEEL_COMPLETION_CAPTURE_BUFFER" "$_KEEL_COMPLETION_CAPTURE_CURSOR"
         compstate[insert]=''
@@ -346,8 +469,29 @@ _keel_completion_capture_sync() {
         _keel_completion_broad_context "$current_buffer" "$current_cursor"
         broad_buffer=$_KEEL_COMPLETION_BROAD_BUFFER
         broad_cursor=$_KEEL_COMPLETION_BROAD_CURSOR
-        command_name=${${(@z)broad_buffer}[1]}
+        # The broad buffer intentionally removes the active command token
+        # while it is being typed, so derive the provider name from the real
+        # line rather than from the context used for completion capture.
+        command_words=("${(@z)current_buffer}")
+        command_name=${command_words[1]-}
         command_name=${command_name:t}
+        if (( ! _KEEL_COMPLETION_COMMAND_QUERY )); then
+            _keel_completion_load_generated "$command_name"
+            _keel_help_load "$command_name" >/dev/null 2>&1 || true
+        fi
+        _keel_completion_path_kind_for_context "$current_buffer" "$current_cursor"
+        case $_KEEL_COMPLETION_PATH_KIND in
+            directories)
+                path_mode=1
+                ;;
+            files)
+                path_mode=2
+                ;;
+            *)
+                path_mode=0
+                ;;
+        esac
+        zle keel-native-set-completion-path-mode "$path_mode" >/dev/null 2>&1 || true
         _keel_completion_prepare_provider "$command_name"
         zstyle ':completion:*' verbose yes
         zstyle ':completion:*' list-grouped no

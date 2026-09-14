@@ -36,7 +36,11 @@ _keel_help_completion() {
             _directories
             return 0
             ;;
-        files|path|both)
+        files)
+            _files -f
+            return 0
+            ;;
+        path|both)
             _files
             return 0
             ;;
@@ -62,7 +66,11 @@ _keel_help_completion() {
             _directories
             return 0
             ;;
-        files|path|both)
+        files)
+            _files -f
+            return 0
+            ;;
+        path|both)
             _files
             return 0
             ;;

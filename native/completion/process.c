@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -43,6 +44,21 @@ static int valid_option_mode(const char *mode)
 {
     return mode == NULL ||
            ((mode[0] == '0' || mode[0] == '1') && mode[1] == '\0');
+}
+
+int keel_completion_set_path_mode(char **args)
+{
+    char *end;
+    long mode;
+
+    if (args == NULL || args[0] == NULL || args[1] != NULL)
+        return 1;
+    errno = 0;
+    mode = strtol(args[0], &end, 10);
+    if (errno != 0 || end == args[0] || *end != '\0' || mode < 0 || mode > 2)
+        return 1;
+    keel_completion_path_mode = (int)mode;
+    return 0;
 }
 
 static int silence_child_terminal(void)
@@ -104,6 +120,7 @@ int keel_completion_start_worker(char **args)
     read_fd = movefd(pipes[0]);
     write_fd = movefd(pipes[1]);
     if (read_fd < 0 || write_fd < 0) {
+        keel_completion_option_mode = 0;
         if (read_fd >= 0)
             zclose(read_fd);
         if (write_fd >= 0)

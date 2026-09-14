@@ -46,6 +46,19 @@ _keel_help_append_positional() {
     [[ -n $kind ]] && _KEEL_HELP_POSITIONAL_KINDS[${command_name}${field}${value}]=$kind
 }
 
+_keel_help_append_command() {
+    local command_name=$1
+    local value=$2
+    local detail=$3
+    local field=$'\x1f'
+    local key="${command_name}${field}${value}"
+
+    [[ -n $value ]] || return 0
+    [[ -n ${_KEEL_HELP_COMMAND_DETAILS[$key]-} ]] && return 0
+    _KEEL_HELP_COMMANDS[$command_name]+="${_KEEL_HELP_COMMANDS[$command_name]:+$field}$value"
+    _KEEL_HELP_COMMAND_DETAILS[$key]=$detail
+}
+
 _keel_help_append_values() {
     local command_name=$1
     local option=$2
@@ -75,11 +88,43 @@ _keel_help_append_values() {
     done
 }
 
+_keel_help_path_kind() {
+    emulate -L zsh
+
+    local spec=${(L)1}
+    local detail_lower=${(L)2}
+    local role=${spec#--}
+    role=${role#-}
+    role=${role%%[=<]*}
+
+    REPLY=''
+    if [[ $detail_lower == *file* &&
+          ( $detail_lower == *directory* || $detail_lower == *folder* ) ]]; then
+        REPLY=both
+        return 0
+    fi
+    case $role in
+        project|project-dir|project-directory|workspace|worktree|repository|repo|directory|dir|folder|cwd|root)
+            REPLY=directories
+            return 0
+            ;;
+    esac
+    if [[ $detail_lower == *directory* || $detail_lower == *folder* ||
+          $detail_lower == *' working directory'* || $detail_lower == *' working tree'* ||
+          $detail_lower == *' dir'* ]]; then
+        REPLY=directories
+    elif [[ $detail_lower == *path* ]]; then
+        REPLY=both
+    elif [[ $detail_lower == *file* ]]; then
+        REPLY=files
+    fi
+}
+
 _keel_help_parse_line() {
     local command_name=$1
     local section=$2
     local line=$3
-    local trimmed spec detail detail_lower token option list path_kind
+    local trimmed spec detail token option list path_kind
     local -a spec_words
 
     _keel_help_trim "$line"
@@ -102,16 +147,10 @@ _keel_help_parse_line() {
             option=${token%%[=<]*}
             [[ $option == -* ]] || continue
             _keel_help_append "$command_name" "$option" "$detail"
-            detail_lower=${detail:l}
-            path_kind=''
-            if [[ $detail_lower == *file* &&
-                  ( $detail_lower == *directory* || $detail_lower == *folder* ) ]]; then
-                path_kind=both
-            elif [[ $detail_lower == *directory* || $detail_lower == *folder* ||
-                    $detail_lower == *' dir'* ]]; then
-                path_kind=directories
-            elif [[ $detail_lower == *path* || $detail_lower == *file* ||
-                    $spec == *'<'* || $spec == *'='* ]]; then
+            _keel_help_path_kind "$option" "$detail"
+            path_kind=$REPLY
+            if [[ -z $path_kind &&
+                  ( $spec == *'<'* || $spec == *'='* ) ]]; then
                 path_kind=files
             fi
             if [[ -n $path_kind ]]; then
@@ -134,17 +173,8 @@ _keel_help_parse_line() {
         [[ $spec != "$trimmed" ]] || return 0
         _keel_help_trim "$detail"
         detail=$REPLY
-        detail_lower=${detail:l}
-        path_kind=''
-        if [[ $detail_lower == *file* &&
-              ( $detail_lower == *directory* || $detail_lower == *folder* ) ]]; then
-            path_kind=both
-        elif [[ $detail_lower == *directory* || $detail_lower == *folder* ||
-                $detail_lower == *' dir'* ]]; then
-            path_kind=directories
-        elif [[ $detail_lower == *path* || $detail_lower == *file* ]]; then
-            path_kind=files
-        fi
+        _keel_help_path_kind "$spec" "$detail"
+        path_kind=$REPLY
         if [[ $detail == *'Accepted values'*:* ]]; then
             list=${detail#*:}
             _keel_help_append_values "$command_name" '' "$list" "$detail"
@@ -152,8 +182,7 @@ _keel_help_parse_line() {
             list=${detail#*Valid options:}
             _keel_help_append_values "$command_name" '' "$list" "$detail"
         fi
-        [[ -n $path_kind ]] &&
-            _KEEL_HELP_POSITIONAL_KINDS[${command_name}$'\x1f'$spec]=$path_kind
+        _keel_help_append_positional "$command_name" "$spec" "$detail" "$path_kind"
         return 0
     fi
 
@@ -162,7 +191,7 @@ _keel_help_parse_line() {
         detail=${trimmed#"$spec"}
         [[ $spec != "$trimmed" ]] || return 0
         _keel_help_trim "$detail"
-        _keel_help_append_positional "$command_name" "$spec" "$REPLY"
+        _keel_help_append_command "$command_name" "$spec" "$REPLY"
     fi
 }
 
@@ -174,11 +203,24 @@ _keel_help_load() {
 
     if (( $+_KEEL_HELP_HELP_LOADED[$command_name] )); then
         [[ -n ${_KEEL_HELP_OPTIONS[$command_name]-} ||
-           -n ${_KEEL_HELP_POSITIONALS[$command_name]-} ]]
+           -n ${_KEEL_HELP_POSITIONALS[$command_name]-} ||
+           -n ${_KEEL_HELP_COMMANDS[$command_name]-} ]]
         return
     fi
+    if (( $+functions[_keel_completion_prefetch_poll] )); then
+        _keel_completion_prefetch_poll "$command_name"
+    fi
     _KEEL_HELP_HELP_LOADED[$command_name]=1
-    help_output=$("$command_name" --help 2>&1) || true
+    if (( ${_KEEL_COMPLETION_PREFETCH_HELP_READY[$command_name]:-0} )); then
+        help_output=${_KEEL_COMPLETION_PREFETCH_HELP[$command_name]}
+    elif (( ${_KEEL_COMPLETION_CAPTURE:-0} )); then
+        help_output=$("$command_name" --help 2>&1) || true
+    else
+        # The line-pre-redraw hook must never execute a CLI synchronously. The
+        # completion worker can load help after it forks, while the parent
+        # keeps accepting keystrokes and polling the prefetch result.
+        return 1
+    fi
     [[ -n $help_output ]] || return 1
     lines=("${(@f)help_output}")
     for line in "${lines[@]}"; do
@@ -186,12 +228,13 @@ _keel_help_load() {
         line=$REPLY
         case $line in
             Flags:*|Options:*|Arguments:*) section=flags; continue ;;
-            'Positional Variables:'*|'Positional Arguments:'*) section=positionals; continue ;;
+            'Positionals:'*|'Positional Variables:'*|'Positional Arguments:'*) section=positionals; continue ;;
             Commands:*|Subcommands:*) section=commands; continue ;;
             Usage:*|Description:*|Examples:*) section=''; continue ;;
         esac
         _keel_help_parse_line "$command_name" "$section" "$line"
     done
     [[ -n ${_KEEL_HELP_OPTIONS[$command_name]-} ||
-       -n ${_KEEL_HELP_POSITIONALS[$command_name]-} ]]
+       -n ${_KEEL_HELP_POSITIONALS[$command_name]-} ||
+       -n ${_KEEL_HELP_COMMANDS[$command_name]-} ]]
 }

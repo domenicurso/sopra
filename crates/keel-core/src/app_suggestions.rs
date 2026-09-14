@@ -438,7 +438,7 @@ fn candidate_component_start(
     query_component_count: usize,
     candidate_component_count: usize,
 ) -> Option<usize> {
-    if query_path.contains('/') {
+    if query_path.contains('/') || matches!(query_path, "." | ".." | "~") {
         Some(0)
     } else {
         candidate_component_count.checked_sub(query_component_count)
@@ -463,7 +463,7 @@ fn component_sequence_suffix_start(
 fn path_value_offset(label: &str) -> usize {
     label
         .find('=')
-        .filter(|&equals| label.starts_with('-') && label[equals + 1..].contains('/'))
+        .filter(|_| label.starts_with('-'))
         .map_or(0, |equals| equals + 1)
 }
 

@@ -136,6 +136,23 @@ fn path_labels_hide_shared_leading_segments_without_changing_replacements() {
 }
 
 #[test]
+fn path_markers_match_their_explicit_prefix_before_compacting_labels() {
+    let snapshot = HostSnapshot {
+        line: HostLine::new("cd .", 4),
+        ..HostSnapshot::default()
+    };
+    let mut app = AppState::from_snapshot(&snapshot);
+    app.set_suggestions(vec![
+        Suggestion::with_replacement("./crates/", "", "./crates/")
+            .with_kind(SuggestionKind::Directory),
+    ]);
+
+    assert_eq!(app.suggestions.len(), 1);
+    assert_eq!(app.suggestions[0].label, "crates/");
+    assert_eq!(app.suggestions[0].replacement(), "./crates/");
+}
+
+#[test]
 fn one_path_result_still_uses_a_local_display_segment() {
     let snapshot = HostSnapshot {
         line: HostLine::new("cd ./crates/keel-c", 18),
