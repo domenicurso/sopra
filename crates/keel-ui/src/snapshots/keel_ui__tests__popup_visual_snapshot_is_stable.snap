@@ -1,8 +1,0 @@
----
-source: crates/keel-ui/src/lib.rs
-expression: "snapshot(&scene, 42)"
----
-╭┴───────────────────────────────────╮
-│ --files-with-matches  grep option  │
-│ --files-without-match  grep option │
-╰──────────────1/2; Up/Down to select╯

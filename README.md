@@ -1,203 +1,78 @@
 # Keel
 
-<div align="center">
+Keel is a prototype Rust-owned line editor for stock Zsh. It recreates the current interactive surface for demonstration purposes: a command line, a selectable overlay, and a visibly animated cursor, while Zsh keeps ownership of prompts, command parsing, execution, history, and scrollback.
 
-**A native UI layer for interactive Zsh.**
+The prototype deliberately has no real completion provider. Its overlay is static demo data, so the architecture can be exercised without pretending that the shell integration is production-ready.
 
-Keel adds Rust-rendered terminal surfaces to a normal Zsh session while keeping Zsh in charge of the prompt, line editing, history, command execution, and scrollback.
+## Run the demo
 
-</div>
-
-Keel is a terminal augmentation prototype. The current MVP renders a small autocomplete surface below the active line by forking the live Zsh once per uncached completion context, then paints the inherited completion system's finalized matches without asking ZLE to draw a second prompt. The captured set is cached and fuzzy-filtered locally while the line changes, so warm edits do not start another provider or block on a new process.
-
-- [Try the isolated demo](#try-the-isolated-demo)
-- [Install a user-owned shell](#install-a-user-owned-shell)
-- [Understand the architecture](#how-it-works)
-- [Run the test suite](#development)
-
-## What it does
-
-- Renders a Rust and [ratatui](https://ratatui.rs/) suggestion popup below the host cursor without replacing Zsh's editor.
-- Keeps normal Zsh behavior intact, including prompt rendering, cursor movement, command acceptance, execution, history, and terminal scrollback.
-- Measures the surface against the terminal geometry and writes only a bounded ANSI transaction, so overlays can be cleared without an alternate screen or a scrollback manager.
-- Diffs successive overlay frames in place and eases a hidden-cursor cell between the terminal background and its queried cursor color instead of relying on binary terminal blinking; edits hold it fully visible briefly, then fade it no dimmer than 40%.
-- Tracks Unicode input by grapheme and display width, so the host line can contain multi-codepoint characters without making the Rust model lose its place.
-- Captures each broad completion context once, then performs cached fuzzy filtering and ranking in native code so the common edit path is sub-millisecond.
-- Keeps path completions aware of file and directory roles, shows relative modification times, compacts shared path prefixes for the popup, and resolves misspelled parent segments with bounded fuzzy search while preserving the full insertion path.
-- Exposes a `keel` command with `status`, `enable`, `disable`, and `help` subcommands inside an active session.
-
-### Who is it for?
-
-Keel is for people who want to experiment with rich shell interfaces while preserving the behavior users already rely on, and for developers who want a small Rust-native foundation for terminal surfaces rather than another shell-side editor implementation.
-
-The current demo is deliberately modest: any `compdef` available after `compinit` can provide the popup entries, including descriptions from `compadd -d`. Keel displays those entries below the line, keeps selection in Rust, and writes a selected replacement back into ZLE only when Tab is pressed.
-
-## Installation
-
-> [!IMPORTANT]
-> Keel builds a private, patched Zsh 5.9 because the native module depends on a small redraw callback ABI. The system Zsh is not modified, and the build scripts currently support macOS and Linux.
-
-### Requirements
-
-You need a Rust toolchain, a C compiler, `make`, `curl`, `tar`, and `patch`. The full integration suite also uses [Expect](https://core.tcl-lang.org/expect/index), because it drives a real interactive Zsh session through a pseudo-terminal.
-
-### Try the isolated demo
-
-From the repository root, run:
+Requirements are a Rust toolchain and an installed `zsh`.
 
 ```sh
 ./scripts/start-keel.sh
 ```
 
-The first run downloads and builds the private Zsh, compiles the Rust module, initializes Zsh's standard completion definitions, creates a temporary startup directory under `target/`, and launches the demo shell. It does not edit your dotfiles or change your default shell.
+The launcher builds `keel-demo`, starts stock Zsh with an isolated `ZDOTDIR`, and sources the small bridge in [`zsh/keel.zsh`](zsh/keel.zsh). It does not patch, rebuild, or replace the user's Zsh.
 
-The launcher replaces itself with the Keel-enabled Zsh, but it cannot replace the shell that invoked it. Use `exec` when the current terminal shell should be replaced too:
+Inside the demo:
 
-```sh
-exec ./scripts/start-keel.sh
-```
+- Type to filter the static overlay.
+- Use Up/Down to change the selection and Tab to insert it.
+- Use Ctrl-L to hide or show the overlay.
+- Press Enter to hand the line back to Zsh for normal execution.
+- Press Escape to leave the Rust editor and keep the edited line in stock ZLE.
+- Press Ctrl-C to abort the line and let Zsh start a fresh prompt beneath it.
 
-### Install a user-owned shell
+## Architecture
 
-To keep a stable Keel installation outside the build tree, run the one-command installer from the repository root:
-
-```sh
-./install.sh
-```
-
-The installer puts the patched Zsh, native module, loader, and isolated startup files under `$HOME/.local/keel`. It does not edit `.zshrc`, `.zprofile`, or `/etc/shells`, and it does not call `chsh`. Set `KEEL_INSTALL_PREFIX` when you want a different user-owned location:
-
-```sh
-KEEL_INSTALL_PREFIX="$HOME/.local/keel-dev" ./install.sh
-```
-
-The same installer can bootstrap itself from the latest `main` source archive, so a fresh checkout is not required:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/domenicurso/keel/main/install.sh | bash
-```
-
-Set `KEEL_REF` when you want a different branch or tag, or set `KEEL_SOURCE_URL` to provide an explicit source archive URL. The installer downloads the source into a temporary directory, builds from that copy, and removes it after installation.
-
-Launch the installed shell directly while testing it:
-
-```sh
-"$HOME/.local/keel/bin/keel" -il
-```
-
-For a terminal profile, use `$HOME/.local/keel/bin/keel -il` as the profile command. That makes the private patched Zsh the root interactive process for the terminal while preserving ordinary Zsh execution, history, and scrollback.
-
-The installed wrapper reuses `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, and `~/.zlogin` by default. That preserves the user's functions, aliases, completion definitions, and prompt while Keel supplies the patched ZLE host and renderer. Start an isolated shell when debugging startup configuration with:
-
-```sh
-KEEL_SOURCE_USER_RC=0 "$HOME/.local/keel/bin/keel" -il
-```
-
-Remove the user-owned installation without touching any shell dotfiles:
-
-```sh
-./uninstall.sh
-```
-
-Use the same `KEEL_INSTALL_PREFIX` override when removing an installation stored somewhere else. The uninstaller removes a prefix only when it contains Keel's install marker, so it refuses to delete an unrelated directory.
-
-### Build from source
-
-The normal source build is handled by the demo and install scripts. To build the patched shell and native module without launching a session, run:
-
-```sh
-./scripts/build-keel.sh
-```
-
-The resulting module is written to `target/debug/keel.so`, and the patched Zsh is installed under `target/keel-zsh` unless `KEEL_ZSH_PREFIX` overrides that location.
-
-## Configuration
-
-Keel does not have a larger user-facing configuration system yet. Once `zsh/keel.zsh` has loaded the module, the shell-native `keel` command is available:
-
-```zsh
-keel status    # report whether this interactive shell has Keel hooks
-keel enable    # load the module and install the hooks
-keel disable   # remove the hooks and unload Keel for this session
-keel help      # show the command syntax
-```
-
-The installed `bin/keel` wrapper also accepts `keel status` outside an active session and reports where Keel is installed. `enable` and `disable` must run inside the managed shell because an executable cannot change the module state of the shell that launched it.
-
-The integration only activates in an interactive shell with `KEEL_MODULE_PATH` set. Sourcing the loader from an ordinary stock Zsh is safe when that variable is absent; the loader returns without installing hooks. A normal existing Zsh setup can keep control of `compinit`; the isolated demo and installed shell initialize it explicitly so the autocomplete MVP works without extra configuration.
-
-## How it works
-
-Keel augments an interactive Zsh session instead of taking ownership of it. The patched shell remains the source of truth for the visible prompt and editable line, while Keel owns only the optional surface it paints into the terminal.
+The ownership boundary is intentionally small:
 
 ```text
-Zsh ZLE redisplay
-        |
-        v
-patched redraw hooks -> C ABI snapshot -> Rust app state
-                                              |
-                                              v
-                                   ratatui component tree
-                                              |
-                                              v
-                                  offscreen buffer and diff
-                                              |
-                                              v
-                                      bounded ANSI patch
+stock Zsh ZLE
+    │  zle-line-init invokes one tiny widget
+    ▼
+Rust editor process
+    │  owns input, state, scene composition, and the 60 Hz loop
+    ▼
+one ratatui Buffer
+    │  prompt, command text, overlay, status, and cursor are Elements
+    ▼
+one diffed ANSI renderer
+    │  writes directly to /dev/tty
+    ▼
+terminal
 ```
 
-### Ownership boundary
+The Rust process reads the current `BUFFER` and character-based `CURSOR` from ZLE, opens the existing terminal directly, enables raw mode for the duration of the editor, and writes a tiny result record back through temporary files. On accept, the scene briefly replaces the full prompt with a compact transient `❯` prompt before the widget restores the edited buffer and calls Zsh's built-in `.accept-line`; Zsh then executes the command itself. Ctrl-C uses the same transient scene, clears only the internal ZLE buffer, and accepts that empty line so the painted command remains visible without executing. Escape returns the edited buffer to ordinary ZLE redisplay. The app does not create a PTY, pass-through renderer, native shim, patched Zsh, or completion ABI.
 
-`zsh/keel.zsh` loads the native module and installs the `line-init` and `line-finish` hooks. The C shim is the only layer that knows the Zsh ABI: it receives the patched redisplay and finalized-match callbacks, snapshots the current line and terminal geometry, registers the native widgets, and writes Rust's returned bytes to the terminal. It does not decide layout or compose the UI. The native worker forks the current Zsh, runs the real completion widget once for a broad context, and sends authoritative `Cmatch` records through a nonblocking pipe. The shell loader caches the result, rejects stale responses against the line snapshot, and hands one protocol payload to Rust for later local filtering.
+Every visible piece implements the same `Element` trait and paints into the same frame. The cursor is therefore an ordinary scene element whose color changes at 60 Hz, while the overlay and future surfaces can use the same buffer, diff, and ANSI path without adding a second renderer.
 
-The Rust crates keep the rest of the work separated. `keel-core` normalizes host data and maintains the session model, `keel-ui` measures and paints components, `keel-renderer` turns those components into a diffed ANSI transaction, and `keel-scheduler` defines invalidation and frame timing without starting a background runtime.
-
-### Terminal behavior
-
-Before Zsh redraws, Keel clears the previous surface. After Zsh has drawn its ordinary prompt and line, the post-redraw hook receives the actual visual cursor position, so the next surface can anchor to the host cursor rather than guessing from prompt strings.
-
-On accept, Zsh's normal `accept-line` remains in charge. The line-finish hook removes Keel's surface before command output begins, so the command and its output use ordinary shell semantics. Tab accepts a selected completion by updating the ZLE buffer, while Enter executes the resulting line. Escape dismisses the popup, Ctrl-C clears the current line in place, and empty Enter only redisplays it; none of these paths prints a synthetic prompt. Keel never enters the alternate screen, clears the terminal, reverses terminal scrollback, wraps the shell in another PTY, or starts a daemon.
-
-For the lower-level rendering contract, see [the architecture notes](docs/architecture.md) and [the renderer notes](docs/renderer.md).
+The editor is a separate process because stock Zsh does not expose a public API for replacing its entire ZLE input loop from Rust. That process boundary is a small file protocol, not a binary ABI, and it lets the prototype work with the Zsh already installed on the user's machine.
 
 ## Development
 
-Run the complete validation suite with:
-
-```sh
-./tests/run.sh
-```
-
-The suite checks shell-script syntax, formatting, locked workspace tests, Clippy warnings, native module loading, rejection by stock Zsh, installation behavior, and the interactive PTY flow for accept, cancel, resize, and unload.
-
-For focused Rust checks, use:
-
 ```sh
 cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+python3 scripts/terminal-harness.py
+zsh -n zsh/keel.zsh
+bash -n scripts/*.sh
 ```
 
-### Repository layout
+The terminal harness allocates a real pseudo-terminal and drives the shell in both directions, so it catches redraw-position and shell-return bugs that a one-way output capture misses.
 
-- `crates/keel-core` contains the host snapshot, grapheme-aware line model, application state, and completion selection state.
-- `crates/keel-ui` contains the measured component API, terminal-palette style tokens, and suggestion popup.
-- `crates/keel-renderer` contains the offscreen ratatui buffer, frame diff, and bounded ANSI writer.
-- `crates/keel-scheduler` contains invalidation and frame-clock behavior for the host integration.
-- `native` contains the C loadable-module shim and the checked Zsh ABI boundary.
-- `patches` contains the Zsh 5.9 redraw-hook patch used by the private shell build.
-- `zsh` contains the shell-side loader and lifecycle commands.
-- `install.sh` and `uninstall.sh` manage the user-owned prefix; `scripts` contains their build, removal, and demo implementation scripts.
-- `tests` contains Rust-adjacent integration checks and the Expect-driven native session test.
+The repository is intentionally small:
 
-## Current limitations
+- [`src/editor.rs`](src/editor.rs) coordinates the editor loop, while its child modules own editing and view state.
+- [`src/scene.rs`](src/scene.rs) defines the homogeneous scene contract; child modules own the canvas, elements, overlay, and scene layouts.
+- [`src/render.rs`](src/render.rs) diffs ratatui cells and writes ANSI updates, with ANSI encoding kept beside it.
+- [`src/input.rs`](src/input.rs) owns direct-TTY input, raw mode, and terminal size, with key decoding kept beside it.
+- [`zsh/keel.zsh`](zsh/keel.zsh) is the only shell-side bridge.
+- [`demo/.zshrc`](demo/.zshrc) provides the isolated demo startup file.
 
-- Completion capture follows Zsh's installed completion functions, accepts up to 16,384 finalized matches, and uses [`neo_frizbee`](https://docs.rs/neo_frizbee/latest/neo_frizbee/), the matching engine used by [`fff`](https://github.com/dmtrKovalenko/fff), to rank labels while preserving insertion text and descriptions. File and directory matches carry their role and relative modification time, while the popup can shorten shared path prefixes without changing the full inserted path. Command matches add the resolved executable path, and shell-function matches add their defining source path, when the provider has no per-item description. Durations include tenths of a millisecond, and cache hits report `0.0ms` because only native filtering runs.
-- The sub-millisecond target applies to cached filtering and rendering. A cache miss executes arbitrary completion code in a forked copy of the live Zsh, so the parent remains responsive but first-result time remains provider-dependent.
-- Zsh still owns keyboard input and the editable buffer; Keel adds navigation and Tab insertion widgets while leaving command parsing, history, and execution in ZLE.
-- Running Keel requires the patched Zsh 5.9 build, which is why the project builds and ships its own private shell instead of loading into `/bin/zsh`.
-- The native build scripts currently implement Darwin and Linux link steps; other host operating systems are rejected explicitly.
+This branch is a rendering and ownership proof. Real completions, shell-wide history integration, richer ZLE editing behavior, resize polish, and installation are intentionally deferred until the boundary proves stable.
 
 ## License
 
-Keel is licensed under [MIT](https://opensource.org/license/mit/) OR [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Keel is licensed under MIT OR Apache-2.0.

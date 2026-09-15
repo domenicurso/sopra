@@ -1,60 +1,70 @@
-if [[ -n ${_KEEL_ZSH_LOADED:-} ]]; then
+if [[ -n ${_KEEL_DEMO_LOADED:-} ]]; then
     return 0
 fi
-
-typeset -g _KEEL_ZSH_LOADED=1
-typeset -g _KEEL_ZSH_DIR=${${(%):-%N}:A:h}
-source "$_KEEL_ZSH_DIR/keel-vars.zsh"
-source "$_KEEL_ZSH_DIR/keel-cache.zsh"
-source "$_KEEL_ZSH_DIR/completion/keel-help-parser.zsh"
-source "$_KEEL_ZSH_DIR/completion/keel-help-provider.zsh"
+typeset -g _KEEL_DEMO_LOADED=1
 
 if [[ ! -o interactive ]]; then
     return 0
 fi
 
-# The installed wrapper exports this path; ordinary stock Zsh sessions do not.
-if [[ -z ${KEEL_MODULE_PATH:-} ]]; then
-    return 0
-fi
+: "${KEEL_BIN:=${${(%):-%N}:A:h:h}/target/debug/keel-demo}"
+: "${KEEL_PROMPT:=keel-demo ❯ }"
 
-zmodload -i zsh/zle || return 1
-zmodload -i zsh/parameter || return 1
-zmodload -i zsh/datetime || true
-autoload -Uz add-zle-hook-widget || return 1
-autoload -Uz add-zsh-hook || return 1
-
-if [[ -n ${KEEL_MODULE_PATH:-} ]]; then
-    module_path=("$KEEL_MODULE_PATH" ${module_path:-})
-fi
-
-if ! zmodload -i keel; then
-    print -u2 'keel: native module unavailable; use scripts/start-keel.sh'
+if [[ ! -x $KEEL_BIN ]]; then
+    print -u2 "keel: demo binary not found at $KEEL_BIN"
     return 1
 fi
 
-source "$_KEEL_ZSH_DIR/keel-capture.zsh"
-source "$_KEEL_ZSH_DIR/keel-completion.zsh"
-source "$_KEEL_ZSH_DIR/keel-completion-response.zsh"
-source "$_KEEL_ZSH_DIR/keel-widgets.zsh"
-source "$_KEEL_ZSH_DIR/keel-lifecycle.zsh"
+# Stock Zsh owns the shell, prompt lifecycle, and command execution. This tiny
+# widget is the only bridge: the Rust editor reads the existing tty, writes a
+# result file, and hands the edited buffer back to ZLE.
+_keel_demo_edit() {
+    emulate -L zsh
+    local prefix action buffer cursor
+    prefix=$(mktemp "${TMPDIR:-/tmp}/keel-demo.XXXXXX") || return 1
+    rm -f -- "$prefix"
 
-add-zle-hook-widget line-init keel-native-line-init
-add-zle-hook-widget line-finish keel-native-line-finish
-add-zle-hook-widget line-init _keel_cursor_line_init
-add-zle-hook-widget line-finish _keel_cursor_line_finish
-add-zle-hook-widget line-pre-redraw _keel_completion_pre_redraw
-add-zle-hook-widget line-init _keel_completion_line_init
-add-zle-hook-widget line-finish _keel_completion_line_finish
-zle -N _keel_accept_widget
-zle -N _keel_select_previous_widget
-zle -N _keel_select_next_widget
-zle -N _keel_dismiss_widget
-zle -N _keel_interrupt_widget
-zle -N _keel_accept_enter_widget
-zle -N _keel_accept_linefeed_widget
-zle -N _keel_completion_apply_widget
-_KEEL_ZSH_HOOKS=1
-add-zsh-hook zshexit _keel_zshexit
-_keel_install_trapint
-_keel_bind_keys
+    "$KEEL_BIN" \
+        --buffer "$BUFFER" \
+        --cursor "$CURSOR" \
+        --prompt "$KEEL_PROMPT" \
+        --result-prefix "$prefix" \
+        </dev/tty >/dev/null
+
+    if [[ ! -r $prefix.action || ! -r $prefix.buffer || ! -r $prefix.cursor ]]; then
+        rm -f -- "$prefix.action" "$prefix.buffer" "$prefix.cursor"
+        zle -R
+        return 1
+    fi
+
+    action=$(<"$prefix.action")
+    buffer=$(<"$prefix.buffer")
+    cursor=$(<"$prefix.cursor")
+    rm -f -- "$prefix.action" "$prefix.buffer" "$prefix.cursor"
+
+    BUFFER=$buffer
+    CURSOR=$cursor
+    if [[ $action == accept || $action == interrupt ]]; then
+        PROMPT=${KEEL_TRANSIENT_PROMPT:-❯ }
+        if [[ $action == interrupt ]]; then
+            # Rust already painted the aborted buffer as a transient line. Send the
+            # break with an empty ZLE buffer so stock Zsh advances without erasing it.
+            BUFFER=
+            CURSOR=0
+            zle .send-break
+        else
+            zle .accept-line
+        fi
+    else
+        zle -R
+    fi
+}
+
+zle -N _keel_demo_edit
+
+_keel_demo_line_init() {
+    PROMPT=$KEEL_PROMPT
+    zle _keel_demo_edit
+}
+
+zle -N zle-line-init _keel_demo_line_init

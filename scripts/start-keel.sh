@@ -4,18 +4,9 @@ set -euo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 "$repo_root/scripts/build-keel.sh"
 
-zsh_root=${KEEL_ZSH_PREFIX:-"$repo_root/target/keel-zsh"}
-zshrc_root="$repo_root/target/keel-zshrc"
-mkdir -p "$zshrc_root"
+export KEEL_REPO_ROOT="$repo_root"
+export KEEL_BIN="$repo_root/target/debug/keel-demo"
+export KEEL_PROMPT='keel-demo ❯ '
+export ZDOTDIR="$repo_root/demo"
 
-printf '%s\n' \
-    "PROMPT='%n in %~ > '" \
-    "RPROMPT=''" \
-    "autoload -Uz compinit" \
-    "compinit -C" \
-    "source '$repo_root/zsh/keel.zsh'" \
-    > "$zshrc_root/.zshrc"
-
-export ZDOTDIR="$zshrc_root"
-export KEEL_MODULE_PATH="$repo_root/target/debug"
-exec "$zsh_root/bin/zsh" -di
+exec zsh -di

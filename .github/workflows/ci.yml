@@ -26,13 +26,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install integration-test dependencies on Linux
+      - name: Install Zsh on Linux
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends build-essential expect libncurses-dev zsh
-
-      - name: Install integration-test dependencies on macOS
-        if: runner.os == 'macOS'
-        run: brew install expect
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends zsh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -42,36 +38,19 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
-      - name: Run validation suite
-        run: ./tests/run.sh
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-  piped-install:
-    name: Validate piped installer
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - name: Run tests
+        run: cargo test --locked
 
-      - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends build-essential libncurses-dev
+      - name: Check Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Create a source archive for the current revision
-        run: git archive --format=tar.gz --prefix=keel-main/ --output="$RUNNER_TEMP/keel.tar.gz" HEAD
-
-      - name: Install through curl and bash
-        env:
-          KEEL_INSTALL_PREFIX: ${{ runner.temp }}/keel-install
-          KEEL_SOURCE_URL: file://${{ runner.temp }}/keel.tar.gz
-        run: curl -fsSL file://"$GITHUB_WORKSPACE/install.sh" | bash
-
-      - name: Check installed launcher
-        env:
-          KEEL_INSTALL_PREFIX: ${{ runner.temp }}/keel-install
+      - name: Check shell scripts
         run: |
-          test -x "$KEEL_INSTALL_PREFIX/bin/keel"
-          "$KEEL_INSTALL_PREFIX/bin/keel" status
+          zsh -n zsh/keel.zsh
+          bash -n scripts/*.sh
+
+      - name: Run interactive terminal harness
+        run: python3 scripts/terminal-harness.py
