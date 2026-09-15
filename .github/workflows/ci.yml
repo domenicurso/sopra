@@ -49,7 +49,7 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          zsh -n zsh/keel.zsh
+          for file in zsh/*.zsh; do zsh -n "$file"; done
           bash -n scripts/*.sh
 
       - name: Run interactive terminal harness

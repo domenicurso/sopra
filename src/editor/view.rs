@@ -5,8 +5,9 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
+    animation,
+    completion::CompletionItem,
     input::{CursorPosition, TerminalSize},
-    scene::{DemoItem, demo_items},
 };
 
 use super::EditorState;
@@ -37,8 +38,12 @@ impl EditorState {
         &self.buffer[start..end]
     }
 
-    pub(crate) fn visible_items(&self) -> Vec<DemoItem> {
-        demo_items(self.query())
+    pub(crate) fn completion_token_width(&self) -> u16 {
+        UnicodeWidthStr::width(self.query()).min(u16::MAX as usize) as u16
+    }
+
+    pub(crate) fn visible_items(&self) -> &[CompletionItem] {
+        &self.suggestions
     }
 
     pub(crate) fn cursor_display_width(&self) -> u16 {
@@ -51,10 +56,6 @@ impl EditorState {
             .next()
             .map(|grapheme| UnicodeWidthStr::width(grapheme).max(1) as u16)
             .unwrap_or(1)
-    }
-
-    pub(crate) fn status_text(&self) -> String {
-        format!("{} · 60fps", self.status)
     }
 
     pub(crate) fn animation_elapsed(&self, now: Instant) -> Duration {
@@ -74,16 +75,10 @@ impl EditorState {
     }
 
     pub(crate) fn cursor_style(&self, now: Instant) -> Style {
-        let pulse =
-            ((self.animation_elapsed(now).as_secs_f32() * std::f32::consts::TAU * 1.2).sin() + 1.0)
-                / 2.0;
+        let color = animation::blend_cursor(animation::cursor_opacity(self.animation_elapsed(now)));
         Style::default()
             .fg(Color::Rgb(8, 16, 22))
-            .bg(Color::Rgb(
-                interpolate(36, 107, pulse),
-                interpolate(139, 221, pulse),
-                interpolate(165, 205, pulse),
-            ))
+            .bg(Color::Rgb(color.0, color.1, color.2))
             .add_modifier(Modifier::BOLD)
     }
 
@@ -97,8 +92,4 @@ impl EditorState {
             .min(size.columns.saturating_sub(1));
         CursorPosition { row, column }
     }
-}
-
-fn interpolate(start: u8, end: u8, amount: f32) -> u8 {
-    (f32::from(start) + f32::from(end - start) * amount).round() as u8
 }

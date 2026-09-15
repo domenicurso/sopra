@@ -95,26 +95,6 @@ impl Element for CursorElement {
     }
 }
 
-pub(super) struct StatusElement {
-    pub(super) column: u16,
-    pub(super) row: u16,
-    pub(super) width: u16,
-    pub(super) text: String,
-}
-
-impl Element for StatusElement {
-    fn paint(&self, canvas: &mut Canvas) {
-        canvas.text(TextRun {
-            position: (self.column, self.row),
-            text: &self.text,
-            style: Style::default()
-                .fg(Color::Rgb(91, 151, 190))
-                .add_modifier(Modifier::DIM),
-            max_width: self.width,
-        });
-    }
-}
-
 pub(super) fn display_width(text: &str) -> usize {
     UnicodeWidthStr::width(text)
 }

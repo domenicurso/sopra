@@ -1,15 +1,11 @@
+mod animation;
+mod completion;
 mod editor;
 mod input;
 mod render;
 mod scene;
 
-use std::{
-    env,
-    error::Error,
-    ffi::OsString,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{env, error::Error, ffi::OsString, path::PathBuf};
 
 use editor::{EditorConfig, EditorState, ExitReason, RunResult};
 use input::{CursorPosition, Terminal};
@@ -19,15 +15,17 @@ struct Args {
     buffer: String,
     cursor: usize,
     prompt: String,
-    result_prefix: Option<PathBuf>,
+    provider: Option<PathBuf>,
+    cwd: PathBuf,
 }
 
 impl Args {
     fn parse() -> Result<Self, String> {
         let mut buffer = String::new();
         let mut cursor = 0;
-        let mut prompt = "keel-demo ❯ ".to_string();
-        let mut result_prefix = None;
+        let mut prompt = "❯ ".to_string();
+        let mut provider = None;
+        let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
 
         while let Some(argument) = arguments.next() {
@@ -39,12 +37,10 @@ impl Args {
                         .map_err(|_| "--cursor must be a character index".to_string())?;
                 }
                 "--prompt" => prompt = next_value(&mut arguments, "--prompt")?,
-                "--result-prefix" => {
-                    result_prefix = Some(PathBuf::from(next_value(
-                        &mut arguments,
-                        "--result-prefix",
-                    )?));
+                "--provider" => {
+                    provider = Some(PathBuf::from(next_value(&mut arguments, "--provider")?))
                 }
+                "--cwd" => cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?),
                 "--help" | "-h" => {
                     print_usage();
                     std::process::exit(0);
@@ -57,17 +53,18 @@ impl Args {
             buffer,
             cursor,
             prompt,
-            result_prefix,
+            provider,
+            cwd,
         })
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse().map_err(|message| format!("keel-demo: {message}"))?;
+    let args = Args::parse().map_err(|message| format!("keel: {message}"))?;
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
     // ZLE has already positioned the terminal on the active line. The renderer saves that
-    // position and treats it as row zero, so the prototype does not need terminal cursor queries.
+    // position and treats it as row zero, so Keel does not need terminal cursor queries.
     let anchor = CursorPosition { row: 0, column: 0 };
     let mut editor = EditorState::new(EditorConfig {
         buffer: args.buffer,
@@ -75,6 +72,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         prompt: args.prompt,
         anchor,
         size,
+        provider: args.provider,
+        cwd: args.cwd,
     });
     let result = editor.run(&mut terminal);
 
@@ -85,15 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     terminal.restore()?;
 
     let result = result?;
-    if let Some(prefix) = args.result_prefix {
-        write_result(&prefix, &result)?;
-    } else {
-        match result.reason {
-            ExitReason::Accepted => println!("{}", result.buffer),
-            ExitReason::Cancelled => println!("cancelled"),
-            ExitReason::Interrupted => println!("interrupted"),
-        }
-    }
+    write_result(&result)?;
     Ok(())
 }
 
@@ -107,31 +98,39 @@ fn next_value(
         .ok_or_else(|| format!("{flag} needs a value"))
 }
 
-fn write_result(prefix: &Path, result: &RunResult) -> std::io::Result<()> {
-    fs::write(
-        path_with_suffix(prefix, ".action"),
-        match result.reason {
-            ExitReason::Accepted => "accept",
-            ExitReason::Cancelled => "cancel",
-            ExitReason::Interrupted => "interrupt",
-        },
-    )?;
-    fs::write(path_with_suffix(prefix, ".buffer"), &result.buffer)?;
-    fs::write(
-        path_with_suffix(prefix, ".cursor"),
-        result.cursor.to_string(),
-    )?;
-    Ok(())
-}
+fn write_result(result: &RunResult) -> std::io::Result<()> {
+    use std::io::Write;
 
-fn path_with_suffix(prefix: &Path, suffix: &str) -> PathBuf {
-    let mut path = prefix.as_os_str().to_os_string();
-    path.push(suffix);
-    PathBuf::from(path)
+    let action = match result.reason {
+        ExitReason::Accepted => "accept",
+        ExitReason::Cancelled => "cancel",
+        ExitReason::Interrupted => "interrupt",
+        ExitReason::DelegateUp => "up",
+        ExitReason::DelegateDown => "down",
+        ExitReason::DelegateTab => "tab",
+        ExitReason::DelegateEof => "eof",
+    };
+    let mut stdout = std::io::stdout().lock();
+    writeln!(
+        stdout,
+        "K1\t{action}\t{}\t{}",
+        result.cursor,
+        hex_encode(result.buffer.as_bytes())
+    )
 }
 
 fn print_usage() {
     println!(
-        "keel-demo\n\nA Rust-owned line editor demo for stock Zsh.\n\nUsage:\n  keel-demo [--buffer TEXT] [--cursor N] [--prompt TEXT]\n            [--result-prefix PATH]\n\nThe result-prefix form writes .action, .buffer, and .cursor files for the\nsmall Zsh widget bridge."
+        "keel\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  keel [--buffer TEXT] [--cursor N] [--prompt TEXT]\n       [--provider PATH] [--cwd PATH]"
     );
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len().saturating_mul(2));
+    for &byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
 }

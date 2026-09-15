@@ -2,6 +2,7 @@ mod canvas;
 mod editor_scene;
 mod elements;
 mod overlay;
+mod overlay_items;
 mod transient;
 
 #[cfg(test)]
@@ -15,66 +16,10 @@ use crate::{editor::EditorState, input::TerminalSize};
 
 use canvas::Canvas;
 
-const MAX_OVERLAY_ITEMS: usize = 6;
-const MAX_OVERLAY_WIDTH: u16 = 48;
-const OVERLAY_FOOTER: &str = "↑↓ select · Tab · Enter · Esc";
+const MAX_OVERLAY_ITEMS: usize = 12;
+const MAX_OVERLAY_WIDTH: u16 = 56;
+const OVERLAY_FOOTER: &str = "↑↓ · Tab · Esc";
 pub(crate) const TRANSIENT_PROMPT: &str = "❯ ";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DemoItemKind {
-    Command,
-    File,
-    Help,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DemoItem {
-    pub(crate) label: &'static str,
-    pub(crate) kind: DemoItemKind,
-}
-
-const DEMO_ITEMS: &[DemoItem] = &[
-    DemoItem {
-        label: "git status",
-        kind: DemoItemKind::Command,
-    },
-    DemoItem {
-        label: "git switch -c demo",
-        kind: DemoItemKind::Command,
-    },
-    DemoItem {
-        label: "cargo test",
-        kind: DemoItemKind::Command,
-    },
-    DemoItem {
-        label: "README.md",
-        kind: DemoItemKind::File,
-    },
-    DemoItem {
-        label: "src/",
-        kind: DemoItemKind::File,
-    },
-    DemoItem {
-        label: "keel --help",
-        kind: DemoItemKind::Help,
-    },
-];
-
-pub(crate) fn demo_items(query: &str) -> Vec<DemoItem> {
-    let query = query.to_ascii_lowercase();
-    let mut matches: Vec<_> = DEMO_ITEMS
-        .iter()
-        .copied()
-        .filter(|item| query.is_empty() || item.label.to_ascii_lowercase().contains(&query))
-        .collect();
-    if matches.is_empty() {
-        matches.push(DemoItem {
-            label: "no matches",
-            kind: DemoItemKind::Help,
-        });
-    }
-    matches
-}
 
 pub(crate) struct Frame {
     pub(crate) buffer: Buffer,

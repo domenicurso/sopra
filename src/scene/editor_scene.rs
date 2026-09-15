@@ -5,24 +5,23 @@ use ratatui::{
     style::{Color, Modifier, Style},
 };
 
-use crate::{editor::EditorState, input::TerminalSize};
+use crate::{completion::CompletionItem, editor::EditorState, input::TerminalSize};
 
 use super::overlay::{OverlayElement, overlay_width};
 use super::{
     Element, MAX_OVERLAY_ITEMS, Scene,
-    elements::{CommandElement, CursorElement, PromptElement, StatusElement, display_width},
+    elements::{CommandElement, CursorElement, PromptElement, display_width},
 };
 
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
-    let items = editor.visible_items();
+    let items = editor.visible_items().to_vec();
     let layout = EditorLayout::new(editor, size, &items);
     let elements = editor_elements(editor, &layout, now, items);
-    Scene::new(
-        layout.area,
-        clear_rows(&layout),
-        vec![(layout.cursor_column, layout.row)],
-        elements,
-    )
+    let cursor_cells = (0..editor.cursor_cell_width())
+        .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
+        .filter(|(column, _)| *column < size.columns)
+        .collect();
+    Scene::new(layout.area, clear_rows(&layout), cursor_cells, elements)
 }
 
 struct EditorLayout {
@@ -36,11 +35,11 @@ struct EditorLayout {
     overlay_height: u16,
     overlay_width: u16,
     overlay_above: bool,
-    status_row: u16,
+    completion_token_width: u16,
 }
 
 impl EditorLayout {
-    fn new(editor: &EditorState, size: TerminalSize, items: &[super::DemoItem]) -> Self {
+    fn new(editor: &EditorState, size: TerminalSize, items: &[CompletionItem]) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let row = editor.anchor().row.min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
@@ -50,7 +49,8 @@ impl EditorLayout {
         let cursor_column = line_column
             .saturating_add(editor.cursor_display_width())
             .min(size.columns.saturating_sub(1));
-        let overlay_visible = editor.overlay_visible();
+        let completion_token_width = editor.completion_token_width();
+        let overlay_visible = editor.overlay_visible() && !items.is_empty();
         let overlay_height = if overlay_visible {
             (items.len().clamp(1, MAX_OVERLAY_ITEMS) as u16).saturating_add(2)
         } else {
@@ -64,13 +64,6 @@ impl EditorLayout {
         } else {
             row.saturating_sub(overlay_height.saturating_add(1))
         };
-        let status_row = if below_fits {
-            overlay_row
-                .saturating_add(overlay_height)
-                .min(size.rows.saturating_sub(1))
-        } else {
-            size.rows.saturating_sub(1)
-        };
         Self {
             area,
             row,
@@ -82,7 +75,7 @@ impl EditorLayout {
             overlay_height,
             overlay_width,
             overlay_above: overlay_visible && !below_fits,
-            status_row,
+            completion_token_width,
         }
     }
 }
@@ -91,7 +84,7 @@ fn editor_elements(
     editor: &EditorState,
     layout: &EditorLayout,
     now: Instant,
-    items: Vec<super::DemoItem>,
+    items: Vec<CompletionItem>,
 ) -> Vec<Box<dyn Element>> {
     let mut elements: Vec<Box<dyn Element>> = vec![
         Box::new(PromptElement {
@@ -118,17 +111,10 @@ fn editor_elements(
             ),
             items,
             selected: editor.selected_index(),
-            query: editor.query().to_string(),
             connector_column: layout.connector_column(),
             connector: if layout.overlay_above { "┬" } else { "┴" },
         }));
     }
-    elements.push(Box::new(StatusElement {
-        column: layout.column,
-        row: layout.status_row,
-        width: layout.area.width.saturating_sub(layout.column),
-        text: editor.status_text(),
-    }));
     elements.push(Box::new(CursorElement {
         column: layout.cursor_column,
         row: layout.row,
@@ -140,14 +126,15 @@ fn editor_elements(
 
 impl EditorLayout {
     fn overlay_column(&self) -> u16 {
-        self.line_column
+        self.cursor_column
+            .saturating_sub(self.completion_token_width)
             .saturating_sub(2)
             .min(self.area.width.saturating_sub(self.overlay_width))
     }
 
     fn connector_column(&self) -> u16 {
         if self.overlay_width >= 3 {
-            self.line_column
+            self.cursor_column
                 .saturating_sub(self.overlay_column())
                 .clamp(1, self.overlay_width.saturating_sub(2))
         } else {
@@ -157,9 +144,13 @@ impl EditorLayout {
 }
 
 fn clear_rows(layout: &EditorLayout) -> Vec<u16> {
-    let mut rows = vec![layout.row, layout.status_row];
+    let mut rows = vec![layout.row];
     if layout.overlay_visible {
-        rows.extend((0..layout.overlay_height).map(|offset| layout.overlay_row + offset));
+        rows.extend(
+            (0..layout.overlay_height)
+                .map(|offset| layout.overlay_row + offset)
+                .filter(|row| *row < layout.area.height),
+        );
     }
     rows.sort_unstable();
     rows.dedup();

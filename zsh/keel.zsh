@@ -1,70 +1,112 @@
-if [[ -n ${_KEEL_DEMO_LOADED:-} ]]; then
+if [[ -n ${_KEEL_LOADED:-} || ${KEEL_PROVIDER_MODE:-0} == 1 ]]; then
     return 0
 fi
-typeset -g _KEEL_DEMO_LOADED=1
+typeset -g _KEEL_LOADED=1
 
 if [[ ! -o interactive ]]; then
     return 0
 fi
 
-: "${KEEL_BIN:=${${(%):-%N}:A:h:h}/target/debug/keel-demo}"
-: "${KEEL_PROMPT:=keel-demo ❯ }"
+typeset -r keel_dir=${${(%):-%N}:A:h}
+: "${KEEL_BIN:=$keel_dir/../target/debug/keel}"
+: "${KEEL_PROVIDER:=$keel_dir/keel-provider.zsh}"
+: "${KEEL_PROMPT:=${PROMPT:-❯ }}"
+: "${KEEL_RPROMPT:=${RPROMPT:-}}"
+: "${KEEL_TRANSIENT_PROMPT:=❯ }"
 
 if [[ ! -x $KEEL_BIN ]]; then
-    print -u2 "keel: demo binary not found at $KEEL_BIN"
+    print -u2 "keel: executable not found at $KEEL_BIN"
     return 1
 fi
 
-# Stock Zsh owns the shell, prompt lifecycle, and command execution. This tiny
-# widget is the only bridge: the Rust editor reads the existing tty, writes a
-# result file, and hands the edited buffer back to ZLE.
-_keel_demo_edit() {
-    emulate -L zsh
-    local prefix action buffer cursor
-    prefix=$(mktemp "${TMPDIR:-/tmp}/keel-demo.XXXXXX") || return 1
-    rm -f -- "$prefix"
+typeset -g _KEEL_RESULT_ACTION=''
+typeset -g _KEEL_RESULT_BUFFER=''
+typeset -g _KEEL_RESULT_CURSOR=0
 
-    "$KEEL_BIN" \
+_keel_hex_decode() {
+    emulate -L zsh
+    local hex=$1 escaped='' pair
+    (( ${#hex} % 2 == 0 )) || return 1
+    while [[ -n $hex ]]; do
+        pair=${hex[1,2]}
+        [[ $pair == [[:xdigit:]][[:xdigit:]] ]] || return 1
+        escaped+="\\x$pair"
+        hex=${hex[3,-1]}
+    done
+    typeset -g _KEEL_RESULT_BUFFER
+    printf -v _KEEL_RESULT_BUFFER '%b' "$escaped"
+}
+
+_keel_parse_result() {
+    emulate -L zsh
+    local raw=$1
+    local -a fields
+    IFS=$'\t' read -rA fields <<< "$raw"
+    [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|cancel|interrupt|up|down|tab|eof) ]] || return 1
+    [[ ${fields[3]-} == <-> ]] || return 1
+    _keel_hex_decode "${fields[4]-}" || return 1
+    typeset -g _KEEL_RESULT_ACTION=${fields[2]}
+    typeset -g _KEEL_RESULT_CURSOR=${fields[3]}
+}
+
+_keel_edit() {
+    emulate -L zsh
+    local raw provider_args=()
+    [[ -f $KEEL_PROVIDER ]] && provider_args=(--provider "$KEEL_PROVIDER")
+    raw=$("$KEEL_BIN" \
         --buffer "$BUFFER" \
         --cursor "$CURSOR" \
         --prompt "$KEEL_PROMPT" \
-        --result-prefix "$prefix" \
-        </dev/tty >/dev/null
-
-    if [[ ! -r $prefix.action || ! -r $prefix.buffer || ! -r $prefix.cursor ]]; then
-        rm -f -- "$prefix.action" "$prefix.buffer" "$prefix.cursor"
-        zle -R
-        return 1
-    fi
-
-    action=$(<"$prefix.action")
-    buffer=$(<"$prefix.buffer")
-    cursor=$(<"$prefix.cursor")
-    rm -f -- "$prefix.action" "$prefix.buffer" "$prefix.cursor"
-
-    BUFFER=$buffer
-    CURSOR=$cursor
-    if [[ $action == accept || $action == interrupt ]]; then
-        PROMPT=${KEEL_TRANSIENT_PROMPT:-❯ }
-        if [[ $action == interrupt ]]; then
-            # Rust already painted the aborted buffer as a transient line. Send the
-            # break with an empty ZLE buffer so stock Zsh advances without erasing it.
-            BUFFER=
-            CURSOR=0
-            zle .send-break
-        else
-            zle .accept-line
-        fi
-    else
-        zle -R
-    fi
+        --cwd "$PWD" \
+        "${provider_args[@]}" \
+        </dev/tty) || return 1
+    _keel_parse_result "$raw"
 }
 
-zle -N _keel_demo_edit
+_keel_prepare_transient() {
+    PROMPT=$KEEL_TRANSIENT_PROMPT
+    RPROMPT=''
+}
 
-_keel_demo_line_init() {
+_keel_line_init() {
     PROMPT=$KEEL_PROMPT
-    zle _keel_demo_edit
+    RPROMPT=$KEEL_RPROMPT
+    while _keel_edit; do
+        BUFFER=$_KEEL_RESULT_BUFFER
+        CURSOR=$_KEEL_RESULT_CURSOR
+        case $_KEEL_RESULT_ACTION in
+            accept)
+                _keel_prepare_transient
+                zle .accept-line
+                return 0
+                ;;
+            interrupt)
+                _keel_prepare_transient
+                BUFFER=''
+                CURSOR=0
+                zle .accept-line
+                return 0
+                ;;
+            cancel)
+                zle -R
+                return 0
+                ;;
+            up)
+                zle up-line-or-history
+                ;;
+            down)
+                zle down-line-or-history
+                ;;
+            tab)
+                zle expand-or-complete
+                ;;
+            eof)
+                zle .eof
+                return 0
+                ;;
+        esac
+    done
+    zle -R
 }
 
-zle -N zle-line-init _keel_demo_line_init
+zle -N zle-line-init _keel_line_init

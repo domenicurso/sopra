@@ -3,15 +3,16 @@ name = "keel"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "A Rust-owned line editor demo for stock Zsh"
-default-run = "keel-demo"
+description = "A Rust-owned line editor for stock Zsh"
+default-run = "keel"
 
 [[bin]]
-name = "keel-demo"
+name = "keel"
 path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
+neo_frizbee = "0.11"
 ratatui = { version = "0.29", default-features = false }
 unicode-segmentation = "1.12"
 unicode-width = "0.2"

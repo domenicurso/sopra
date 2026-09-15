@@ -4,16 +4,17 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use crate::completion::CompletionItem;
+
 use super::{
-    DemoItem, DemoItemKind, Element, MAX_OVERLAY_WIDTH, OVERLAY_FOOTER,
+    Element, MAX_OVERLAY_WIDTH, OVERLAY_FOOTER,
     canvas::{Canvas, TextRun},
 };
 
 pub(super) struct OverlayElement {
     pub(super) area: Rect,
-    pub(super) items: Vec<DemoItem>,
+    pub(super) items: Vec<CompletionItem>,
     pub(super) selected: usize,
-    pub(super) query: String,
     pub(super) connector_column: u16,
     pub(super) connector: &'static str,
 }
@@ -59,80 +60,38 @@ impl OverlayElement {
 
     fn paint_items(&self, canvas: &mut Canvas, inner: Rect) {
         let visible = inner.height.max(1) as usize;
-        let start = self
-            .selected
-            .saturating_sub(visible.saturating_sub(1))
-            .min(self.items.len().saturating_sub(visible));
+        let start = viewport_start(self.items.len(), self.selected, visible);
         for (offset, item) in self.items[start..].iter().take(visible).enumerate() {
             let row = inner.top().saturating_add(offset as u16);
-            let selected = start + offset == self.selected;
-            paint_item(
+            super::overlay_items::paint_item(
                 canvas,
-                OverlayRow {
-                    inner,
-                    row,
-                    item: *item,
-                    selected,
-                    query: &self.query,
-                },
+                inner,
+                row,
+                item,
+                start + offset == self.selected,
             );
         }
+        if self.items.len() > visible {
+            super::overlay_items::paint_scrollbar(canvas, inner, start, visible, self.items.len());
+        }
     }
+}
+
+fn viewport_start(total: usize, selected: usize, visible: usize) -> usize {
+    selected
+        .saturating_sub(visible.saturating_sub(1))
+        .min(total.saturating_sub(visible))
 }
 
 fn paint_title(canvas: &mut Canvas, area: Rect) {
     canvas.text(TextRun {
         position: (area.left().saturating_add(2), area.top()),
-        text: " demo ",
+        text: " Keel ",
         style: Style::default()
             .fg(Color::Rgb(130, 220, 190))
             .add_modifier(Modifier::BOLD),
         max_width: area.width.saturating_sub(4),
     });
-}
-
-struct OverlayRow<'a> {
-    inner: Rect,
-    row: u16,
-    item: DemoItem,
-    selected: bool,
-    query: &'a str,
-}
-
-fn paint_item(canvas: &mut Canvas, row: OverlayRow<'_>) {
-    let style = item_style(row.item.kind, row.selected);
-    let label = if row.selected {
-        format!("▸ {}", row.item.label)
-    } else {
-        format!("  {}", row.item.label)
-    };
-    canvas.text(TextRun {
-        position: (row.inner.left(), row.row),
-        text: &label,
-        style,
-        max_width: row.inner.width,
-    });
-    highlight_query(
-        canvas,
-        QueryHighlight {
-            position: (row.inner.left(), row.row),
-            label: &label,
-            query: row.query,
-        },
-    );
-}
-
-fn item_style(kind: DemoItemKind, selected: bool) -> Style {
-    let color = match kind {
-        DemoItemKind::Command => Color::Rgb(125, 196, 255),
-        DemoItemKind::File => Color::Rgb(248, 195, 111),
-        DemoItemKind::Help => Color::Rgb(193, 151, 255),
-    };
-    Style::default().fg(color).add_modifier(if selected {
-        Modifier::BOLD
-    } else {
-        Modifier::empty()
-    })
 }
 
 fn paint_footer(canvas: &mut Canvas, area: Rect) {
@@ -149,46 +108,21 @@ fn paint_footer(canvas: &mut Canvas, area: Rect) {
     });
 }
 
-struct QueryHighlight<'a> {
-    position: (u16, u16),
-    label: &'a str,
-    query: &'a str,
-}
-
-fn highlight_query(canvas: &mut Canvas, highlight: QueryHighlight<'_>) {
-    if highlight.query.is_empty() {
-        return;
-    }
-    let query = highlight.query.to_ascii_lowercase();
-    let label_lower = highlight.label.to_ascii_lowercase();
-    let Some(start) = label_lower.find(&query) else {
-        return;
-    };
-    let prefix = &highlight.label[..start];
-    let matched = &highlight.label[start..start + query.len()];
-    canvas.text(TextRun {
-        position: (
-            highlight
-                .position
-                .0
-                .saturating_add(UnicodeWidthStr::width(prefix) as u16),
-            highlight.position.1,
-        ),
-        text: matched,
-        style: Style::default()
-            .fg(Color::Rgb(111, 214, 176))
-            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        max_width: UnicodeWidthStr::width(matched) as u16,
-    });
-}
-
-pub(super) fn overlay_width(items: &[DemoItem], terminal_width: u16) -> u16 {
+pub(super) fn overlay_width(items: &[CompletionItem], terminal_width: u16) -> u16 {
     if terminal_width <= 2 {
         return terminal_width.max(1);
     }
     let content_width = items
         .iter()
-        .map(|item| UnicodeWidthStr::width(item.label) + 2)
+        .map(|item| {
+            UnicodeWidthStr::width(item.label.as_str())
+                + if item.detail.is_empty() {
+                    0
+                } else {
+                    UnicodeWidthStr::width(item.detail.as_str()) + 2
+                }
+                + 3
+        })
         .chain(std::iter::once(UnicodeWidthStr::width(OVERLAY_FOOTER)))
         .max()
         .unwrap_or(1)

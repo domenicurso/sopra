@@ -32,6 +32,9 @@ impl Canvas {
 
     pub(super) fn text(&mut self, run: TextRun<'_>) {
         let (mut column, row) = run.position;
+        if self.buffer.cell((column, row)).is_none() {
+            return;
+        }
         let text = run.text;
         let style = run.style;
         let max_width = run.max_width;

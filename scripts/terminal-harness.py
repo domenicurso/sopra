@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""Small bidirectional smoke test for the stock-Zsh demo."""
-
+"""Bidirectional PTY smoke test for the stock-Zsh editor."""
 from __future__ import annotations
-
 import errno
 import fcntl
 import os
@@ -22,7 +20,6 @@ START = ROOT / "scripts" / "start-keel.sh"
 ROWS = 40
 COLUMNS = 100
 
-
 def fail(message: str, pid: int | None = None, master: int | None = None) -> NoReturn:
     if pid is not None:
         try:
@@ -41,8 +38,6 @@ def fail(message: str, pid: int | None = None, master: int | None = None) -> NoR
     if master is not None:
         os.close(master)
     raise SystemExit(f"terminal harness: {message}")
-
-
 def read_available(master: int, output: bytearray) -> None:
     while True:
         ready, _, _ = select.select([master], [], [], 0)
@@ -58,7 +53,6 @@ def read_available(master: int, output: bytearray) -> None:
                 return
             raise
 
-
 def read_for(master: int, output: bytearray, seconds: float) -> None:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -66,7 +60,6 @@ def read_for(master: int, output: bytearray, seconds: float) -> None:
         ready, _, _ = select.select([master], [], [], wait)
         if ready:
             read_available(master, output)
-
 
 def wait_for(
     session: tuple[int, int],
@@ -84,6 +77,21 @@ def wait_for(
     if needle not in output:
         fail(f"did not see {needle!r}", pid=pid, master=master)
 
+def wait_for_plain(
+    session: tuple[int, int],
+    output: bytearray,
+    needle: bytes,
+    seconds: float,
+) -> None:
+    master, pid = session
+    deadline = time.monotonic() + seconds
+    while needle not in plain(output) and time.monotonic() < deadline:
+        wait = max(0.0, deadline - time.monotonic())
+        ready, _, _ = select.select([master], [], [], wait)
+        if ready:
+            read_available(master, output)
+    if needle not in plain(output):
+        fail(f"did not see rendered {needle!r}", pid=pid, master=master)
 
 def wait_for_count(
     session: tuple[int, int],
@@ -102,14 +110,11 @@ def wait_for_count(
     if output.count(needle) < count:
         fail(f"did not see {count} occurrences of {needle!r}", pid=pid, master=master)
 
-
 def send(master: int, text: bytes) -> None:
     os.write(master, text)
 
-
 def plain(output: bytes) -> bytes:
     return CSI.sub(b"", output)
-
 
 def main() -> int:
     env = os.environ.copy()
@@ -124,7 +129,6 @@ def main() -> int:
     window = struct.pack("HHHH", ROWS, COLUMNS, 0, 0)
     fcntl.ioctl(master, termios.TIOCSWINSZ, window)
     output = bytearray()
-
     try:
         wait_for(session, output, b"\x1b[s", 10)
         read_for(master, output, 0.20)
@@ -138,20 +142,22 @@ def main() -> int:
             fail("renderer used an absolute row-zero cursor move", pid, master)
 
         rendered = plain(output)
-        if b"git status" not in rendered or b"ready" not in rendered:
-            fail("initial scene was not rendered", pid, master)
+        if b"\xe2\x9d\xaf" not in rendered or b"keel-demo" in rendered or b"ready" in rendered:
+            fail("product scene was not rendered", pid, master)
 
         initial_origins = output.count(b"\x1b[s")
-        interrupt_start = len(output)
-        send(master, b"git")
-        read_for(master, output, 0.08)
+        completion_start = len(output)
+        send(master, b"cd ")
+        wait_for_plain(session, output, b"Cargo.toml", 3)
+        if b"Keel" not in plain(output[completion_start:]):
+            fail("completion overlay was not rendered", pid, master)
         send(master, b"\t")
-        read_for(master, output, 0.08)
+        read_for(master, output, 0.10)
         send(master, b"\x03")
         wait_for_count(session, output, b"\x1b[s", initial_origins + 1)
-        interrupted = plain(output[interrupt_start:])
-        if b"\x1b[2m\x1b[38;2;129;142;160m\xe2\x9d\xaf" not in output[interrupt_start:] or b"git status" not in interrupted:
-            fail("Ctrl-C did not keep the highlighted transient command", pid, master)
+        interrupted = plain(output[completion_start:])
+        if b"\xe2\x9d\xaf" not in interrupted or b"Cargo.lock" not in interrupted:
+            fail("Ctrl-C did not keep the completed transient command", pid, master)
 
         transient_start = len(output)
         for byte in b"print -r -- keel-transient\r":
@@ -159,10 +165,8 @@ def main() -> int:
             read_for(master, output, 0.01)
         wait_for(session, output, b"keel-transient", 3)
         accepted = plain(output[transient_start:])
-        if b"\x1b[2m\x1b[38;2;129;142;160m\xe2\x9d\xaf" not in output[transient_start:] or b"print -r --" not in accepted:
-            fail("accepted line did not render the compact transient prompt", pid, master)
-        if b"\x1b[1m\x1b[38;2;125;196;255mp" not in output[transient_start:]:
-            fail("transient command was not painted with the Rust command style", pid, master)
+        if b"\xe2\x9d\xaf" not in accepted or b"print -r --" not in accepted:
+            fail("accepted line did not render the transient prompt", pid, master)
         wait_for_count(session, output, b"\x1b[s", initial_origins + 2)
 
         escape_start = len(output)
@@ -183,10 +187,7 @@ def main() -> int:
             waited, status = os.waitpid(pid, os.WNOHANG)
             if waited == pid:
                 if os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0:
-                    print(
-                        "terminal harness: ok "
-                        "(scene, cursor repaint, transient interrupt/accept, Escape, shell return)"
-                    )
+                    print("terminal harness: ok (PTY scene, cursor repaint, completion, transient lines, Escape)")
                     os.close(master)
                     return 0
                 fail("shell exited unsuccessfully", master=master)
@@ -194,7 +195,5 @@ def main() -> int:
         fail("shell did not exit after the round trip", pid, master)
     except (OSError, select.error) as error:
         fail(str(error), pid, master)
-
-
 if __name__ == "__main__":
     main()
