@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::{
-    completion::{CompletionClient, CompletionItem},
+    completion::{CompletionEngine, CompletionItem},
     input::{CursorPosition, Terminal, TerminalSize},
     palette::TerminalPalette,
     render::Renderer,
@@ -46,7 +46,6 @@ pub(crate) struct EditorConfig {
     pub(crate) prompt: String,
     pub(crate) anchor: CursorPosition,
     pub(crate) size: TerminalSize,
-    pub(crate) provider: Option<PathBuf>,
     pub(crate) cwd: PathBuf,
     pub(crate) palette: TerminalPalette,
 }
@@ -59,12 +58,12 @@ pub(crate) struct EditorState {
     selected: usize,
     overlay_visible: bool,
     completion_source: Vec<CompletionItem>,
-    provider_source: Vec<CompletionItem>,
+    zshrs_source: Vec<CompletionItem>,
     suggestions: Vec<CompletionItem>,
     completion_key: String,
     latest_local_generation: u64,
-    latest_provider_generation: u64,
-    completion: Option<CompletionClient>,
+    latest_zshrs_generation: u64,
+    completion: Option<CompletionEngine>,
     cwd: PathBuf,
     palette: TerminalPalette,
     syntax: Vec<SyntaxSpan>,
@@ -84,12 +83,12 @@ impl EditorState {
             selected: 0,
             overlay_visible: true,
             completion_source: Vec::new(),
-            provider_source: Vec::new(),
+            zshrs_source: Vec::new(),
             suggestions: Vec::new(),
             completion_key: String::new(),
             latest_local_generation: 0,
-            latest_provider_generation: 0,
-            completion: CompletionClient::new(config.provider),
+            latest_zshrs_generation: 0,
+            completion: CompletionEngine::new(),
             cwd: config.cwd,
             palette: config.palette,
             syntax: Vec::new(),
@@ -159,7 +158,7 @@ impl EditorState {
         self.cursor = 0;
         self.selected = 0;
         self.completion_source.clear();
-        self.provider_source.clear();
+        self.zshrs_source.clear();
         self.suggestions.clear();
         self.completion_key.clear();
         self.yank.clear();

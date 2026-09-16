@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Bidirectional PTY smoke test for the stock-Zsh editor."""
 from __future__ import annotations
-
 import errno
 import fcntl
 import os
@@ -14,10 +13,8 @@ import termios
 import time
 from pathlib import Path
 from typing import Callable, NoReturn
-CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
-ROOT = Path(__file__).resolve().parent.parent
-START = ROOT / "scripts" / "start-keel.sh"
-ROWS, COLUMNS = 40, 100
+CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]"); ROOT = Path(__file__).resolve().parent.parent
+START = ROOT / "scripts" / "start-keel.sh"; ROWS, COLUMNS = 40, 100
 def fail(message: str, pid: int | None = None, master: int | None = None) -> NoReturn:
     if pid is not None:
         try:
@@ -33,7 +30,9 @@ def fail(message: str, pid: int | None = None, master: int | None = None) -> NoR
             if waited == pid:
                 break
             time.sleep(0.01)
-    if master is not None: os.close(master)
+    if master is not None:
+        try: os.close(master)
+        except OSError: pass
     raise SystemExit(f"terminal harness: {message}")
 def read_available(master: int, output: bytearray) -> None:
     while True:
@@ -97,6 +96,7 @@ def start_session() -> tuple[tuple[int, int], bytearray]:
     return (master, pid), bytearray()
 def check_initial(session: tuple[int, int], output: bytearray) -> int:
     wait_for(session, output, b"\x1b[s", 10)
+    wait_for_plain(session, output, b" in ~/", 10)
     read_for(session[0], output, 0.20)
     initial_moves = output.count(b"\x1b[u")
     read_for(session[0], output, 0.25)

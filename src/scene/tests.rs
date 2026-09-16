@@ -16,7 +16,6 @@ fn editor(buffer: &str, size: TerminalSize) -> EditorState {
         prompt: "❯ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
-        provider: None,
         cwd: std::path::PathBuf::from("."),
         palette: crate::palette::TerminalPalette::default(),
     })
@@ -90,7 +89,6 @@ fn cursor_repaint_covers_a_wide_grapheme() {
         prompt: "❯ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
-        provider: None,
         cwd: std::path::PathBuf::from("."),
         palette: crate::palette::TerminalPalette::default(),
     });

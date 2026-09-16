@@ -21,13 +21,17 @@ pub(super) fn paint_item(
     let label_column = inner.left().saturating_add(2);
     let available = inner.right().saturating_sub(label_column);
     let label_width = paint_label(canvas, label_column, row, item, style, available);
-    if !item.detail.is_empty() {
+    let detail = item
+        .description
+        .as_deref()
+        .or_else(|| item.location.as_deref().and_then(|path| path.to_str()));
+    if let Some(detail) = detail {
         let detail_column = label_column.saturating_add(label_width).saturating_add(2);
         paint_detail(
             canvas,
             detail_column,
             row,
-            &item.detail,
+            detail,
             selected,
             inner.right().saturating_sub(detail_column),
         );
@@ -43,7 +47,7 @@ fn paint_label(
     max_width: u16,
 ) -> u16 {
     let mut offset = 0_u16;
-    for (byte_offset, grapheme) in item.label.grapheme_indices(true) {
+    for (byte_offset, grapheme) in item.display.grapheme_indices(true) {
         let width = UnicodeWidthStr::width(grapheme) as u16;
         if width == 0 {
             continue;
@@ -144,7 +148,17 @@ pub(super) fn paint_scrollbar(
 
 fn item_style(kind: CompletionKind, selected: bool) -> Style {
     let color = match kind {
-        CompletionKind::Generic => Color::Reset,
+        CompletionKind::Generic
+        | CompletionKind::Command
+        | CompletionKind::Alias
+        | CompletionKind::Function
+        | CompletionKind::Builtin
+        | CompletionKind::Option
+        | CompletionKind::Subcommand
+        | CompletionKind::Value
+        | CompletionKind::Positional
+        | CompletionKind::Host
+        | CompletionKind::User => Color::Reset,
         CompletionKind::File => Color::Yellow,
         CompletionKind::Directory => Color::Blue,
     };

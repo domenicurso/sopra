@@ -56,16 +56,17 @@ pub(crate) fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem>
     let config = Config::default();
     let mut ranked = Vec::new();
     for (index, item) in items.iter().enumerate() {
-        let matched = if item.kind == CompletionKind::Generic {
-            match_generic(item, query, &config)
-        } else {
+        let matched = if matches!(item.kind, CompletionKind::File | CompletionKind::Directory) {
             path::match_item(item, query, &config)
+        } else {
+            match_generic(item, query, &config)
         };
         let Some((score, indices)) = matched else {
             continue;
         };
         let mut item = item.clone();
         item.match_indices = indices;
+        item.score = score as f32;
         ranked.push((score, index, item));
     }
     ranked.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
@@ -83,7 +84,7 @@ fn match_generic(item: &CompletionItem, query: &str, config: &Config) -> Option<
         return Some((0, Vec::new()));
     }
     Matcher::new(query, config)
-        .match_one_indices(&item.label, 0)
+        .match_one_indices(&item.display, 0)
         .map(|value| (u32::from(value.score), value.indices))
 }
 
@@ -118,7 +119,7 @@ mod tests {
             CompletionItem::new("cargo test", "", "cargo test", CompletionKind::Generic),
         ];
         let ranked = rank(&items, "gs");
-        assert_eq!(ranked[0].label, "git status");
+        assert_eq!(ranked[0].display, "git status");
         assert!(!ranked[0].match_indices.is_empty());
     }
 

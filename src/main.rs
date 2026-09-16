@@ -17,7 +17,6 @@ struct Args {
     buffer: String,
     cursor: usize,
     prompt: String,
-    provider: Option<PathBuf>,
     cwd: PathBuf,
 }
 
@@ -26,7 +25,6 @@ impl Args {
         let mut buffer = String::new();
         let mut cursor = 0;
         let mut prompt = "keel ❯ ".to_string();
-        let mut provider = None;
         let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
 
@@ -39,9 +37,6 @@ impl Args {
                         .map_err(|_| "--cursor must be a character index".to_string())?;
                 }
                 "--prompt" => prompt = next_value(&mut arguments, "--prompt")?,
-                "--provider" => {
-                    provider = Some(PathBuf::from(next_value(&mut arguments, "--provider")?))
-                }
                 "--cwd" => cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?),
                 "--help" | "-h" => {
                     print_usage();
@@ -55,7 +50,6 @@ impl Args {
             buffer,
             cursor,
             prompt,
-            provider,
             cwd,
         })
     }
@@ -74,7 +68,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         prompt: args.prompt,
         anchor,
         size,
-        provider: args.provider,
         cwd: args.cwd,
         palette: terminal.palette(),
     });
@@ -124,7 +117,7 @@ fn write_result(result: &RunResult) -> std::io::Result<()> {
 
 fn print_usage() {
     println!(
-        "keel\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  keel [--buffer TEXT] [--cursor N] [--prompt TEXT]\n       [--provider PATH] [--cwd PATH]"
+        "keel\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  keel [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH]"
     );
 }
 

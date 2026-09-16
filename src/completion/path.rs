@@ -16,7 +16,7 @@ pub(super) fn match_item(
     if query_components.is_empty() {
         return Some((0, Vec::new()));
     }
-    let replacement = &item.replacement;
+    let replacement = &item.insert;
     let replacement_path = &replacement[path_value_offset(replacement)..];
     let replacement_components = path_components(replacement_path);
     let candidate_start = candidate_component_start(
@@ -24,8 +24,8 @@ pub(super) fn match_item(
         query_components.len(),
         replacement_components.len(),
     )?;
-    let label_offset = path_value_offset(&item.label);
-    let label_components = path_components(&item.label[label_offset..]);
+    let label_offset = path_value_offset(&item.display);
+    let label_components = path_components(&item.display[label_offset..]);
     let label_suffix_start =
         component_sequence_suffix_start(&label_components, &replacement_components);
     let mut score = 0_u32;

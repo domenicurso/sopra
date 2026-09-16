@@ -8,7 +8,6 @@ fn editor(buffer: &str) -> EditorState {
         prompt: "❯ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size: TerminalSize::new(80, 24),
-        provider: None,
         cwd: std::path::PathBuf::from("."),
         palette: crate::palette::TerminalPalette::default(),
     })

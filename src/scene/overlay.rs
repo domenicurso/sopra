@@ -115,11 +115,11 @@ pub(super) fn overlay_width(items: &[CompletionItem], terminal_width: u16) -> u1
     let content_width = items
         .iter()
         .map(|item| {
-            UnicodeWidthStr::width(item.label.as_str())
-                + if item.detail.is_empty() {
+            UnicodeWidthStr::width(item.display.as_str())
+                + if item.description.is_none() && item.location.is_none() {
                     0
                 } else {
-                    UnicodeWidthStr::width(item.detail.as_str()) + 2
+                    UnicodeWidthStr::width(item_detail(item).as_str()) + 2
                 }
                 + 3
         })
@@ -130,4 +130,15 @@ pub(super) fn overlay_width(items: &[CompletionItem], terminal_width: u16) -> u1
     content_width
         .min(MAX_OVERLAY_WIDTH)
         .min(terminal_width.saturating_sub(2))
+}
+
+fn item_detail(item: &CompletionItem) -> String {
+    item.description
+        .clone()
+        .or_else(|| {
+            item.location
+                .as_ref()
+                .map(|path| path.display().to_string())
+        })
+        .unwrap_or_default()
 }

@@ -60,6 +60,7 @@ const BUILTINS: &[&str] = &[
 pub(crate) struct CommandEntry {
     name: String,
     detail: &'static str,
+    location: Option<std::path::PathBuf>,
 }
 
 impl CommandEntry {
@@ -69,6 +70,10 @@ impl CommandEntry {
 
     pub(crate) fn detail(&self) -> &str {
         self.detail
+    }
+
+    pub(crate) fn location(&self) -> Option<&std::path::Path> {
+        self.location.as_deref()
     }
 }
 
@@ -104,17 +109,21 @@ impl CommandCatalog {
     fn build() -> Self {
         let mut commands = BTreeMap::new();
         for builtin in BUILTINS {
-            commands.insert((*builtin).to_string(), "builtin");
+            commands.insert(
+                (*builtin).to_string(),
+                CommandEntry {
+                    name: (*builtin).to_string(),
+                    detail: "builtin",
+                    location: None,
+                },
+            );
         }
         if let Some(path) = env::var_os("PATH") {
             for directory in env::split_paths(&path) {
                 add_path_commands(&mut commands, &directory);
             }
         }
-        let entries = commands
-            .into_iter()
-            .map(|(name, detail)| CommandEntry { name, detail })
-            .collect();
+        let entries = commands.into_iter().map(|(_, entry)| entry).collect();
         Self { entries }
     }
 
@@ -123,7 +132,7 @@ impl CommandCatalog {
     }
 }
 
-fn add_path_commands(commands: &mut BTreeMap<String, &'static str>, directory: &Path) {
+fn add_path_commands(commands: &mut BTreeMap<String, CommandEntry>, directory: &Path) {
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
@@ -135,7 +144,11 @@ fn add_path_commands(commands: &mut BTreeMap<String, &'static str>, directory: &
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        commands.entry(name.to_string()).or_insert("path");
+        commands.entry(name.to_string()).or_insert(CommandEntry {
+            name: name.to_string(),
+            detail: "path",
+            location: Some(path),
+        });
     }
 }
 

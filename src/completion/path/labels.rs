@@ -21,7 +21,7 @@ pub(crate) fn compact_labels(items: &mut [CompletionItem], query: &str) {
         path_indices
             .iter()
             .filter_map(|&index| {
-                let replacement = &items[index].replacement;
+                let replacement = &items[index].insert;
                 let components = path_components(&replacement[path_value_offset(replacement)..]);
                 (!components.is_empty()).then_some(components.len().saturating_sub(1))
             })
@@ -37,9 +37,9 @@ pub(crate) fn compact_labels(items: &mut [CompletionItem], query: &str) {
 }
 
 fn compact_item(item: &mut CompletionItem, removed: usize) {
-    let label_offset = path_value_offset(&item.label);
-    let label_components = path_components(&item.label[label_offset..]);
-    let replacement = &item.replacement;
+    let label_offset = path_value_offset(&item.display);
+    let label_components = path_components(&item.display[label_offset..]);
+    let replacement = &item.insert;
     let replacement_components = path_components(&replacement[path_value_offset(replacement)..]);
     let Some(suffix_start) =
         component_sequence_suffix_start(&label_components, &replacement_components)
@@ -52,13 +52,13 @@ fn compact_item(item: &mut CompletionItem, removed: usize) {
     let Some(retained) = label_components.get(label_index) else {
         return;
     };
-    let path_start = label_offset + usize::from(item.label[label_offset..].starts_with('/'));
+    let path_start = label_offset + usize::from(item.display[label_offset..].starts_with('/'));
     let path_end = label_offset + retained.1;
     if path_end <= path_start {
         return;
     }
-    let old_label = item.label.clone();
-    item.label = format!("{}{}", &old_label[..path_start], &old_label[path_end..]);
+    let old_label = item.display.clone();
+    item.display = format!("{}{}", &old_label[..path_start], &old_label[path_end..]);
     item.match_indices = item
         .match_indices
         .iter()
@@ -79,7 +79,7 @@ fn resolved_path_prefix(items: &[&CompletionItem], query_path: &str) -> usize {
     let mut resolved = 0;
     for (query_index, (query_component, _)) in query_components.iter().enumerate() {
         let all_resolved = items.iter().all(|item| {
-            let replacement = &item.replacement;
+            let replacement = &item.insert;
             let components = path_components(&replacement[path_value_offset(replacement)..]);
             let Some(start) =
                 candidate_component_start(query_path, query_components.len(), components.len())
@@ -122,8 +122,8 @@ mod tests {
         items[0].match_indices = vec![2, 10];
         items[1].match_indices = vec![2, 10];
         compact_labels(&mut items, "./crates/k");
-        assert_eq!(items[0].label, "keel-core");
-        assert_eq!(items[0].replacement, "./crates/keel-core");
+        assert_eq!(items[0].display, "keel-core");
+        assert_eq!(items[0].insert, "./crates/keel-core");
         assert_eq!(items[0].match_indices, vec![1]);
     }
 }

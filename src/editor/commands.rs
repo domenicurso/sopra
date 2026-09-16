@@ -15,9 +15,13 @@ impl EditorState {
         let Some(item) = self.suggestions.get(self.selected).cloned() else {
             return false;
         };
-        let (start, end) = self.current_token_range();
-        self.buffer.replace_range(start..end, &item.replacement);
-        self.cursor = start + item.replacement.len();
+        let (start, end) = if item.replace.start < item.replace.end {
+            (item.replace.start, item.replace.end)
+        } else {
+            self.current_token_range()
+        };
+        self.buffer.replace_range(start..end, &item.insert);
+        self.cursor = start + item.insert.len();
         self.reset_selection();
         true
     }

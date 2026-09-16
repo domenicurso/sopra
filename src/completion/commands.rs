@@ -1,21 +1,29 @@
-use super::{CompletionItem, CompletionKind};
+use std::ops::Range;
 
-pub(super) fn complete(query: &str) -> Vec<CompletionItem> {
-    if query.is_empty() {
-        return Vec::new();
-    }
+use super::{CompletionItem, CompletionKind, CompletionSource};
+
+pub(super) fn complete(query: &str, replace: Range<usize>) -> Vec<CompletionItem> {
     crate::syntax::catalog()
         .entries()
         .iter()
+        .filter(|entry| query.is_empty() || fuzzy_contains(entry.name(), query))
         .map(|entry| {
-            CompletionItem::new(
+            let kind = if entry.detail() == "builtin" {
+                CompletionKind::Builtin
+            } else {
+                CompletionKind::Command
+            };
+            let mut item = CompletionItem::with_range(
                 entry.name(),
-                entry.detail(),
                 entry.name(),
-                CompletionKind::Generic,
-            )
+                (entry.detail() == "builtin").then(|| "shell builtin".to_string()),
+                kind,
+                replace.clone(),
+                CompletionSource::CommandIndex,
+            );
+            item.location = entry.location().map(ToOwned::to_owned);
+            item
         })
-        .filter(|item| fuzzy_contains(&item.label, query))
         .take(512)
         .collect()
 }
@@ -35,7 +43,7 @@ mod tests {
 
     #[test]
     fn command_completion_includes_builtins_and_prefix_matches() {
-        let items = complete("ech");
-        assert!(items.iter().any(|item| item.label == "echo"));
+        let items = complete("ech", 0..3);
+        assert!(items.iter().any(|item| item.display == "echo"));
     }
 }

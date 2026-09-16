@@ -1,4 +1,4 @@
-if [[ -n ${_KEEL_LOADED:-} || ${KEEL_PROVIDER_MODE:-0} == 1 ]]; then
+if [[ -n ${_KEEL_LOADED:-} ]]; then
     return 0
 fi
 typeset -g _KEEL_LOADED=1
@@ -9,7 +9,6 @@ fi
 
 typeset -r keel_dir=${${(%):-%N}:A:h}
 : "${KEEL_BIN:=$keel_dir/../target/debug/keel}"
-: "${KEEL_PROVIDER:=$keel_dir/keel-provider.zsh}"
 : "${KEEL_PROMPT:=${PROMPT:-%n in %~ ❯ }}"
 : "${KEEL_RPROMPT:=${RPROMPT:-}}"
 : "${KEEL_TRANSIENT_PROMPT:=❯ }"
@@ -51,15 +50,14 @@ _keel_parse_result() {
 
 _keel_edit() {
     emulate -L zsh
-    local raw prompt provider_args=()
-    [[ -f $KEEL_PROVIDER ]] && provider_args=(--provider "$KEEL_PROVIDER")
+    local raw prompt
+    local -x FPATH="${(j.:.)fpath}"
     prompt=$(print -P -- "$KEEL_PROMPT")
     raw=$("$KEEL_BIN" \
         --buffer "$BUFFER" \
         --cursor "$CURSOR" \
         --prompt "$prompt" \
         --cwd "$PWD" \
-        "${provider_args[@]}" \
         </dev/tty) || return 1
     _keel_parse_result "$raw"
 }

@@ -1,4 +1,4 @@
-use crate::completion::{CompletionClient, CompletionItem, ranking};
+use crate::completion::{CompletionEngine, CompletionItem, CompletionResponseSource, ranking};
 
 use super::EditorState;
 
@@ -14,7 +14,7 @@ impl EditorState {
         if key != self.completion_key {
             self.completion_key = key;
             self.completion_source.clear();
-            self.provider_source.clear();
+            self.zshrs_source.clear();
             self.suggestions.clear();
             self.selected = 0;
         }
@@ -26,8 +26,8 @@ impl EditorState {
     pub(super) fn poll_completion(&mut self) {
         let responses = self
             .completion
-            .as_ref()
-            .map(CompletionClient::poll)
+            .as_mut()
+            .map(CompletionEngine::poll)
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
@@ -39,15 +39,15 @@ impl EditorState {
     fn apply_completion(&mut self, response: crate::completion::CompletionResponse) {
         let cursor_chars = self.buffer[..self.cursor].chars().count();
         let (context_line, context_cursor) = ranking::broad_context(&self.buffer, cursor_chars);
-        if response.provider {
+        if response.source == CompletionResponseSource::Zshrs {
             if response.context_line != context_line
                 || response.context_cursor != context_cursor
-                || response.generation < self.latest_provider_generation
+                || response.generation < self.latest_zshrs_generation
             {
                 return;
             }
-            self.latest_provider_generation = response.generation;
-            self.provider_source = response.items;
+            self.latest_zshrs_generation = response.generation;
+            self.zshrs_source = response.items;
         } else {
             if response.line != self.buffer
                 || response.cursor != cursor_chars
@@ -62,7 +62,7 @@ impl EditorState {
     }
 
     fn merge_completion_sources(&mut self) {
-        self.completion_source = merge_items(&self.completion_source, &self.provider_source);
+        self.completion_source = merge_items(&self.completion_source, &self.zshrs_source);
         self.refresh_suggestions();
     }
 
@@ -83,18 +83,16 @@ impl EditorState {
     }
 }
 
-fn merge_items(local: &[CompletionItem], provider: &[CompletionItem]) -> Vec<CompletionItem> {
+fn merge_items(local: &[CompletionItem], zshrs: &[CompletionItem]) -> Vec<CompletionItem> {
     let mut merged = local.to_vec();
-    for item in provider {
+    for item in zshrs {
         let duplicate = merged.iter_mut().find(|existing| {
-            existing.label == item.label
-                && existing.replacement == item.replacement
+            existing.display == item.display
+                && existing.insert == item.insert
                 && existing.kind == item.kind
         });
         if let Some(existing) = duplicate {
-            if !item.detail.is_empty()
-                && matches!(existing.detail.as_str(), "" | "builtin" | "path")
-            {
+            if item.description.is_some() || item.location.is_some() {
                 *existing = item.clone();
             }
         } else {
@@ -110,7 +108,7 @@ mod tests {
     use crate::completion::{CompletionItem, CompletionKind};
 
     #[test]
-    fn provider_detail_replaces_a_local_placeholder() {
+    fn zshrs_metadata_replaces_a_local_placeholder() {
         let local = [CompletionItem::new(
             "git",
             "path",
@@ -124,6 +122,6 @@ mod tests {
             CompletionKind::Generic,
         )];
         let merged = merge_items(&local, &provider);
-        assert_eq!(merged[0].detail, "/usr/bin/git");
+        assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
     }
 }
