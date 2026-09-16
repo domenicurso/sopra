@@ -1,6 +1,7 @@
 mod keys;
 
 use std::{
+    collections::VecDeque,
     fs::OpenOptions,
     io::{self, Write},
     os::fd::AsRawFd,
@@ -11,6 +12,8 @@ use libc::{
     BRKINT, CS8, ECHO, ECHONL, ICANON, ICRNL, IEXTEN, IGNBRK, IGNCR, INLCR, ISIG, ISTRIP, IXON,
     OPOST, PARENB, c_int, termios, winsize,
 };
+
+use crate::palette::TerminalPalette;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalSize {
@@ -62,6 +65,8 @@ pub(crate) struct Terminal {
     pub(super) tty: std::fs::File,
     saved_mode: termios,
     raw_mode: bool,
+    palette: TerminalPalette,
+    pending_input: VecDeque<u8>,
 }
 
 impl Terminal {
@@ -77,11 +82,18 @@ impl Terminal {
         raw_mode.c_cc[libc::VMIN] = 1;
         raw_mode.c_cc[libc::VTIME] = 0;
         set_termios(tty.as_raw_fd(), &raw_mode)?;
+        let (palette, pending) = TerminalPalette::query(tty.as_raw_fd());
         Ok(Self {
             tty,
             saved_mode,
             raw_mode: true,
+            palette,
+            pending_input: pending.into(),
         })
+    }
+
+    pub(crate) fn palette(&self) -> TerminalPalette {
+        self.palette
     }
 
     pub(crate) fn size(&self) -> io::Result<TerminalSize> {
@@ -108,6 +120,9 @@ impl Terminal {
     }
 
     pub(crate) fn poll(&self, timeout: Duration) -> io::Result<bool> {
+        if !self.pending_input.is_empty() {
+            return Ok(true);
+        }
         let fd = self.tty.as_raw_fd();
         // fd_set is a C value initialized before the macros mutate its bitset.
         let mut readfds: libc::fd_set = unsafe { std::mem::zeroed() };

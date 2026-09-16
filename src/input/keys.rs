@@ -31,6 +31,9 @@ impl Terminal {
     }
 
     fn read_byte(&mut self) -> io::Result<u8> {
+        if let Some(byte) = self.pending_input.pop_front() {
+            return Ok(byte);
+        }
         let mut byte = [0_u8; 1];
         self.tty.read_exact(&mut byte)?;
         Ok(byte[0])

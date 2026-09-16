@@ -1,3 +1,4 @@
+mod commands;
 mod local;
 mod model;
 mod path;
@@ -89,7 +90,7 @@ impl CompletionClient {
         if !self.provider_enabled {
             return;
         }
-        if request.provider_line.trim().is_empty() {
+        if request.line.trim().is_empty() {
             self.provider_context = None;
             return;
         }

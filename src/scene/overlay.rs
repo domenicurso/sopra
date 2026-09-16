@@ -24,7 +24,7 @@ impl Element for OverlayElement {
         if self.area.width < 8 || self.area.height < 3 {
             return;
         }
-        let border = Style::default().fg(Color::Rgb(91, 151, 190));
+        let border = Style::default().fg(Color::Cyan);
         let inner = self.inner_area();
         canvas.border(self.area, border);
         self.paint_connector(canvas, border);
@@ -88,7 +88,7 @@ fn paint_title(canvas: &mut Canvas, area: Rect) {
         position: (area.left().saturating_add(2), area.top()),
         text: " Keel ",
         style: Style::default()
-            .fg(Color::Rgb(130, 220, 190))
+            .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
         max_width: area.width.saturating_sub(4),
     });
@@ -102,7 +102,7 @@ fn paint_footer(canvas: &mut Canvas, area: Rect) {
         ),
         text: OVERLAY_FOOTER,
         style: Style::default()
-            .fg(Color::Rgb(129, 142, 160))
+            .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM),
         max_width: area.width.saturating_sub(4),
     });

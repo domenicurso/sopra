@@ -1,3 +1,4 @@
+use super::{CompletionItem, CompletionKind, Request};
 use std::{
     fs::File,
     io::{self, Read, Write},
@@ -8,13 +9,10 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-
-use super::{CompletionItem, CompletionKind, Request};
-
 const PROVIDER_TIMEOUT: Duration = Duration::from_millis(1_500);
+const MAX_PROVIDER_ITEMS: usize = 16_384;
 const RECORD_SEPARATOR: u8 = 0x1e;
 const FIELD_SEPARATOR: u8 = 0x1f;
-
 pub(super) fn capture(provider: &Path, request: &Request) -> io::Result<Vec<CompletionItem>> {
     let (mut master, slave) = open_pty()?;
     set_window_size(&master)?;
@@ -25,6 +23,8 @@ pub(super) fn capture(provider: &Path, request: &Request) -> io::Result<Vec<Comp
     let mut master_reader = master.try_clone()?;
     let drain = thread::spawn(move || drain_pty(&mut master_reader));
     master.write_all(b"\x18")?;
+    thread::sleep(Duration::from_millis(10));
+    master.write_all(b"\r")?;
     let records = read_provider_records(&mut child, &mut output)?;
     let _ = drain.join();
     Ok(parse_records(&records))
@@ -104,7 +104,7 @@ fn parse_records(bytes: &[u8]) -> Vec<CompletionItem> {
     bytes
         .split(|byte| *byte == RECORD_SEPARATOR)
         .filter_map(parse_record)
-        .take(1_024)
+        .take(MAX_PROVIDER_ITEMS)
         .collect()
 }
 

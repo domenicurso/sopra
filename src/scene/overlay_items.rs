@@ -20,21 +20,17 @@ pub(super) fn paint_item(
     canvas.put(inner.left(), row, if selected { "▸" } else { " " }, style);
     let label_column = inner.left().saturating_add(2);
     let available = inner.right().saturating_sub(label_column);
-    let label_width = UnicodeWidthStr::width(item.label.as_str()) as u16;
-    paint_label(canvas, label_column, row, item, style, available);
-    let detail_width = UnicodeWidthStr::width(item.detail.as_str()) as u16;
-    if !item.detail.is_empty()
-        && label_width.saturating_add(detail_width).saturating_add(2) <= available
-    {
+    let label_width = paint_label(canvas, label_column, row, item, style, available);
+    if !item.detail.is_empty() {
         let detail_column = label_column.saturating_add(label_width).saturating_add(2);
-        canvas.text(TextRun {
-            position: (detail_column, row),
-            text: &item.detail,
-            style: Style::default()
-                .fg(Color::Rgb(129, 142, 160))
-                .add_modifier(Modifier::DIM),
-            max_width: inner.right().saturating_sub(detail_column),
-        });
+        paint_detail(
+            canvas,
+            detail_column,
+            row,
+            &item.detail,
+            selected,
+            inner.right().saturating_sub(detail_column),
+        );
     }
 }
 
@@ -45,7 +41,7 @@ fn paint_label(
     item: &CompletionItem,
     base: Style,
     max_width: u16,
-) {
+) -> u16 {
     let mut offset = 0_u16;
     for (byte_offset, grapheme) in item.label.grapheme_indices(true) {
         let width = UnicodeWidthStr::width(grapheme) as u16;
@@ -56,11 +52,10 @@ fn paint_label(
             if max_width > 0 {
                 canvas.put(column.saturating_add(max_width - 1), row, "…", base);
             }
-            break;
+            return max_width;
         }
         let style = if item.match_indices.contains(&byte_offset) {
-            Style::default()
-                .fg(Color::Rgb(111, 214, 176))
+            base.fg(Color::Green)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             base
@@ -73,6 +68,52 @@ fn paint_label(
         });
         offset = offset.saturating_add(width);
     }
+    offset
+}
+
+fn paint_detail(
+    canvas: &mut Canvas,
+    column: u16,
+    row: u16,
+    detail: &str,
+    selected: bool,
+    max_width: u16,
+) {
+    if max_width == 0 {
+        return;
+    }
+    let mut style = Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::DIM);
+    if selected {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
+    let width = UnicodeWidthStr::width(detail) as u16;
+    if width <= max_width {
+        canvas.text(TextRun {
+            position: (column, row),
+            text: detail,
+            style,
+            max_width,
+        });
+        return;
+    }
+    let ellipsis_width = 1;
+    let mut offset = 0_u16;
+    for grapheme in detail.graphemes(true) {
+        let width = UnicodeWidthStr::width(grapheme) as u16;
+        if width == 0 || offset.saturating_add(width).saturating_add(ellipsis_width) > max_width {
+            break;
+        }
+        canvas.text(TextRun {
+            position: (column.saturating_add(offset), row),
+            text: grapheme,
+            style,
+            max_width: max_width.saturating_sub(offset),
+        });
+        offset = offset.saturating_add(width);
+    }
+    canvas.put(column.saturating_add(offset), row, "…", style);
 }
 
 pub(super) fn paint_scrollbar(
@@ -82,10 +123,8 @@ pub(super) fn paint_scrollbar(
     visible: usize,
     total: usize,
 ) {
-    let track = Style::default()
-        .fg(Color::Rgb(91, 151, 190))
-        .add_modifier(Modifier::DIM);
-    let thumb = Style::default().fg(Color::Rgb(130, 220, 190));
+    let track = Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM);
+    let thumb = Style::default().fg(Color::Green);
     let thumb_height = (visible.saturating_mul(visible) / total).max(1);
     let thumb_start = start.saturating_mul(visible) / total;
     for offset in 0..visible {
@@ -105,12 +144,12 @@ pub(super) fn paint_scrollbar(
 
 fn item_style(kind: CompletionKind, selected: bool) -> Style {
     let color = match kind {
-        CompletionKind::Generic => Color::Rgb(220, 224, 232),
-        CompletionKind::File => Color::Rgb(248, 195, 111),
-        CompletionKind::Directory => Color::Rgb(125, 196, 255),
+        CompletionKind::Generic => Color::Reset,
+        CompletionKind::File => Color::Yellow,
+        CompletionKind::Directory => Color::Blue,
     };
     Style::default().fg(color).add_modifier(if selected {
-        Modifier::BOLD
+        Modifier::BOLD | Modifier::REVERSED
     } else {
         Modifier::empty()
     })

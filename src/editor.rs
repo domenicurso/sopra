@@ -15,8 +15,10 @@ use std::{
 use crate::{
     completion::{CompletionClient, CompletionItem},
     input::{CursorPosition, Terminal, TerminalSize},
+    palette::TerminalPalette,
     render::Renderer,
     scene::Scene,
+    syntax::SyntaxSpan,
 };
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
@@ -46,6 +48,7 @@ pub(crate) struct EditorConfig {
     pub(crate) size: TerminalSize,
     pub(crate) provider: Option<PathBuf>,
     pub(crate) cwd: PathBuf,
+    pub(crate) palette: TerminalPalette,
 }
 
 pub(crate) struct EditorState {
@@ -63,6 +66,8 @@ pub(crate) struct EditorState {
     latest_provider_generation: u64,
     completion: Option<CompletionClient>,
     cwd: PathBuf,
+    palette: TerminalPalette,
+    syntax: Vec<SyntaxSpan>,
     yank: String,
     animation_started: Instant,
     last_size: TerminalSize,
@@ -86,6 +91,8 @@ impl EditorState {
             latest_provider_generation: 0,
             completion: CompletionClient::new(config.provider),
             cwd: config.cwd,
+            palette: config.palette,
+            syntax: Vec::new(),
             yank: String::new(),
             animation_started: Instant::now(),
             last_size: config.size,

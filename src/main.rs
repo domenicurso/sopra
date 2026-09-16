@@ -2,8 +2,10 @@ mod animation;
 mod completion;
 mod editor;
 mod input;
+mod palette;
 mod render;
 mod scene;
+mod syntax;
 
 use std::{env, error::Error, ffi::OsString, path::PathBuf};
 
@@ -23,7 +25,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut buffer = String::new();
         let mut cursor = 0;
-        let mut prompt = "❯ ".to_string();
+        let mut prompt = "keel ❯ ".to_string();
         let mut provider = None;
         let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
@@ -74,6 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         size,
         provider: args.provider,
         cwd: args.cwd,
+        palette: terminal.palette(),
     });
     let result = editor.run(&mut terminal);
 

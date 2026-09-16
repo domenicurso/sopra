@@ -10,6 +10,7 @@ fn editor(buffer: &str) -> EditorState {
         size: TerminalSize::new(80, 24),
         provider: None,
         cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
     })
 }
 

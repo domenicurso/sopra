@@ -5,8 +5,30 @@ use super::{CompletionItem, CompletionKind, path};
 pub(crate) fn broad_context(line: &str, cursor_chars: usize) -> (String, usize) {
     let cursor = byte_offset(line, cursor_chars);
     let (start, end) = token_range(line, cursor);
-    let provider_line = format!("{}{}", &line[..start], &line[end..]);
-    (provider_line, line[..start].chars().count())
+    let token = &line[start..cursor];
+    let context_token = context_token(token);
+    let provider_line = format!("{}{}{}", &line[..start], context_token, &line[end..]);
+    let provider_cursor = line[..start].chars().count() + context_token.chars().count();
+    (provider_line, provider_cursor)
+}
+
+fn context_token(token: &str) -> &str {
+    let path_start = token
+        .find('=')
+        .filter(|_| token.starts_with('-'))
+        .map_or(0, |index| index + 1);
+    let path = &token[path_start..];
+    if let Some(slash) = path.rfind('/') {
+        return &token[..path_start + slash + 1];
+    }
+    if token.starts_with('-') {
+        return if token.starts_with("--") {
+            &token[..2]
+        } else {
+            &token[..1]
+        };
+    }
+    ""
 }
 
 pub(crate) fn token_range(line: &str, cursor: usize) -> (usize, usize) {
@@ -15,17 +37,19 @@ pub(crate) fn token_range(line: &str, cursor: usize) -> (usize, usize) {
         .char_indices()
         .rev()
         .find_map(|(index, character)| {
-            character
-                .is_whitespace()
-                .then_some(index + character.len_utf8())
+            is_token_boundary(character).then_some(index + character.len_utf8())
         })
         .unwrap_or(0);
     let suffix = &line[cursor..];
     let end = suffix
         .char_indices()
-        .find_map(|(index, character)| character.is_whitespace().then_some(cursor + index))
+        .find_map(|(index, character)| is_token_boundary(character).then_some(cursor + index))
         .unwrap_or(line.len());
     (start, end)
+}
+
+fn is_token_boundary(character: char) -> bool {
+    character.is_whitespace() || matches!(character, '|' | '&' | ';' | '(' | ')' | '<' | '>')
 }
 
 pub(crate) fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {
@@ -71,7 +95,7 @@ pub(crate) fn byte_offset(text: &str, char_index: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{broad_context, rank};
+    use super::{broad_context, rank, token_range};
     use crate::completion::{CompletionItem, CompletionKind};
 
     #[test]
@@ -79,6 +103,12 @@ mod tests {
         let (line, cursor) = broad_context("echo 💡", 6);
         assert_eq!(line, "echo ");
         assert_eq!(cursor, 5);
+    }
+
+    #[test]
+    fn broad_context_preserves_option_and_path_prefixes() {
+        assert_eq!(broad_context("git --", 6), ("git --".to_string(), 6));
+        assert_eq!(broad_context("cd ./sr", 7), ("cd ./".to_string(), 5));
     }
 
     #[test]
@@ -90,5 +120,10 @@ mod tests {
         let ranked = rank(&items, "gs");
         assert_eq!(ranked[0].label, "git status");
         assert!(!ranked[0].match_indices.is_empty());
+    }
+
+    #[test]
+    fn token_range_stops_at_shell_operators() {
+        assert_eq!(token_range("echo|ec", 7), (5, 7));
     }
 }

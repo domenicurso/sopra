@@ -1,11 +1,10 @@
 use std::time::{Duration, Instant};
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    animation,
     completion::CompletionItem,
     input::{CursorPosition, TerminalSize},
 };
@@ -46,6 +45,10 @@ impl EditorState {
         &self.suggestions
     }
 
+    pub(crate) fn syntax(&self) -> &[crate::syntax::SyntaxSpan] {
+        &self.syntax
+    }
+
     pub(crate) fn cursor_display_width(&self) -> u16 {
         UnicodeWidthStr::width(&self.buffer[..self.cursor]) as u16
     }
@@ -75,10 +78,10 @@ impl EditorState {
     }
 
     pub(crate) fn cursor_style(&self, now: Instant) -> Style {
-        let color = animation::blend_cursor(animation::cursor_opacity(self.animation_elapsed(now)));
-        Style::default()
-            .fg(Color::Rgb(8, 16, 22))
-            .bg(Color::Rgb(color.0, color.1, color.2))
+        self.palette
+            .cursor_style(crate::animation::cursor_opacity(
+                self.animation_elapsed(now),
+            ))
             .add_modifier(Modifier::BOLD)
     }
 

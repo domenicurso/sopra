@@ -1,4 +1,4 @@
-PROMPT='❯ '
+PROMPT='%n in %~ ❯ '
 RPROMPT=''
 autoload -Uz compinit
 compinit -u -d /dev/null

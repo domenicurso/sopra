@@ -1,4 +1,4 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -6,6 +6,7 @@ use super::{
     Element,
     canvas::{Canvas, TextRun},
 };
+use crate::syntax::{self, SyntaxSpan};
 
 pub(super) struct PromptElement {
     pub(super) column: u16,
@@ -29,15 +30,14 @@ pub(super) struct CommandElement {
     pub(super) column: u16,
     pub(super) row: u16,
     pub(super) buffer: String,
+    pub(super) spans: Vec<SyntaxSpan>,
 }
 
 impl Element for CommandElement {
     fn paint(&self, canvas: &mut Canvas) {
         let width = canvas.buffer.area.width.saturating_sub(self.column);
         let mut offset = 0_u16;
-        let mut first_word = true;
-        let mut token_is_flag = false;
-        for grapheme in self.buffer.graphemes(true) {
+        for (byte, grapheme) in self.buffer.grapheme_indices(true) {
             if grapheme.chars().any(char::is_control) {
                 continue;
             }
@@ -45,33 +45,14 @@ impl Element for CommandElement {
             if grapheme_width == 0 {
                 continue;
             }
-            if grapheme.chars().all(char::is_whitespace) {
-                first_word = false;
-                token_is_flag = false;
-            } else if first_word {
-                token_is_flag = grapheme == "-";
-            }
-            let style = command_style(first_word, token_is_flag || grapheme == "-");
             canvas.text(TextRun {
                 position: (self.column.saturating_add(offset), self.row),
                 text: grapheme,
-                style,
+                style: syntax::style_at(&self.spans, byte),
                 max_width: width.saturating_sub(offset),
             });
             offset = offset.saturating_add(grapheme_width);
         }
-    }
-}
-
-fn command_style(first_word: bool, flag: bool) -> Style {
-    if first_word {
-        Style::default()
-            .fg(Color::Rgb(125, 196, 255))
-            .add_modifier(Modifier::BOLD)
-    } else if flag {
-        Style::default().fg(Color::Rgb(248, 195, 111))
-    } else {
-        Style::default().fg(Color::Rgb(220, 224, 232))
     }
 }
 

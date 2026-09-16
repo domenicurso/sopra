@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier};
 
 use super::Scene;
 use crate::{
@@ -18,6 +18,7 @@ fn editor(buffer: &str, size: TerminalSize) -> EditorState {
         size,
         provider: None,
         cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
     })
 }
 
@@ -62,15 +63,21 @@ fn overlay_cells_keep_the_terminal_background() {
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.buffer[(3, 3)].symbol(), "a");
     assert_eq!(frame.buffer[(3, 3)].bg, Color::Reset);
+    assert!(frame.buffer[(3, 3)].modifier.contains(Modifier::REVERSED));
+    assert_eq!(frame.buffer[(10, 3)].symbol(), "c");
 }
 
 #[test]
 fn transient_scene_keeps_the_command_and_its_style() {
     let size = TerminalSize::new(80, 24);
-    let frame = Scene::for_transient(&editor("print -r -- hi", size), size).render();
+    let editor = editor("print -r -- hi", size);
+    let frame = Scene::for_transient(&editor, size).render();
+    let live = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.buffer[(0, 0)].symbol(), "❯");
     assert_eq!(frame.buffer[(2, 0)].symbol(), "p");
-    assert_eq!(frame.buffer[(2, 0)].fg, Color::Rgb(125, 196, 255));
+    assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
+    assert_eq!(frame.buffer[(2, 0)].fg, live.buffer[(2, 0)].fg);
+    assert_eq!(frame.buffer[(2, 0)].modifier, live.buffer[(2, 0)].modifier);
     assert_eq!(frame.buffer[(30, 0)], ratatui::buffer::Cell::EMPTY);
 }
 
@@ -85,6 +92,7 @@ fn cursor_repaint_covers_a_wide_grapheme() {
         size,
         provider: None,
         cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
     });
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.repaint_cells, vec![(2, 0), (3, 0)]);

@@ -1,11 +1,10 @@
-#[cfg(test)]
-use crate::completion::CompletionItem;
-use crate::completion::{CompletionClient, ranking};
+use crate::completion::{CompletionClient, CompletionItem, ranking};
 
 use super::EditorState;
 
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
+        self.syntax = crate::syntax::highlight(&self.buffer, &self.cwd);
         if self.completion.is_none() {
             return;
         }
@@ -63,18 +62,7 @@ impl EditorState {
     }
 
     fn merge_completion_sources(&mut self) {
-        let mut merged = self.completion_source.clone();
-        for item in &self.provider_source {
-            let duplicate = merged.iter().any(|existing| {
-                existing.label == item.label
-                    && existing.replacement == item.replacement
-                    && existing.kind == item.kind
-            });
-            if !duplicate {
-                merged.push(item.clone());
-            }
-        }
-        self.completion_source = merged;
+        self.completion_source = merge_items(&self.completion_source, &self.provider_source);
         self.refresh_suggestions();
     }
 
@@ -92,5 +80,50 @@ impl EditorState {
     pub(crate) fn set_completion_source_for_test(&mut self, items: Vec<CompletionItem>) {
         self.completion_source = items;
         self.refresh_suggestions();
+    }
+}
+
+fn merge_items(local: &[CompletionItem], provider: &[CompletionItem]) -> Vec<CompletionItem> {
+    let mut merged = local.to_vec();
+    for item in provider {
+        let duplicate = merged.iter_mut().find(|existing| {
+            existing.label == item.label
+                && existing.replacement == item.replacement
+                && existing.kind == item.kind
+        });
+        if let Some(existing) = duplicate {
+            if !item.detail.is_empty()
+                && matches!(existing.detail.as_str(), "" | "builtin" | "path")
+            {
+                *existing = item.clone();
+            }
+        } else {
+            merged.push(item.clone());
+        }
+    }
+    merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_items;
+    use crate::completion::{CompletionItem, CompletionKind};
+
+    #[test]
+    fn provider_detail_replaces_a_local_placeholder() {
+        let local = [CompletionItem::new(
+            "git",
+            "path",
+            "git",
+            CompletionKind::Generic,
+        )];
+        let provider = [CompletionItem::new(
+            "git",
+            "/usr/bin/git",
+            "git",
+            CompletionKind::Generic,
+        )];
+        let merged = merge_items(&local, &provider);
+        assert_eq!(merged[0].detail, "/usr/bin/git");
     }
 }

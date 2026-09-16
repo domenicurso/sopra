@@ -92,13 +92,14 @@ fn editor_elements(
             row: layout.row,
             text: editor.prompt().to_string(),
             style: Style::default()
-                .fg(Color::Rgb(111, 214, 176))
+                .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         }),
         Box::new(CommandElement {
             column: layout.line_column,
             row: layout.row,
             buffer: editor.buffer().to_string(),
+            spans: editor.syntax().to_vec(),
         }),
     ];
     if layout.overlay_visible {

@@ -14,9 +14,16 @@ pub(super) fn complete(request: &Request) -> Vec<CompletionItem> {
     let cursor = byte_offset(&request.line, request.cursor);
     let (start, _) = token_range(&request.line, cursor);
     let token = &request.line[start..cursor];
-    if !is_path_context(&request.line[..start], token) {
-        return Vec::new();
+    if is_path_context(&request.line[..start], token) {
+        return complete_path(request, token);
     }
+    if crate::syntax::command_position(&request.line, cursor) {
+        return super::commands::complete(token);
+    }
+    Vec::new()
+}
+
+fn complete_path(request: &Request, token: &str) -> Vec<CompletionItem> {
     let (option_prefix, _path, path_parent, leaf) = path_parts(token);
     let directory = resolve_path(path_parent, &request.cwd);
     let Ok(entries) = fs::read_dir(directory) else {
