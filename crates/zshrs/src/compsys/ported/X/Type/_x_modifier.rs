@@ -1,0 +1,128 @@
+//! Port of `_x_modifier` from `Completion/X/Type/_x_modifier`.
+//!
+//! Full upstream body (8 lines verbatim):
+//! ```text
+//! sh:1  #autoload
+//! sh:3  local expl
+//! sh:5  _wanted modifiers expl modifier \
+//! sh:6      compadd "$@" -M 'm:{a-z}={A-Z}' - \
+//! sh:7              Shift Lock Control Mod1 Mod2 Mod3 Mod4 Mod5
+//! ```
+
+use crate::compsys::ported::_wanted::_wanted;
+
+/// sh:7 — the fixed list of X keyboard modifier names.
+const MODIFIERS: &[&str] = &[
+    "Shift", "Lock", "Control", "Mod1", "Mod2", "Mod3", "Mod4", "Mod5",
+];
+
+/// `_x_modifier` — complete X keyboard modifier names (`Shift`, `Lock`,
+/// `Control`, `Mod1`..`Mod5`), matched case-insensitively (`m:{a-z}={A-Z}`).
+pub fn _x_modifier(args: &[String]) -> i32 {
+    let _fn_scope = crate::compsys::ported::shared::FnScope::enter("_x_modifier");
+    // sh:3 — `local expl`.
+    //
+    // This port does not assign `expl` itself; it hands the NAME to
+    // `_wanted`/`_description`, and `_description` fills it through
+    // `setaparam` — `createparam(name, PM_SCALAR)` with no PM_LOCAL
+    // (shared.rs:16-30). The array was therefore born at level 0 and
+    // `endparamscope` had nothing to unwind, so one TAB left `expl`
+    // in the user's shell. Measured through a pty, `${(t)expl}` and
+    // the value read back at the next prompt after a single TAB on a
+    // `_x_modifier` wrapper:
+    //
+    //   zsh  : [][]
+    //   zshrs: [array][-J|-default-]
+    //
+    // kind 0, as sh:3 spells a bare `local`.
+    crate::compsys::ported::shared::declare_locals(&["expl"], 0);
+    // sh:5-7  _wanted modifiers expl modifier \
+    //             compadd "$@" -M 'm:{a-z}={A-Z}' - Shift Lock Control Mod1 Mod2 Mod3 Mod4 Mod5
+    let mut wanted_argv: Vec<String> = vec![
+        "modifiers".to_string(),
+        "expl".to_string(),
+        "modifier".to_string(),
+        "compadd".to_string(),
+    ];
+    wanted_argv.extend(args.iter().cloned());
+    wanted_argv.push("-M".to_string());
+    wanted_argv.push("m:{a-z}={A-Z}".to_string());
+    wanted_argv.push("-".to_string());
+    wanted_argv.extend(MODIFIERS.iter().map(|s| s.to_string()));
+    _wanted(&wanted_argv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ported::zle::complete::INCOMPFUNC;
+    use std::sync::atomic::Ordering;
+
+    /// sh:6 publishes the fixed `Shift … Mod5` modifier list unconditionally,
+    /// so post-doshfunc-shift `_wanted` registers its own tag, `_all_labels`
+    /// adds those compiled-in candidates, and 0 is the correct return. See
+    /// Base/Core/_wanted.rs:45-54.
+    ///
+    /// This asserted 1 and was passing only because a leaked $PREFIX from an
+    /// earlier test made every candidate fail to match
+    /// (compcore.rs:4334-4373). It FAILS ALONE on a pristine binary, which is
+    /// how the mask was found once the reset below landed.
+    #[test]
+    fn returns_zero_because_the_modifier_list_is_compiled_in() {
+        let _g = crate::test_util::global_state_lock();
+        crate::test_util::reset_completion_state();
+        INCOMPFUNC.store(1, Ordering::Relaxed);
+        let r = _x_modifier(&[]);
+        INCOMPFUNC.store(0, Ordering::Relaxed);
+        assert_eq!(r, 0);
+    }
+
+    #[test]
+    fn passes_through_extra_args_and_full_modifier_list() {
+        // sh:6 — "$@" is spliced between `compadd` and `-M`; the fixed
+        //   modifier list follows `-` unconditionally.
+        let mut wanted_argv: Vec<String> = vec![
+            "modifiers".to_string(),
+            "expl".to_string(),
+            "modifier".to_string(),
+            "compadd".to_string(),
+        ];
+        let extra = vec!["-V".to_string(), "grp".to_string()];
+        wanted_argv.extend(extra.iter().cloned());
+        wanted_argv.push("-M".to_string());
+        wanted_argv.push("m:{a-z}={A-Z}".to_string());
+        wanted_argv.push("-".to_string());
+        wanted_argv.extend(MODIFIERS.iter().map(|s| s.to_string()));
+
+        assert_eq!(
+            wanted_argv,
+            vec![
+                "modifiers",
+                "expl",
+                "modifier",
+                "compadd",
+                "-V",
+                "grp",
+                "-M",
+                "m:{a-z}={A-Z}",
+                "-",
+                "Shift",
+                "Lock",
+                "Control",
+                "Mod1",
+                "Mod2",
+                "Mod3",
+                "Mod4",
+                "Mod5",
+            ]
+        );
+    }
+
+    #[test]
+    fn modifier_list_matches_upstream_order() {
+        assert_eq!(
+            MODIFIERS,
+            &["Shift", "Lock", "Control", "Mod1", "Mod2", "Mod3", "Mod4", "Mod5"]
+        );
+    }
+}

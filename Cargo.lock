@@ -3232,12 +3232,10 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "znative"
 version = "0.12.64"
-source = "git+https://github.com/domenicurso/zshrs?rev=e1de50d#e1de50d1cb1b8a6c2902b09fb44cf671a1ab3d45"
 
 [[package]]
 name = "zshrs"
 version = "0.12.64"
-source = "git+https://github.com/domenicurso/zshrs?rev=e1de50d#e1de50d1cb1b8a6c2902b09fb44cf671a1ab3d45"
 dependencies = [
  "atty",
  "bincode",

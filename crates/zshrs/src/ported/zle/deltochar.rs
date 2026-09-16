@@ -1,0 +1,353 @@
+//! ZLE delete-to-char / zap-to-char widgets — port of
+//! `Src/Zle/deltochar.c` (141 lines).
+//!
+//! C source has zero `struct ...` / `enum ...` definitions. The
+//! Rust port matches: zero types. The two static `Widget`
+//! variables (`w_deletetochar`, `w_zaptochar`) are local to C's
+//! module-loader path and don't translate — zshrs wires the two
+//! widgets through `extensions/widget.rs` at build time.
+
+#[allow(unused_imports)]
+use crate::ported::zle::{
+    textobjects::*, zle_h::*, zle_hist::*, zle_main::*, zle_misc::*, zle_move::*, zle_params::*,
+    zle_refresh::*, zle_tricky::*, zle_utils::*, zle_vi::*, zle_word::*,
+};
+/// Port of `deltochar(UNUSED(char **args))` from `Src/Zle/deltochar.c:38`. The shared
+/// body behind both the `delete-to-char` and `zap-to-char` widgets:
+/// reads the next char from input, then for each repeat of `zmult`
+/// scans the buffer toward that target and kills the spanned text
+/// (forward when `zmult >= 0`, backward when `zmult < 0`). The
+/// "zap" mode (binding name `zap-to-char`) includes the target
+/// char itself in the killed range.
+///
+/// C signature: `static int deltochar(char **args)` (args UNUSED).
+/// Returns 0 on success (target found, kill performed), 1 on
+/// failure (target not in buffer).
+/// WARNING: param names don't match C — Rust=(zle) vs C=(args)
+
+// --- AUTO: cross-zle hoisted-fn use glob ---
+/// `deltochar` — see implementation.
+#[allow(unused_imports)]
+
+pub fn deltochar() -> i32 {
+    // c:38
+    let c = match getfullchar(false) {
+        // c:38 getfullchar(0)
+        Some(ch) => ch,
+        None => return 1,
+    };
+    let mut dest = ZLECS.load(std::sync::atomic::Ordering::SeqCst); // c:42
+    let mut ok = 0i32; // c:42
+    let mut n: i32 = if ZMOD.lock().unwrap().flags & MOD_MULT != 0 {
+        ZMOD.lock().unwrap().mult
+    } else {
+        1
+    }; // c:42 zmult
+    let zap = BINDK.lock().unwrap().as_ref().map(|t| t.nam.as_str()) == Some("zap-to-char"); // c:43
+
+    if n > 0 {
+        // c:45
+        while n > 0 && dest != ZLELL.load(std::sync::atomic::Ordering::SeqCst) {
+            // c:46 while (n-- && dest != zlell)
+            n -= 1;
+            while dest != ZLELL.load(std::sync::atomic::Ordering::SeqCst)
+                && ZLELINE.lock().unwrap().get(dest).copied() != Some(c)
+            {
+                dest += 1; // c:48 INCPOS(dest)
+            }
+            if dest != ZLELL.load(std::sync::atomic::Ordering::SeqCst) {
+                // c:50
+                if !zap || n > 0 {
+                    // c:51
+                    dest += 1; // c:52 INCPOS(dest)
+                }
+                if n == 0 {
+                    // c:53
+                    let ct =
+                        (dest as i32) - (ZLECS.load(std::sync::atomic::Ordering::SeqCst) as i32); // c:54 dest - zlecs
+                    forekill(ct, 0); // c:54 CUT_RAW
+                    ok += 1; // c:55
+                }
+            }
+        }
+    } else {
+        // c:59
+        if dest > 0 {
+            // c:61
+            dest -= 1; // c:62 DECPOS(dest)
+        }
+        while n < 0 && dest != 0 {
+            // c:63 while (n++ && dest != 0)
+            n += 1;
+            while dest != 0 && ZLELINE.lock().unwrap().get(dest).copied() != Some(c) {
+                dest -= 1; // c:65 DECPOS(dest)
+            }
+            if ZLELINE.lock().unwrap().get(dest).copied() == Some(c) {
+                // c:67
+                if n == 0 {
+                    // c:68
+                    let zap_adj = if zap { 1 } else { 0 }; // c:70 trailing combining-char adjust
+                    let ct = (ZLECS.load(std::sync::atomic::Ordering::SeqCst) as i32)
+                        - (dest as i32)
+                        - zap_adj;
+                    backkill(ct, 0); // c:70 CUT_RAW|CUT_FRONT
+                    ok += 1; // c:71
+                }
+                if dest > 0 {
+                    // c:90
+                    dest -= 1; // c:90 DECPOS(dest)
+                }
+            }
+        }
+    }
+    if ok != 0 {
+        0
+    } else {
+        1
+    } // c:90 return !ok
+}
+
+/// Port of `setup_(UNUSED(Module m))` from `Src/Zle/deltochar.c:90`. C body is
+/// `return 0;` (UNUSED `Module m`).
+/// WARNING: param names don't match C — Rust=() vs C=(m)
+pub fn setup_() -> i32 {
+    // c:90
+    0 // c:97
+}
+
+/// Port of `features_(UNUSED(Module m), UNUSED(char ***features))` from `Src/Zle/deltochar.c:97`. C body is
+/// `*features = featuresarray(m, &module_features); return 0;`.
+/// Static-link path: 0.
+/// WARNING: param names don't match C — Rust=() vs C=(m, features)
+pub fn features_() -> i32 {
+    // c:97
+    0 // c:105
+}
+
+/// Port of `enables_(UNUSED(Module m), UNUSED(int **enables))` from `Src/Zle/deltochar.c:105`. C body is
+/// `return handlefeatures(m, &module_features, enables);`.
+/// WARNING: param names don't match C — Rust=() vs C=(m, enables)
+pub fn enables_() -> i32 {
+    // c:105
+    0 // c:112
+}
+
+/// Port of `boot_(UNUSED(Module m))` from `Src/Zle/deltochar.c:112`. C registers
+/// the `delete-to-char` and `zap-to-char` ZLE functions via
+/// `addzlefunction(name, deltochar, ZLE_KILL | ZLE_KEEPSUFFIX)`.
+/// zshrs wires both widgets through `extensions/widget.rs` at
+/// build time, so this is a no-op port.
+/// WARNING: param names don't match C — Rust=() vs C=(m)
+pub fn boot_() -> i32 {
+    // c:112
+    0 // c:129
+}
+
+/// Port of `cleanup_(UNUSED(Module m))` from `Src/Zle/deltochar.c:129`. C calls
+/// `deletezlefunction()` for both widgets and then
+/// `setfeatureenables(...)`. zshrs widgets are static-linked and
+/// never deleted; no-op port.
+/// WARNING: param names don't match C — Rust=() vs C=(m)
+pub fn cleanup_() -> i32 {
+    // c:129
+    0 // c:138
+}
+
+/// Port of `finish_(UNUSED(Module m))` from `Src/Zle/deltochar.c:138`. C body is
+/// `return 0;` (UNUSED `Module m`).
+/// WARNING: param names don't match C — Rust=() vs C=(m)
+pub fn finish_() -> i32 {
+    // c:138
+    0 // c:138
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Outside a ZLE session getfullchar returns None → c:39 short-
+    /// circuit returns 1. The only observable behaviour testable
+    /// without a live tty + key reader thread.
+    #[test]
+    fn deltochar_returns_one_when_no_input_available() {
+        let _g = crate::test_util::global_state_lock();
+        let _g = zle_test_setup();
+        assert_eq!(deltochar(), 1);
+    }
+
+    /// `Src/Zle/deltochar.c:90-140` — six module-lifecycle shims.
+    /// In C they wire `addzlefunction("delete-to-char", deltochar, …)`
+    /// + `addzlefunction("zap-to-char", deltochar, …)` (c:114/117) and
+    /// the matching `deletezlefunction` calls (c:131/132). In zshrs
+    /// both widgets are registered through `extensions/widget.rs` at
+    /// build time, so all six shims collapse to `return 0`. Pinning
+    /// the returns prevents a future refactor from re-introducing the
+    /// C `addzlefunction(...)` body and double-registering the widget.
+    #[test]
+    fn module_lifecycle_shims_all_return_zero() {
+        let _g = crate::test_util::global_state_lock();
+        // c:90-93 — `setup_(UNUSED(Module m)) { return 0; }`.
+        assert_eq!(setup_(), 0);
+        // c:96-101 — features_ would call featuresarray; static-link → 0.
+        assert_eq!(features_(), 0);
+        // c:104-108 — enables_ would call handlefeatures; static-link → 0.
+        assert_eq!(enables_(), 0);
+        // c:111-125 — boot_ in C adds two zlefunctions; static-link → 0.
+        assert_eq!(boot_(), 0);
+        // c:128-134 — cleanup_ in C deletes both zlefunctions; → 0.
+        assert_eq!(cleanup_(), 0);
+        // c:137-140 — `finish_(UNUSED(Module m)) { return 0; }`.
+        assert_eq!(finish_(), 0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // C-parity tests pinning Src/Zle/deltochar.c — one per lifecycle
+    // hook for finer failure resolution.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// `setup_()` returns 0 — no-op setup hook.
+    #[test]
+    fn deltochar_setup_returns_zero() {
+        assert_eq!(setup_(), 0);
+    }
+
+    /// `features_()` returns 0 — static-link module-init.
+    #[test]
+    fn deltochar_features_returns_zero() {
+        assert_eq!(features_(), 0);
+    }
+
+    /// `enables_()` returns 0.
+    #[test]
+    fn deltochar_enables_returns_zero() {
+        assert_eq!(enables_(), 0);
+    }
+
+    /// `boot_()` returns 0.
+    #[test]
+    fn deltochar_boot_returns_zero() {
+        assert_eq!(boot_(), 0);
+    }
+
+    /// `cleanup_()` returns 0.
+    #[test]
+    fn deltochar_cleanup_returns_zero() {
+        assert_eq!(cleanup_(), 0);
+    }
+
+    /// `finish_()` returns 0.
+    #[test]
+    fn deltochar_finish_returns_zero() {
+        assert_eq!(finish_(), 0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity tests for Src/Zle/deltochar.c
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:38 — `deltochar` is deterministic for the "no input"
+    /// short-circuit (multiple calls return the same value).
+    #[test]
+    fn deltochar_no_input_is_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        let _g2 = zle_test_setup();
+        let first = deltochar();
+        for _ in 0..5 {
+            assert_eq!(deltochar(), first, "must be deterministic");
+        }
+    }
+
+    /// c:38 — `deltochar` returns boolean i32 (0 or 1).
+    #[test]
+    fn deltochar_return_value_is_boolean() {
+        let _g = crate::test_util::global_state_lock();
+        let _g2 = zle_test_setup();
+        let r = deltochar();
+        assert!(r == 0 || r == 1, "must be 0 or 1; got {}", r);
+    }
+
+    /// c:90 — `setup_` is idempotent (callable repeatedly).
+    #[test]
+    fn deltochar_setup_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(setup_(), 0);
+        }
+    }
+
+    /// c:138 — `finish_` is idempotent.
+    #[test]
+    fn deltochar_finish_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(finish_(), 0);
+        }
+    }
+
+    /// c:129 — `cleanup_` is idempotent.
+    #[test]
+    fn deltochar_cleanup_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(cleanup_(), 0);
+        }
+    }
+
+    /// c:112 — `boot_` is idempotent.
+    #[test]
+    fn deltochar_boot_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(boot_(), 0);
+        }
+    }
+
+    /// c:97 — `features_` is idempotent.
+    #[test]
+    fn deltochar_features_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(features_(), 0);
+        }
+    }
+
+    /// c:105 — `enables_` is idempotent.
+    #[test]
+    fn deltochar_enables_idempotent() {
+        for _ in 0..10 {
+            assert_eq!(enables_(), 0);
+        }
+    }
+
+    /// c:90-138 — full lifecycle setup→boot→cleanup→finish sequence is safe.
+    #[test]
+    fn deltochar_full_lifecycle_sequence_safe() {
+        assert_eq!(setup_(), 0);
+        assert_eq!(features_(), 0);
+        assert_eq!(enables_(), 0);
+        assert_eq!(boot_(), 0);
+        assert_eq!(cleanup_(), 0);
+        assert_eq!(finish_(), 0);
+    }
+
+    /// c:90-138 — repeated load/unload cycles (setup/boot/cleanup/finish ×3).
+    #[test]
+    fn deltochar_repeated_load_unload_cycles_safe() {
+        for _ in 0..3 {
+            assert_eq!(setup_(), 0);
+            assert_eq!(boot_(), 0);
+            assert_eq!(cleanup_(), 0);
+            assert_eq!(finish_(), 0);
+        }
+    }
+
+    /// c:38 — `deltochar` with no input doesn't mutate ZLELL/ZLECS
+    /// (early-return path before any line edit).
+    #[test]
+    fn deltochar_no_input_does_not_mutate_zle_state() {
+        let _g = crate::test_util::global_state_lock();
+        let _g2 = zle_test_setup();
+        let cs_before = ZLECS.load(std::sync::atomic::Ordering::SeqCst);
+        let ll_before = ZLELL.load(std::sync::atomic::Ordering::SeqCst);
+        let _ = deltochar();
+        let cs_after = ZLECS.load(std::sync::atomic::Ordering::SeqCst);
+        let ll_after = ZLELL.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(cs_before, cs_after, "ZLECS unchanged on early-return");
+        assert_eq!(ll_before, ll_after, "ZLELL unchanged on early-return");
+    }
+}

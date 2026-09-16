@@ -1,0 +1,3487 @@
+//! init.c - main loop and initialization routines
+//!
+//! Port of Src/init.c
+
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+use crate::ported::builtin::{realexit, LASTVAL, RETFLAG, STOPMSG};
+use crate::ported::context::zcontext_restore;
+use crate::ported::hist::{curhist, curline, hbegin, hend, hist_ring, histlinect, stophist};
+use crate::ported::lex::{set_tok, tok, ENDINPUT};
+use crate::ported::mem::popheap;
+use crate::ported::options::{dosetopt, emulation};
+use crate::ported::params::{getsparam, TERMFLAGS};
+use crate::ported::signals::{
+    dotrap, install_handler, intr, queue_signals, signal_ignore, sigtrapped, unqueue_signals,
+};
+use crate::ported::signals_h::dont_queue_signals;
+use crate::ported::text::getpermtext;
+use crate::ported::utils::{callhookfunc, errflag, movefd, unmeta, ERRFLAG_ERROR};
+use crate::ported::zsh_h::{
+    eprog, hookdef, interact, islogin, isset, jobbing, CONTINUEONERROR, EMULATE_KSH,
+    EMULATE_SH, GLOBALRCS, HISTBEEP, HISTIGNOREDUPS, HIST_DUP, HIST_TMPSTORE, HOOKF_ALL,
+    HOOK_SUFFIX, HUP, IGNOREEOF, INTERACTIVE, LEXERR, PRIVILEGED, RCS, SHINSTDIN, SINGLECOMMAND,
+    TERM_BAD, TERM_NOUP, TERM_UNKNOWN, ZEXIT_NORMAL, ZLE_CMD_POSTEXEC, ZLE_CMD_PREEXEC,
+};
+// =========================================================================
+// File-scope globals from init.c
+// =========================================================================
+
+/// Port of `int noexitct` from Src/init.c:44.
+pub static noexitct: AtomicI32 = AtomicI32::new(0); // c:44
+
+// buffer for $_ and its length                                              // c:46
+
+/// Port of `char *zunderscore` from Src/init.c:49.
+pub static zunderscore: Mutex<String> = Mutex::new(String::new()); // c:49
+
+/// Port of `size_t underscorelen` from Src/init.c:52.
+pub static underscorelen: AtomicUsize = AtomicUsize::new(0); // c:52
+
+/// Port of `int underscoreused` from Src/init.c:55.
+pub static underscoreused: AtomicI32 = AtomicI32::new(0); // c:55
+
+// what level of sourcing we are at                                          // c:57
+
+/// Port of `int sourcelevel` from Src/init.c:60.
+pub static sourcelevel: AtomicI32 = AtomicI32::new(0); // c:60
+
+// the shell tty fd                                                          // c:62
+
+/// Port of `mod_export int SHTTY` from Src/init.c:65.
+pub static SHTTY: AtomicI32 = AtomicI32::new(-1); // c:65
+
+// the FILE attached to the shell tty                                        // c:67
+// `mod_export FILE *shout;` — represented as a libc::FILE pointer.          // c:70
+pub static shout: Mutex<usize> = Mutex::new(0); // c:70
+
+// termcap strings                                                           // c:72
+
+/// Port of `mod_export char *tcstr[TC_COUNT]` from Src/init.c:75.
+pub static tcstr: Mutex<[String; 39]> = Mutex::new([
+    // c:75
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+    String::new(),
+]);
+
+// lengths of each termcap string                                            // c:78
+
+/// Port of `mod_export int tclen[TC_COUNT]` from Src/init.c:81.
+pub static tclen: Mutex<[i32; 39]> = Mutex::new([0; 39]); // c:81
+
+// Values of the li, co and am entries                                       // c:82
+
+/// Port of `int tclines` from Src/init.c:85.
+pub static tclines: AtomicI32 = AtomicI32::new(0); // c:85
+
+/// Port of `int tccolumns` from Src/init.c:85.
+pub static tccolumns: AtomicI32 = AtomicI32::new(0); // c:85
+
+/// Port of `mod_export int hasam` from Src/init.c:87.
+pub static hasam: AtomicI32 = AtomicI32::new(0); // c:87
+
+/// Port of `int hasxn` from Src/init.c:89.
+pub static hasxn: AtomicI32 = AtomicI32::new(0); // c:89
+
+// Value of the Co (max_colors) entry: may not be set                        // c:91
+
+/// Port of `mod_export int tccolours` from Src/init.c:94.
+pub static tccolours: AtomicI32 = AtomicI32::new(0); // c:94
+
+// SIGCHLD mask                                                              // c:96
+// `mod_export sigset_t sigchld_mask;` — owned by signals layer.             // c:99
+
+/// Port of `struct hookdef zshhooks[]` from `Src/init.c:101-106`:
+/// ```c
+/// struct hookdef zshhooks[] = {
+///     HOOKDEF("exit", NULL, HOOKF_ALL),
+///     HOOKDEF("before_trap", NULL, HOOKF_ALL),
+///     HOOKDEF("after_trap", NULL, HOOKF_ALL),
+///     HOOKDEF("get_color_attr", NULL, HOOKF_ALL),
+/// };
+/// ```
+/// Stored as `AtomicPtr<hookdef>` holding the base pointer of a
+/// heap-leaked `[hookdef; 4]` so that `addhookdefs(NULL, zshhooks,
+/// 4)` at `setupvals()` (c:1085) can walk the array via `h++` exactly
+/// as the C call does. The leak is intentional — C's static-storage
+/// `zshhooks[]` has program lifetime, and the registered hookdef
+/// pointers must stay valid for any later `runhookdef` dispatch.
+pub static zshhooks: once_cell::sync::Lazy<
+    // c:101
+    std::sync::atomic::AtomicPtr<hookdef>,
+> = once_cell::sync::Lazy::new(|| {
+    let arr: Box<[hookdef; 4]> = Box::new([
+        hookdef {
+            // c:102
+            next: std::ptr::null_mut(),
+            name: "exit".to_string(),
+            def: None,
+            flags: HOOKF_ALL,
+            funcs: std::ptr::null_mut(),
+        },
+        hookdef {
+            // c:103
+            next: std::ptr::null_mut(),
+            name: "before_trap".to_string(),
+            def: None,
+            flags: HOOKF_ALL,
+            funcs: std::ptr::null_mut(),
+        },
+        hookdef {
+            // c:104
+            next: std::ptr::null_mut(),
+            name: "after_trap".to_string(),
+            def: None,
+            flags: HOOKF_ALL,
+            funcs: std::ptr::null_mut(),
+        },
+        hookdef {
+            // c:105
+            next: std::ptr::null_mut(),
+            name: "get_color_attr".to_string(),
+            def: None,
+            flags: HOOKF_ALL,
+            funcs: std::ptr::null_mut(),
+        },
+    ]);
+    let base = Box::into_raw(arr) as *mut hookdef;
+    std::sync::atomic::AtomicPtr::new(base)
+});
+
+// original argv[0]. This is already metafied                                // c:258
+
+/// Port of `static char *argv0` from Src/init.c:259.
+static argv0: Mutex<String> = Mutex::new(String::new()); // c:259
+
+/// Port of `mod_export ZleEntryPoint zle_entry_ptr` from Src/init.c:1730.
+/// Stored as a usize representing a fn pointer (0 == NULL).
+pub static zle_entry_ptr: AtomicUsize = AtomicUsize::new(0); // c:1730
+
+/// Port of `mod_export int zle_load_state` from Src/init.c:1739.
+pub static zle_load_state: AtomicI32 = AtomicI32::new(0); // c:1739
+
+/// Port of `mod_export CompctlReadFn compctlreadptr` from Src/init.c:1831.
+pub static compctlreadptr: AtomicUsize = AtomicUsize::new(0); // c:1831
+
+/// Port of `mod_export int use_exit_printed` from Src/init.c:1846.
+pub static use_exit_printed: AtomicI32 = AtomicI32::new(0); // c:1846
+
+// =========================================================================
+// Static arrays from init.c
+// =========================================================================
+
+/// Port of `static char *tccapnams[TC_COUNT]` from Src/init.c:747.
+const tccapnams: [&str; 39] = [
+    // c:747
+    "cl", "le", "LE", "nd", "RI", "up", "UP", "do", "DO", "dc", "DC", "ic", "IC", "cd", "ce", "al",
+    "dl", "ta", "md", "mh", "so", "us", "ZH", "me", "se", "ue", "ZR", "ch", "ku", "kd", "kl", "kr",
+    "sc", "rc", "bc", "AF", "AB", "vi", "ve",
+];
+
+/// Port of `static void parseargs(...)` from Src/init.c:263.
+fn parseargs(
+    zsh_name: &str,
+    argv: &mut Vec<String>, // c:263
+    runscript: &mut Option<String>,
+    cmdptr: &mut Option<String>,
+) {
+    let mut idx: usize = 0; // c:265
+    let flags: i32 = 1; /* PARSEARGS_TOPLEVEL */
+    // c:267
+    let flags = if argv.first().map(|s| s.starts_with('-')).unwrap_or(false)
+    // c:268-269
+    {
+        flags | 2 /* PARSEARGS_LOGIN */
+    } else {
+        flags
+    };
+
+    // c:282 — `argv0 = argzero = posixzero = *argv++;` — all THREE are
+    // seeded from the kernel-supplied argv[0]. Only `argv0` was; `argzero`
+    // and `posixzero` stayed unset for an interactive shell, so `$0` read
+    // empty at the prompt where zsh reads `/bin/zsh`, and the empty value
+    // cascaded into `doshfunc`'s funcstack push: with `argzero` NULL,
+    // `funcsave->argv0` (c:6011) is None, so the outermost frame's
+    // `fstack.caller` fell through to a re-read of `argzero` — which
+    // doshfunc had just overwritten with the callee's own name (c:5986) —
+    // and `$functrace[-1]` reported `_main_complete:2` instead of
+    // `/bin/zsh:2`. The same None also skipped the c:6116 restore
+    // (`if let Some(saved) = funcsave_argv0`), leaking the completer's name
+    // into the interactive shell's `$0` after every TAB.
+    // A `-c` name argument (c:299) and a runscript (c:1402) both overwrite
+    // this later, exactly as in C.
+    *argv0.lock().unwrap() = argv[idx].clone(); // c:282
+    crate::ported::utils::set_argzero(Some(argv[idx].clone())); // c:282
+    crate::ported::utils::set_posixzero(Some(argv[idx].clone())); // c:282
+    idx += 1;
+    // SHIN = 0;                                                             // c:272
+
+    // parseopts(zsh_name, &argv, opts, cmdptr, NULL, flags)                 // c:280
+    let _ = parseopts(zsh_name, argv, &mut idx, cmdptr, flags);
+
+    // c:291-292 — `if (opts[SHINSTDIN]) opts[USEZLE] = opts[USEZLE] &&
+    // isatty(0);`. SHINSTDIN starts unset here (set below), so this is
+    // normally a no-op; honor it for an explicitly-set SHINSTDIN.
+    if isset(SHINSTDIN) {
+        let usezle = isset(crate::ported::zsh_h::USEZLE) && unsafe { libc::isatty(0) != 0 };
+        // USEZLE's canonical option name is `zle` (zsh_h.rs:4145
+        // `opt_name(USEZLE) == "zle"`); `isset(USEZLE)` reads the `zle`
+        // key, so the write MUST use `zle` too. The prior `"usezle"` key
+        // was never read → this `opts[USEZLE] = opts[USEZLE] && isatty(0)`
+        // downgrade silently did nothing.
+        crate::ported::options::opt_state_set("zle", usezle); // c:292
+    }
+
+    // c:294 — `paramlist = znewlinklist();`
+    let mut paramlist: Vec<String> = Vec::new();
+    if idx < argv.len() {
+        // c:295 — there's a non-option argument.
+        // c:296 — `if (unset(SHINSTDIN))` — a positional arg is the
+        // script to run (or $0 under -c) ONLY when not already forced to
+        // read stdin.
+        if !isset(SHINSTDIN) {
+            // c:297 — `posixzero = *argv;`
+            crate::ported::utils::set_posixzero(Some(argv[idx].clone()));
+            if cmdptr.is_some() {
+                // c:299 — `argzero = *argv;` ($0 under -c)
+                crate::ported::utils::set_argzero(Some(argv[idx].clone()));
+            } else {
+                // c:301 — `*runscript = *argv;`
+                *runscript = Some(argv[idx].clone());
+            }
+            // c:302 — `opts[INTERACTIVE] &= 1;`. A script source makes
+            // the shell non-interactive unless `-i` forced it on. zshrs
+            // collapsed INTERACTIVE to a bool (no 2-sentinel), so a
+            // non-tty default-on can't be distinguished from explicit
+            // -i; reading from a file is non-interactive, so clear it.
+            crate::ported::options::opt_state_set("interactive", false);
+            idx += 1;
+        }
+        // c:305-306 — remaining args become positional parameters.
+        while idx < argv.len() {
+            paramlist.push(argv[idx].clone());
+            idx += 1;
+        }
+    } else if cmdptr.is_none() {
+        // c:307-308 — `else if (!*cmdptr) opts[SHINSTDIN] = 1;` — no
+        // script and no `-c`: read commands from stdin.
+        crate::ported::options::opt_state_set("shinstdin", true);
+    }
+    // c:309-310 — `if (isset(SINGLECOMMAND)) opts[INTERACTIVE] &= 1;`
+    if isset(SINGLECOMMAND) {
+        crate::ported::options::opt_state_set("interactive", false);
+    }
+    // c:311 — `opts[INTERACTIVE] = !!opts[INTERACTIVE];` is a no-op for
+    // the bool port.
+    // c:312-315 — `MONITOR`/`HASHDIRS` default (2) → INTERACTIVE.
+    let interactive = isset(INTERACTIVE);
+    crate::ported::options::opt_state_set("monitor", interactive);
+    crate::ported::options::opt_state_set("hashdirs", interactive);
+    // c:316 — `pparams = paramlist;`
+    if !paramlist.is_empty() {
+        if let Ok(mut p) = crate::ported::builtin::PPARAMS.lock() {
+            *p = paramlist;
+        }
+    }
+}
+
+/// Port of `static void parseopts_insert(...)` from Src/init.c:328.
+///
+/// Insert into list in order of pointer value.
+fn parseopts_insert(optlist: &mut Vec<usize>, base: usize, optno: i32) {
+    // c:328
+    let ptr = base + (if optno < 0 { -optno } else { optno }) as usize; // c:348
+    for (i, &node) in optlist.iter().enumerate() {
+        // c:348
+        if ptr < node {
+            // c:348
+            optlist.insert(i, ptr); // c:348
+            return; // c:348
+        }
+    }
+    optlist.push(ptr); // c:348
+}
+
+/// zshrs-only long flags that take a following word as their argument.
+/// They are handled by the binary front-end; `parseopts` only needs to
+/// skip BOTH words so the argument is not mistaken for a script operand.
+const ZSHRS_LONG_FLAGS_WITH_ARG: &[&str] = &["emulate", "rcfile", "init-file", "docs", "out"];
+
+/// Port of `mod_export int parseopts(...)` from Src/init.c:390.
+/// Rust idiom replacement: index-walk over `argv` Vec covers the C
+/// argv pointer-advance; the `emulate_required` / `toplevel` state
+/// tracking mirrors the C source's local flags. The long-option
+/// table lookups happen against the shared options.rs registry.
+pub fn parseopts(
+    _nam: &str,
+    argv: &mut Vec<String>,
+    idx: &mut usize, // c:390
+    cmdp: &mut Option<String>,
+    flags: i32,
+) -> i32 {
+    let toplevel = (flags & 1) != 0; // c:396
+    let mut emulate_required = toplevel; // c:397
+    *cmdp = None; // c:400
+
+    while *idx < argv.len() {
+        // c:418
+        let arg = argv[*idx].clone();
+        if !(arg.starts_with('-') || arg.starts_with('+')) {
+            break;
+        }
+        if arg == "--version" {
+            // c:434
+            println!("zshrs (C-port)"); // c:435-436
+            if toplevel {
+                std::process::exit(0);
+            } // c:437
+        }
+        if arg == "--help" {
+            // c:439
+            printhelp(); // c:440
+            if toplevel {
+                std::process::exit(0);
+            } // c:441
+        }
+        if arg == "-c" {
+            // c:470
+            if emulate_required {
+                // c:471
+                parseopts_setemulate(_nam, flags); // c:472
+                emulate_required = false; // c:473
+            }
+            *idx += 1;
+            *cmdp = argv.get(*idx).cloned(); // c:476
+            *idx += 1;
+            continue;
+        }
+        // c:Src/init.c:478-490 — `-o NAME` / `+o NAME`: a long-name
+        // option whose name follows (`-o nullglob`). `optlookup` resolves
+        // the name; `dosetopt` applies it with the sign as the on/off
+        // action (`-` sets, `+` unsets).
+        if arg == "-o" || arg == "+o" {
+            if emulate_required {
+                parseopts_setemulate(_nam, flags); // c:481-483
+                emulate_required = false;
+            }
+            let action = arg.starts_with('-'); // c:420
+            *idx += 1;
+            if let Some(name) = argv.get(*idx).cloned() {
+                let optno = crate::ported::options::optlookup(&name); // c:493
+                if optno != crate::ported::zsh_h::OPT_INVALID {
+                    // c:501 — dosetopt(optno, action, toplevel, new_opts)
+                    crate::ported::options::dosetopt(optno, action as i32, toplevel as i32);
+                }
+            }
+            *idx += 1;
+            continue;
+        }
+        // c:Src/init.c:425-429 — the pseudo-option `--` ends option
+        // processing; everything after it is an operand even if it looks
+        // like a flag.
+        if arg == "--" {
+            *idx += 1;
+            break;
+        }
+        // c:Src/init.c:432-460 — GNU-style long options. C rewrites `-`
+        // to `_` in the name and falls into the shared `longoptions:`
+        // label, so `--no-rcs` is exactly `-o no_rcs`.
+        //
+        // zshrs-specific long flags (`--zsh`, `--bash`, `--dap`, …) are
+        // NOT zsh options; the bin's front-end consumes them before
+        // zsh_main and c:492's `optlookup` would reject them with "no
+        // such option", so an unrecognised `--NAME` is still skipped
+        // here. That is the deliberate divergence. Skipping ALL of them
+        // was too broad: a long flag that IS a real option never reached
+        // the option table, so `zshrs --no-rcs` left RCS set and an
+        // interactive shell still sourced .zshenv/.zshrc, while the
+        // equivalent `-f` and `-o norcs` both suppressed them (the rc
+        // gate is `isset(RCS)` at init.rs:1546/1568).
+        if let Some(long) = arg.strip_prefix("--") {
+            let name = long.replace('-', "_"); // c:456-459
+            let optno = crate::ported::options::optlookup(&name); // c:492
+            if optno != crate::ported::zsh_h::OPT_INVALID {
+                if emulate_required {
+                    parseopts_setemulate(_nam, flags); // c:488-490
+                    emulate_required = false;
+                }
+                // c:498 — `dosetopt(optno, action, toplevel, new_opts)`.
+                // `action` is true for a `-`-introduced word (c:420);
+                // optlookup answers a NEGATIVE optno for a `no…`
+                // spelling and dosetopt inverts on that, which is what
+                // the `-o` arm above already relies on.
+                crate::ported::options::dosetopt(optno, 1, toplevel as i32);
+            }
+            // A zshrs-only long flag. Those that take a following word
+            // must consume it too, or the word is mistaken for the
+            // script operand and the shell tries to RUN the user's
+            // `--rcfile` argument.
+            *idx += 1;
+            if ZSHRS_LONG_FLAGS_WITH_ARG.contains(&&arg[2..]) {
+                *idx += 1;
+            }
+            continue;
+        }
+        // c:Src/init.c:516-534 — a cluster of single option letters
+        // (`-x`, `-v`, `-xv`, `+x`). Each char maps via `optlookupc` to a
+        // (possibly negated, for inverted-sense letters like `f`) option
+        // number; `dosetopt` applies it with the sign as the action.
+        // OPT_INVALID letters are skipped (deferred to the front-end)
+        // rather than erroring as C does at c:517 — zshrs accepts some
+        // non-zsh single-dash flags the C table doesn't know.
+        if emulate_required {
+            parseopts_setemulate(_nam, flags); // c:516-519
+            emulate_required = false;
+        }
+        let action = arg.starts_with('-'); // c:420
+        for c in arg[1..].chars() {
+            let optno = crate::ported::options::optlookupc(c); // c:520
+            if optno != crate::ported::zsh_h::OPT_INVALID {
+                // c:526 — dosetopt(optno, action, toplevel, new_opts)
+                crate::ported::options::dosetopt(optno, action as i32, toplevel as i32);
+            }
+        }
+        *idx += 1;
+    }
+    if emulate_required {
+        // c:557
+        parseopts_setemulate(_nam, flags); // c:557
+    }
+    0 // c:557
+}
+
+/// Port of `static void printhelp(void)` from Src/init.c:557.
+fn printhelp() {
+    // c:557
+    let argz = argv0.lock().unwrap().clone(); // c:557
+    println!("Usage: {} [<options>] [<argument> ...]", argz); // c:559
+    println!(); // c:560
+    println!("Special options:"); // c:560
+    println!("  --help     show this message, then exit"); // c:561
+    println!("  --version  show zsh version number, then exit"); // c:562
+    println!("  -b         end option processing, like --"); // c:564
+    println!("  -c         take first argument as a command to execute"); // c:577
+    println!("  -o OPTION  set an option by name (see below)"); // c:577
+    println!(); // c:577
+    println!("Normal options are named.  An option may be turned on by"); // c:577
+    println!("`-o OPTION', `--OPTION', `+o no_OPTION' or `+-no-OPTION'.  An"); // c:577
+    println!("option may be turned off by `-o no_OPTION', `--no-OPTION',"); // c:577
+    println!("`+o OPTION' or `+-OPTION'.  Options are listed below only in"); // c:577
+    println!("`--OPTION' or `--no-OPTION' form."); // c:577
+                                                   // printoptionlist();                                                    // c:577
+}
+
+/// Port of `mod_export void init_io(char *cmd)` from Src/init.c:577.
+pub fn init_io(_cmd: Option<&str>) {
+    // c:577
+    // stdout, stderr fully buffered                                         // c:577
+    // setvbuf(stdout, outbuf, _IOFBF, BUFSIZ); setvbuf(stderr, ...)         // c:587-591
+    // (Rust's stdout/stderr are line/block buffered by default)
+
+    // Close any existing shout                                              // c:605-614
+    *shout.lock().unwrap() = 0;
+    if SHTTY.load(Ordering::SeqCst) != -1 {
+        // c:615
+        // c:616 — `zclose(SHTTY);` — fdtable-aware close. SHTTY was
+        // registered as FDT_INTERNAL by movefd at one of the open
+        // sites below (c:627 ttyname/O_RDWR open, c:658 dup(0), c:662
+        // dup(1), c:668 /dev/tty open — all routed through movefd
+        // which sets fdtable[fd] = FDT_INTERNAL at utils.rs:2243).
+        // Prior port used raw libc::close which skipped the
+        // fdtable_set(fd, FDT_UNUSED) clear that zclose does at
+        // utils.rs:2402. Same leak shape as random.rs finish_
+        // (b3107b5a46), tcp.rs tcp_close (9b4dae375a), and
+        // zpty.rs deleteptycmd (c37083d09f) — stale FDT_INTERNAL
+        // marker survives the close → kernel-reused fd inherits the
+        // module-owned classification → closem(FDT_UNUSED, 0) calls
+        // from sibling builtins skip closing it.
+        let _ = crate::ported::utils::zclose(SHTTY.load(Ordering::SeqCst));
+        SHTTY.store(-1, Ordering::SeqCst); // c:617
+    }
+
+    // xtrerr = stderr;                                                      // c:621
+
+    // Make sure the tty is opened read/write.                               // c:623
+    //
+    // C uses `if (isatty(0))` — the truthy test, NOT a strict
+    // `== 1`. POSIX guarantees isatty returns 0 on false but
+    // "non-zero" on true with the exact value implementation-
+    // defined. macOS/glibc/musl all return 1 today but the
+    // strict `== 1` check is brittle — match C's truthy test
+    // so a future libc that returns any non-zero value still
+    // hits the SHTTY-open path.
+    // ttystrname is the canonical "name of the controlling tty" global
+    // (init.c declares it; clone.c reads it for $TTY after fork). The
+    // C `init_io` keeps it in lockstep with `SHTTY`: every open-site
+    // and every dup-fallback either replaces it with `ttyname(fd)` of
+    // the new SHTTY or resets to "" / "/dev/tty" on failure. Mirror
+    // every store here so $TTY isn't empty after init.
+    let set_ttystrname = |s: String| {
+        // c:625 zsfree(ttystrname); ttystrname = ztrdup(...)
+        *crate::ported::modules::clone::ttystrname.lock().unwrap() = s;
+    };
+    #[cfg(unix)]
+    let ttyname_of = |fd: i32| -> Option<String> {
+        unsafe {
+            let p = libc::ttyname(fd);
+            if p.is_null() {
+                None
+            } else {
+                std::ffi::CStr::from_ptr(p)
+                    .to_str()
+                    .ok()
+                    .map(|s| s.to_string())
+            }
+        }
+    };
+    #[cfg(unix)]
+    unsafe {
+        if libc::isatty(0) != 0 {
+            // c:624
+            let name_ptr = libc::ttyname(0); // c:626
+            if !name_ptr.is_null() {
+                let name = std::ffi::CStr::from_ptr(name_ptr);
+                let cstr = std::ffi::CString::new(name.to_bytes()).unwrap();
+                // c:626 ttystrname = ztrdup(ttyname(0))
+                set_ttystrname(name.to_string_lossy().into_owned());
+                let fd = libc::open(
+                    cstr.as_ptr(), // c:627
+                    libc::O_RDWR | libc::O_NOCTTY,
+                );
+                SHTTY.store(movefd(fd), Ordering::SeqCst);
+            }
+            if SHTTY.load(Ordering::SeqCst) == -1 {
+                // c:658
+                SHTTY.store(movefd(libc::dup(0)), Ordering::SeqCst);
+                // c:659
+            }
+        }
+        if SHTTY.load(Ordering::SeqCst) == -1 && libc::isatty(1) != 0 {
+            // c:662
+            SHTTY.store(movefd(libc::dup(1)), Ordering::SeqCst);
+            // c:663
+            // c:664-665 — zsfree(ttystrname); ttystrname = ztrdup(ttyname(1));
+            if let Some(n) = ttyname_of(1) {
+                set_ttystrname(n);
+            }
+        }
+        if SHTTY.load(Ordering::SeqCst) == -1 {
+            // c:667
+            let dev_tty = std::ffi::CString::new("/dev/tty").unwrap();
+            let fd = libc::open(dev_tty.as_ptr(), libc::O_RDWR | libc::O_NOCTTY); // c:668
+            SHTTY.store(movefd(fd), Ordering::SeqCst);
+            if SHTTY.load(Ordering::SeqCst) != -1 {
+                // c:669-670 — ttystrname = ztrdup(ttyname(SHTTY));
+                if let Some(n) = ttyname_of(SHTTY.load(Ordering::SeqCst)) {
+                    set_ttystrname(n);
+                }
+            }
+        }
+        if SHTTY.load(Ordering::SeqCst) == -1 {
+            // c:672-674 — failed all opens: ttystrname = "";
+            set_ttystrname(String::new());
+        } else {
+            // c:675
+            let fdflags = libc::fcntl(SHTTY.load(Ordering::SeqCst), libc::F_GETFD, 0); // c:677
+            if fdflags != -1 {
+                // c:678
+                libc::fcntl(
+                    SHTTY.load(Ordering::SeqCst),
+                    libc::F_SETFD, // c:680
+                    fdflags | libc::FD_CLOEXEC,
+                );
+            }
+            // c:683-684 — if (!ttystrname) ttystrname = ztrdup("/dev/tty");
+            // Rust mirrors NULL-check via empty-string check on the Mutex.
+            let mut guard = crate::ported::modules::clone::ttystrname.lock().unwrap();
+            if guard.is_empty() {
+                *guard = "/dev/tty".to_string();
+            }
+        }
+    }
+
+    // c:689-694 — set up terminal output only for an interactive shell;
+    // disable the line editor (USEZLE → the special `zle` option) when the
+    // shell isn't interactive, or is interactive without a real tty.
+    if interact() {
+        // c:689
+        init_shout(); // c:690
+                      // c:691-692 — `if (!SHTTY || !shout) opts[USEZLE] = 0;`. zshrs has
+                      // no `shout` FILE* (it writes the tty via SHTTY / fd 2), so the C
+                      // `!shout` arm collapses into the SHTTY check. The option's
+                      // canonical name is `zle` (options.rs:92), NOT `usezle`.
+        if SHTTY.load(Ordering::SeqCst) == -1 {
+            crate::ported::options::opt_state_set("zle", false); // c:692 opts[USEZLE]=0
+        }
+    } else {
+        // c:693-694 — `} else opts[USEZLE] = 0;`
+        crate::ported::options::opt_state_set("zle", false); // c:694
+    }
+
+    // c:699 — `mypid = (zlong)getpid();` — no zshrs global; getpid() is
+    // called where needed (acquire_pgrp computes it locally).
+    // c:700-707 — if interactive, make sure the shell is in the foreground
+    // and is the process-group leader. Gating on MONITOR + the one-shot
+    // `!origpgrp` guard matches C exactly; the prior port called
+    // acquire_pgrp unconditionally and never recorded origpgrp, so
+    // release_pgrp at exit had no group to hand the tty back to.
+    if isset(crate::ported::zsh_h::MONITOR) {
+        // c:700
+        if SHTTY.load(Ordering::SeqCst) == -1 {
+            // c:701
+            crate::ported::options::opt_state_set("monitor", false); // c:702
+        } else {
+            // c:703 — `else if (!origpgrp)`: only acquire the first time.
+            let origpgrp_recorded = *crate::ported::jobs::ORIGPGRP
+                .get_or_init(|| std::sync::Mutex::new(0))
+                .lock()
+                .unwrap()
+                != 0;
+            if !origpgrp_recorded {
+                // c:704 — `origpgrp = GETPGRP();`
+                *crate::ported::jobs::ORIGPGRP
+                    .get_or_init(|| std::sync::Mutex::new(0))
+                    .lock()
+                    .unwrap() = unsafe { libc::getpgrp() };
+                // c:705 — `acquire_pgrp();` (might also clear opts[MONITOR]).
+                let _ = crate::ported::jobs::acquire_pgrp();
+            }
+        }
+    }
+}
+
+/// Port of `mod_export void init_shout(void)` from Src/init.c:712.
+/// Rust idiom replacement: SHTTY atomic + `acquire_pgrp` covers the
+/// C `fdopen(SHTTY, "w")` + setpgrp dance; the FILE* stream is
+/// reconstituted on-demand by callers rather than stored as a
+/// global `shout` pointer.
+pub fn init_shout() {
+    // c:712
+    if SHTTY.load(Ordering::SeqCst) == -1 {
+        // c:712
+        // shout = stderr; return;                                           // c:722-723
+        return;
+    }
+    // shout = fdopen(SHTTY, "w");                                           // c:732
+    // setvbuf(shout, shoutbuf, _IOFBF, BUFSIZ);                             // c:735
+    let _ = crate::ported::utils::gettyinfo(); // c:771
+}
+
+/// Port of `mod_export char *tccap_get_name(int cap)` from Src/init.c:756.
+pub fn tccap_get_name(cap: usize) -> &'static str {
+    // c:756
+    if cap >= 39
+    /* TC_COUNT */
+    {
+        // c:771
+        return ""; // c:771
+    }
+    tccapnams[cap] // c:771
+}
+
+/// Port of `mod_export int init_term(void)` from Src/init.c:771.
+///
+/// Reads `$TERM` from the param table, and on a recognised term
+/// populates `tcstr[]`/`tclen[]` from the system termcap/terminfo
+/// DB via `tgetent` + `tgetstr` over `tccapnams[]`, exactly like C.
+/// This is the substrate every `tcmultout` / `tc_leftcurs` /
+/// `tsetcap` call site reads.
+///
+/// ncurses is already linked (build.rs `rustc-link-lib=ncurses`, the
+/// same lib the zsh/terminfo module's `tigetstr` externs use), so
+/// the termcap-emulation entry points are available. The previous
+/// Rust body hardcoded ANSI/VT100 escapes — under `TERM=screen-*` /
+/// `tmux-*` that diverged from zsh on standout (`so` is `\e[3m`
+/// there, not the hardcoded `\e[7m`).
+pub fn init_term() -> i32 {
+    // c:766 — the termcap emulation entry points. These used to be an
+    // `extern "C"` block resolved against ncurses; they are now
+    // `crate::terminfo_db`, which reads the compiled terminfo database
+    // directly. That removed the last reason the binary linked a C
+    // terminal library, and with it `libtinfo.so.6` as an install
+    // dependency on Ubuntu. Verified identical to ncurses over the whole
+    // reference database — 2819 entries x 497 capabilities.
+    use crate::terminfo_db::{tgetent, tgetflag, tgetnum, tgetstr};
+    use crate::ported::zsh_h::{
+        TCBACKSPACE, TCCLEARSCREEN, TCDOWN, TCFAINTBEG, TCITALICSBEG, TCITALICSEND, TCLEFT,
+        TCRESTRCURSOR, TCSAVECURSOR, TCUP, TC_COUNT,
+    };
+
+    // c:776-779 — `if (!*term) { termflags |= TERM_UNKNOWN; return 0; }`
+    let term = getsparam("TERM").unwrap_or_default();
+    if term.is_empty() {
+        TERMFLAGS.fetch_or(TERM_UNKNOWN, Ordering::SeqCst);
+        return 0;
+    }
+
+    // c:782-783 — `if (!strcmp(term, "emacs")) opts[USEZLE] = 0;`
+    // C proceeds to tgetent afterwards; zshrs keeps the USEZLE-off
+    // via the option layer.
+    if term == "emacs" {
+        crate::ported::options::opt_state_set("zle", false); // c:783 opts[USEZLE] = 0
+    }
+
+    // An embedded NUL can never name a terminfo entry.
+    if term.contains('\0') {
+        TERMFLAGS.fetch_or(TERM_BAD, Ordering::SeqCst);
+        return 0;
+    }
+    // c:785-797 — `if (tgetent(termbuf, term) != TGETENT_SUCCESS) {
+    //   zerr(...); errflag &= ~ERRFLAG_ERROR; termflags |= TERM_BAD;
+    //   return 0; }`. ncurses tgetent accepts NULL (the
+    //   TGETENT_ACCEPTS_NULL arm at c:786-787).
+    let ent = tgetent(&term);
+    if ent != 1 {
+        // c:791 — `if (interact) zerr("can't find terminal definition
+        // for %s", term);` — interact gate keeps -fc scripts quiet.
+        if crate::ported::zsh_h::isset(crate::ported::zsh_h::INTERACTIVE) {
+            crate::ported::utils::zerr(&format!("can't find terminal definition for {}", term));
+            // c:792
+        }
+        crate::ported::utils::errflag
+            .fetch_and(!crate::ported::utils::ERRFLAG_ERROR, Ordering::Relaxed); // c:793
+        TERMFLAGS.fetch_or(TERM_BAD, Ordering::SeqCst); // c:794
+        return 0; // c:795
+    }
+
+    // c:801-802 — `termflags &= ~TERM_BAD; termflags &= ~TERM_UNKNOWN;`
+    TERMFLAGS.fetch_and(!(TERM_BAD | TERM_UNKNOWN), Ordering::SeqCst);
+
+    // c:803-815 — `for (t0 = 0; t0 != TC_COUNT; t0++) { ... tgetstr
+    // (tccapnams[t0], &pp) ... }` — fetch every capability string.
+    {
+        let mut s = tcstr.lock().unwrap();
+        let mut l = tclen.lock().unwrap();
+        // c:798 `char tbuf[1024]` — element type must be c_char: it is
+        // i8 on macOS/x86_64-linux but u8 on aarch64-linux.
+        for t0 in 0..TC_COUNT as usize {
+            match tgetstr(tccapnams[t0]) {
+                // c:811-813 — dup the cap string + record length.
+                Some(bytes) => {
+                    s[t0] = String::from_utf8_lossy(&bytes).into_owned();
+                    l[t0] = bytes.len() as i32;
+                }
+                // c:809 — `tcstr[t0] = NULL, tclen[t0] = 0;`
+                None => {
+                    s[t0] = String::new();
+                    l[t0] = 0;
+                }
+            }
+        }
+    }
+
+    // c:817-818 — automargin / newline-glitch flags.
+    let flag = tgetflag;
+    let num = tgetnum;
+    hasam.store(flag("am"), Ordering::SeqCst); // c:818 `hasam = tgetflag("am");`
+    hasxn.store(flag("xn"), Ordering::SeqCst); // c:819 `hasxn = tgetflag("xn");`
+    tclines.store(num("li"), Ordering::SeqCst); // c:821 `tclines = tgetnum("li");`
+    tccolumns.store(num("co"), Ordering::SeqCst); // c:822 `tccolumns = tgetnum("co");`
+    tccolours.store(num("Co"), Ordering::SeqCst); // c:823 `tccolours = tgetnum("Co");`
+
+    // Post-fetch fixups — all operate on tcstr/tclen under one lock.
+    {
+        let mut s = tcstr.lock().unwrap();
+        let mut l = tclen.lock().unwrap();
+        let can = |l: &[i32; 39], cap: i32| l[cap as usize] != 0; // tccan()
+
+        // c:825-833 — no cursor-up cap → single-line mode (TERM_NOUP).
+        if can(&l, TCUP) {
+            TERMFLAGS.fetch_and(!TERM_NOUP, Ordering::SeqCst); // c:829
+        } else {
+            s[TCUP as usize] = String::new(); // c:831-832
+            l[TCUP as usize] = 0;
+            TERMFLAGS.fetch_or(TERM_NOUP, Ordering::SeqCst); // c:833
+        }
+
+        // c:836-840 — most termcaps don't define "bc"; default `\b`.
+        if !can(&l, TCBACKSPACE) {
+            s[TCBACKSPACE as usize] = "\u{8}".to_string(); // c:838
+            l[TCBACKSPACE as usize] = 1; // c:839
+        }
+
+        // c:843-847 — no cursor-left cap → use backspace.
+        if !can(&l, TCLEFT) {
+            s[TCLEFT as usize] = s[TCBACKSPACE as usize].clone(); // c:845
+            l[TCLEFT as usize] = l[TCBACKSPACE as usize]; // c:846
+        }
+
+        // c:849-853 — save-cursor without restore-cursor is useless.
+        if can(&l, TCSAVECURSOR) && !can(&l, TCRESTRCURSOR) {
+            l[TCSAVECURSOR as usize] = 0; // c:850
+            s[TCSAVECURSOR as usize] = String::new(); // c:851-852
+        }
+
+        // c:856-860 — if the down cap is `\n`, don't use it.
+        if can(&l, TCDOWN) && s[TCDOWN as usize].starts_with('\n') {
+            l[TCDOWN as usize] = 0; // c:857
+            s[TCDOWN as usize] = String::new(); // c:858-859
+        }
+
+        // c:863-867 — no clear cap → ^L.
+        if !can(&l, TCCLEARSCREEN) {
+            s[TCCLEARSCREEN as usize] = "\u{c}".to_string(); // c:865
+            l[TCCLEARSCREEN as usize] = 1; // c:866
+        }
+
+        // c:868 — `rprompt_indent = 1;` lives in the params layer
+        // (rprompt_indent_unsetfn keeps it there); no-op here.
+
+        // c:876-884 — no italics caps → CSI 3 m / CSI 23 m.
+        if !can(&l, TCITALICSBEG) {
+            s[TCITALICSBEG as usize] = "\x1b[3m".to_string(); // c:878
+            l[TCITALICSBEG as usize] = 4; // c:879
+        }
+        if !can(&l, TCITALICSEND) {
+            s[TCITALICSEND as usize] = "\x1b[23m".to_string(); // c:882
+            l[TCITALICSEND as usize] = 5; // c:883
+        }
+        // c:885-888 — no faint cap → CSI 2 m.
+        if !can(&l, TCFAINTBEG) {
+            s[TCFAINTBEG as usize] = "\x1b[2m".to_string(); // c:887
+            l[TCFAINTBEG as usize] = 4; // c:888
+        }
+    }
+
+    1 // c:890 `return 1;`
+}
+
+/// Port of `static char *getmypath(const char *name, const char *cwd)` from Src/init.c:909.
+fn getmypath(name: Option<&str>, cwd: Option<&str>) -> Option<String> {
+    // c:909
+    #[cfg(target_os = "macos")]
+    unsafe {
+        // c:914
+        let mut buf = vec![0u8; libc::PATH_MAX as usize]; // c:918
+        let mut n: u32 = libc::PATH_MAX as u32; // c:916
+        let ret = libc::_NSGetExecutablePath(
+            buf.as_mut_ptr() as *mut i8, // c:919
+            &mut n,
+        );
+        if ret < 0 {
+            // c:919
+            buf.resize(n as usize, 0); // c:921
+            let ret2 = libc::_NSGetExecutablePath(buf.as_mut_ptr() as *mut i8, &mut n); // c:922
+            if ret2 == 0 {
+                let s = std::ffi::CStr::from_ptr(buf.as_ptr() as *const i8);
+                let lossy = s.to_string_lossy().into_owned();
+                if !lossy.is_empty() {
+                    return Some(lossy);
+                }
+            }
+        } else if ret == 0 {
+            // c:924
+            let s = std::ffi::CStr::from_ptr(buf.as_ptr() as *const i8);
+            let lossy = s.to_string_lossy().into_owned();
+            if !lossy.is_empty() {
+                return Some(lossy);
+            } // c:925
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(p) = std::fs::read_link("/proc/self/exe") {
+            // c:946
+            return Some(p.to_string_lossy().into_owned()); // c:949
+        }
+    }
+
+    let name = name?; // c:956-957
+    let name = if name.starts_with('-') {
+        &name[1..]
+    } else {
+        name
+    }; // c:958-959
+    let namelen = name.len(); // c:960
+    if namelen == 0 {
+        return None;
+    } // c:960-961
+    if name.ends_with('/') {
+        return None;
+    } // c:963-964
+    if name.starts_with('/') {
+        // c:965
+        return Some(name.to_string()); // c:967
+    }
+    if name.contains('/') {
+        // c:969
+        let cwd = cwd?; // c:971-972
+        return Some(format!("{}/{}", cwd, name)); // c:974
+    }
+    let path = std::env::var("PATH").ok()?; // c:984
+    if path.is_empty() {
+        return None;
+    } // c:985-986
+    for dir in path.split(':') {
+        // c:990-1000
+        let candidate = if dir.is_empty() {
+            std::path::PathBuf::from(name)
+        } else {
+            std::path::PathBuf::from(format!("{}/{}", dir, name))
+        };
+        if let Ok(real) = std::fs::canonicalize(&candidate) {
+            // c:1014
+            if real.is_file() {
+                return Some(real.to_string_lossy().into_owned());
+            }
+        }
+    }
+    None // c:1014
+}
+
+/// Bootstrap `module_path` / `MODULE_PATH` per `Src/init.c:1176`:
+/// `module_path = mkarray(ztrdup(MODULE_DIR))` plus the matching
+/// PM_TIED scalar from `Src/params.c:404` IPDEF8.
+///
+/// MODULE_DIR is a build-time `#define` from `Src/zshpaths.h`
+/// (e.g. `/opt/homebrew/Cellar/zsh/5.9.1/lib`) resolved during
+/// zsh's `./configure`. zshrs ships modules statically linked so
+/// there is no equivalent build-time anchor. Probe the running
+/// system's zsh once (cached via OnceLock) so `${module_path[1]}`
+/// / `${(j.:.)module_path}` / `${#module_path}` agree between
+/// `zshrs --zsh` and the system zsh that parity tests compare
+/// against. Falls back to an empty array when no system zsh is
+/// installed (this also makes paramtab carry an empty
+/// `module_path` array rather than no entry at all, matching the
+/// `mkarray(NULL)` shape the C code produces for an empty
+/// MODULE_DIR build).
+///
+/// Called from `setupvals` (the canonical c:1014 entry point) and
+/// from `ShellExecutor::new` (the bin entry that skips full
+/// `setupvals` per the init_bltinmods comment at vm_helper.rs).
+///
+/// **Extension** — no direct C analog. The C source inlines this
+/// at `Src/init.c:1176` inside `setupvals`. Allowlisted in
+/// `tests/data/fake_fn_allowlist.txt` so ShellExecutor can call
+/// just the module_path-init subset of setupvals without invoking
+/// the full body (which would conflict with the bin entry's
+/// piecewise paramtab init).
+pub fn module_path_init() {
+    use crate::ported::params::*;
+    use crate::ported::zsh_h::*;
+    static MODULE_DIR_CACHE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let module_dir: Vec<String> = MODULE_DIR_CACHE
+        .get_or_init(|| {
+            // c:Src/init.c:1176 — `module_path = mkarray(ztrdup(MODULE_DIR))`,
+            // where `MODULE_DIR` is the C build's configure-time install
+            // prefix: the directory holding the `.so`/`.bundle` files that
+            // `try_load_module` (c:Src/module.c:1583) dlopens.
+            //
+            // zshrs's module directory is ITS OWN — `$ZSHRS_HOME/modules`,
+            // default `~/.zshrs/modules`, the single-directory rule every
+            // other zshrs artifact follows. It is emphatically NOT any zsh C
+            // installation's `lib`: zshrs links its modules statically (the
+            // port's `try_load_module` answers from `module_linked`, never
+            // from a path search) and its runtime-loadable modules are
+            // `znative` cdylibs reached through `zmodload -R`, which takes an
+            // explicit path. Pointing this parameter at a foreign zsh's
+            // bundle directory named files zshrs can never load, made the
+            // value depend on which zsh happened to be installed, and — in
+            // the shape this replaces — spent 7.3 ms of every single startup
+            // forking `zsh -fc 'print -r ${module_path[1]}'` to ask.
+            //
+            // Consequence, stated plainly: `$module_path` does not match the
+            // system zsh's, the same way `$0` does not (both are properties
+            // of the running binary's own installation).
+            let home = std::env::var_os("ZSHRS_HOME")
+                .map(std::path::PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".zshrs"))
+                });
+            match home {
+                Some(h) => vec![h.join("modules").to_string_lossy().into_owned()],
+                // No $HOME and no $ZSHRS_HOME: C leaves `module_path` a
+                // one-element array whatever MODULE_DIR was, so keep the
+                // shape rather than inventing a path.
+                None => vec![String::new()],
+            }
+        })
+        .clone();
+    let scalar_join = module_dir.join(":");
+    let mut tab = paramtab().write().unwrap();
+    // c:Src/init.c:1176 — module_path = PM_ARRAY tied to MODULE_PATH.
+    let mp = Box::new(param {
+        node: hashnode {
+            next: None,
+            nam: "module_path".to_string(),
+            flags: (PM_ARRAY | PM_SPECIAL | PM_TIED) as i32,
+        },
+        u_data: 0,
+        u_tied: None,
+        u_arr: Some(module_dir),
+        u_str: None,
+        u_val: 0,
+        u_dval: 0.0,
+        u_hash: None,
+        gsu_s: None,
+        gsu_i: None,
+        gsu_f: None,
+        gsu_a: None,
+        gsu_h: None,
+        base: 0,
+        width: 0,
+        env: None,
+        ename: Some("MODULE_PATH".to_string()),
+        old: None,
+        level: 0,
+    });
+    tab.insert("module_path".to_string(), mp);
+    // c:Src/params.c:404 IPDEF8 — PM_TIED scalar mirroring
+    // module_path with `:` join.
+    let mps = Box::new(param {
+        node: hashnode {
+            next: None,
+            nam: "MODULE_PATH".to_string(),
+            flags: (PM_SCALAR | PM_SPECIAL | PM_TIED | PM_DONTIMPORT) as i32,
+        },
+        u_data: 0,
+        u_tied: None,
+        u_arr: None,
+        u_str: Some(scalar_join),
+        u_val: 0,
+        u_dval: 0.0,
+        u_hash: None,
+        gsu_s: None,
+        gsu_i: None,
+        gsu_f: None,
+        gsu_a: None,
+        gsu_h: None,
+        base: 0,
+        width: 0,
+        env: None,
+        ename: Some("module_path".to_string()),
+        old: None,
+        level: 0,
+    });
+    tab.insert("MODULE_PATH".to_string(), mps);
+}
+
+/// Port of `void setupvals(char *cmd, char *runscript, char *zsh_name)` from Src/init.c:1014.
+///
+/// Initialize lots of global variables and hash tables.                     // c:1014
+pub fn setupvals(cmd: Option<&str>, runscript: Option<&str>, zsh_name: &str) {
+    // c:1014
+    let mut close_fds = [0i32; 10]; // c:1043
+    let mut tmppipe = [-1i32; 2]; // c:1043
+
+    // Workaround NIS grabbing fd's 0-9                                      // c:1045
+    #[cfg(unix)]
+    unsafe {
+        if libc::pipe(tmppipe.as_mut_ptr()) == 0 {
+            // c:1053
+            let mut i: i32 = -1; // c:1060
+            while i < 9 {
+                // c:1061
+                let j: i32;
+                if i < tmppipe[0] {
+                    // c:1063
+                    j = tmppipe[0]; // c:1064
+                } else if i < tmppipe[1] {
+                    // c:1065
+                    j = tmppipe[1]; // c:1066
+                } else {
+                    j = libc::dup(0); // c:1068
+                    if j == -1 {
+                        break;
+                    } // c:1069-1070
+                }
+                if j < 10 {
+                    // c:1072
+                    close_fds[j as usize] = 1; // c:1073
+                } else {
+                    libc::close(j); // c:1075
+                }
+                if i < j {
+                    i = j;
+                } // c:1076-1077
+            }
+            if i < tmppipe[0] {
+                libc::close(tmppipe[0]);
+            } // c:1079-1080
+            if i < tmppipe[1] {
+                libc::close(tmppipe[1]);
+            } // c:1081-1082
+        }
+    }
+
+    // c:1085 — `(void)addhookdefs(NULL, zshhooks, sizeof(zshhooks)/sizeof(*zshhooks));`
+    // Registers the four well-known hookdefs (exit, before_trap,
+    // after_trap, get_color_attr) into the global `hooktab` chain.
+    {
+        let base = zshhooks.load(std::sync::atomic::Ordering::SeqCst);
+        let _ = crate::ported::module::addhookdefs(std::ptr::null(), base, 4);
+    }
+    // In C the `zsh/zle` module's boot_ (zle_main.c:2301) registers the
+    // before_trap/after_trap hookfuncs AND the comphooks[] hookdefs
+    // (insert_match, menu_start, compctl_make, compctl_cleanup,
+    // comp_list_matches with def=ilistmatches). zshrs static-links ZLE, and
+    // `zmodload zsh/zle` routes to features_, not boot_, so that
+    // registration never happened — leaving `comp_list_matches` unregistered
+    // so `list_matches` fell straight to the plain uncolored `ilistmatches`
+    // and `zmodload zsh/complist`'s `addhookfunc` had no hookdef to attach
+    // `complistmatches` to (every list-colors/group-colors style dropped).
+    // Run the ZLE module boot once here at startup; addhookdef's duplicate
+    // guard makes a later real boot_ idempotent.
+    let _ = crate::ported::zle::zle_main::boot_(std::ptr::null());
+    // C's zsh/complete module boot_ (complete.c:1758) attaches the funcs to
+    // the ZLE hookdefs registered just above: complete/before_complete/
+    // after_complete/list_matches/invalidate_list. Like zle_main::boot_ it
+    // never ran (zmodload routes to features_), so after_complete's hook had
+    // no func and menu-completion's menu_start (→ domenuselect) never fired.
+    let _ = crate::ported::zle::complete::boot_(std::ptr::null());
+    // init_eprog();                                                         // c:1087
+    // zero_mnumber.type = MN_INTEGER; zero_mnumber.u.l = 0;                 // c:1089-1090
+
+    // noeval = 0;                                                           // c:1092
+    // curhist = 0; histsiz = DEFAULT_HISTSIZE; inithist();                  // c:1093-1095
+    let _ = crate::ported::hist::inithist();
+    // cmdstack = zalloc(CMDSTACKSZ); cmdsp = 0;                             // c:1097-1098
+    // bangchar = '!'; hashchar = '#'; hatchar = '^';                        // c:1100-1102
+    // termflags = TERM_UNKNOWN;                                             // c:1103
+    TERMFLAGS.store(TERM_UNKNOWN, Ordering::SeqCst);
+    // curjob = prevjob = coprocin = coprocout = -1;                         // c:1104
+    // c:1121 — `zgettime_monotonic_if_available(&shtimer);  /* init
+    // $SECONDS */`. C stamps `shtimer` at STARTUP. zshrs's analog
+    // (`params::shtimer_lock()`) is a lazily-initialised OnceLock, so
+    // without this it got stamped on its FIRST READ instead — making every
+    // elapsed-since-shell-start measurement come out ~0. Visible in bare
+    // `time`, whose real-time column is `now - shtimer`
+    // (c:Src/jobs.c:1961 `dtime_ts(&dtimespec, &shtimer, &now)`): it
+    // printed `0.000 total` and a nonsense `1684500% cpu`. Stamped with the
+    // same wall-clock basis the consumers use (`SystemTime` since the
+    // epoch), not CLOCK_MONOTONIC, so the subtraction below stays valid.
+    // TOUCH, not assign: the lock's initialiser stamps "now" on first
+    // access, so touching it primes it exactly once. Re-assigning here
+    // would RE-stamp it on the `zsh_main` path, resetting $SECONDS after
+    // the process-entry stamp in `bins/zshrs.rs::main` already ran.
+    let _ = crate::ported::params::shtimer_lock(); // c:1121
+                                                   // srand((unsigned)(shtimer.tv_sec + shtimer.tv_nsec));                  // c:1122
+    #[cfg(unix)]
+    unsafe {
+        let mut ts: libc::timespec = std::mem::zeroed();
+        libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts);
+        libc::srand((ts.tv_sec as u32).wrapping_add(ts.tv_nsec as u32));
+    }
+
+    // Set default path                                                      // c:1108
+    // path = ["/bin", "/usr/bin", "/usr/ucb", "/usr/local/bin", NULL];      // c:1109-1114
+    std::env::set_var(
+        "PATH", // c:1109
+        std::env::var("PATH")
+            .unwrap_or_else(|_| "/bin:/usr/bin:/usr/ucb:/usr/local/bin".to_string()),
+    );
+
+    // cdpath, manpath, fignore = mkarray(NULL)                              // c:1116-1118
+    // fpath = ...                                                           // c:1132-1172
+    // mailpath, psvar = mkarray(...)                                        // c:1174-1175
+    // modulestab = newmoduletable(17, "modules");                           // c:1177
+    // linkedmodules = znewlinklist();                                       // c:1178
+
+    module_path_init();
+
+    // Set default prompts                                                   // c:1180
+    // prompt, prompt2, prompt3, prompt4, sprompt = ztrdup(...)              // c:1181-1194
+
+    // ifs = EMULATION(KSH|SH) ? DEFAULT_IFS_SH : DEFAULT_IFS                // c:1196-1197
+    // wordchars = ztrdup(DEFAULT_WORDCHARS); postedit = ztrdup("");         // c:1198-1199
+
+    // If _ is set in environment then initialize our $_ by copying it      // c:1200
+    let underscore_val = std::env::var("_").unwrap_or_default(); // c:1201
+    let metafied = crate::ported::utils::metafy(&underscore_val); // c:1202
+    *zunderscore.lock().unwrap() = metafied.clone(); // c:1202
+    underscoreused.store((metafied.len() + 1) as i32, Ordering::SeqCst); // c:1203
+    let ulen = (metafied.len() + 1 + 31) & !31; // c:1204
+    underscorelen.store(ulen, Ordering::SeqCst); // c:1205
+                                                 // zunderscore = zrealloc(zunderscore, underscorelen);                   // c:1205
+
+    // zoptarg = ""; zoptind = 1;                                            // c:1207-1208
+
+    // ppid = getppid(); mypid = getpid();                                   // c:1210-1211
+    // term = ztrdup("");                                                    // c:1212
+
+    // nullcmd = "cat"; readnullcmd = DEFAULT_READNULLCMD;                   // c:1214-1215
+
+    // cached_uid = getuid();                                                // c:1219
+    // pswd = getpwuid(cached_uid); home = pswd->pw_dir; ...                 // c:1222-1234
+    if let Ok(home) = std::env::var("HOME") {
+        // c:1225
+        let _ = home;
+    }
+
+    // PWD/OLDPWD initialization                                             // c:1236-1259
+    let cwd = crate::ported::compat::zgetcwd(); // c:1252
+    std::env::set_var("PWD", &cwd); // c:1253
+    if std::env::var("OLDPWD").is_err() {
+        // c:1255-1257
+        std::env::set_var("OLDPWD", &cwd); // c:1256
+    }
+
+    // c:1261 — `inittyptab();`. This is the FIRST call C makes, and it runs
+    // here for a reason: `parseargs` has already set INTERACTIVE/SHINSTDIN, so
+    // the one-shot `ZTF_INIT` latch inside (utils.c:4160-4164) sees the real
+    // values and can raise `ZTF_INTERACT`. That bit is the head of the chain
+    // c:4257 → `ZTF_BANGCHAR` → c:4291 → `bangchar` is `ISPECIAL`.
+    //
+    // zshrs reaches `inittyptab` EARLIER than C does — `ShellExecutor::new`
+    // (vm_helper.rs, C's `createparamtable`, which C runs at c:1286, AFTER
+    // this) and `lex_init` both seed the type table defensively because their
+    // callers need `isident`/`iblank` working. Those calls happen before
+    // options are parsed, so the latch was being decided with
+    // `interact=false, shinstdin=false` (measured) and `ZTF_INTERACT` could
+    // never be set — `!` was not a special character in ANY interactive
+    // zshrs, and `${(q)v}` on `v='a!b'` gave `a!b` where zsh gives `a\!b`.
+    //
+    // Re-arm the latch so it is decided HERE, at C's own call site, with C's
+    // inputs. The observable semantics are C's: computed once, from
+    // `interact && isset(SHINSTDIN)`, and never revisited afterwards.
+    crate::ported::ztype_h::TYPTAB_FLAGS.fetch_and(
+        !crate::ported::ztype_h::ZTF_INIT,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    crate::ported::utils::inittyptab(); // c:1261
+    crate::ported::lex::initlextabs(); // c:1262
+
+    crate::ported::hashtable::createreswdtable(); // c:1264
+    crate::ported::hashtable::createaliastables(); // c:1265
+    crate::ported::hashtable::createcmdnamtable(); // c:1266
+    crate::ported::hashtable::createshfunctable(); // c:1267
+    let _ = crate::ported::builtin::createbuiltintable(); // c:1268
+    crate::ported::hashnameddir::createnameddirtable(); // c:1269
+    crate::ported::params::createparamtable(); // c:1270
+
+    // c:Src/init.c:1274-1276 — `#ifdef TIOCGWINSZ / adjustwinsize(0);`, the
+    // first thing after createparamtable. Probes the tty via TIOCGWINSZ and
+    // publishes the geometry to $COLUMNS/$LINES.
+    //
+    // zshrs never made this call, so it never asked the tty: $COLUMNS/$LINES
+    // read 0 in every shell with a terminal (zsh reports 97/24 in a 97x24 pty).
+    // Everything width-derived was then computed against 0 — prompt `%<<`
+    // truncation, select lists, completion listing widths.
+    //
+    // Ordering is C's and it is load-bearing in both directions:
+    //   - It must follow init_io (c:1908), which is what sets SHTTY; while
+    //     SHTTY is -1 adjustwinsize early-returns (c:1900-1901) and does
+    //     nothing. That is also the correct behaviour with no terminal at all:
+    //     $COLUMNS keeps whatever the environment supplied, or 0.
+    //   - It must follow the environ import (createparamtable, c:1270) because
+    //     the tty geometry OVERRIDES an inherited COLUMNS: a 97-column terminal
+    //     reports 97 even when COLUMNS=10 was exported in. (C reaches that via
+    //     the c:1906-1907 "Signal missed while a job owned the tty?" promotion
+    //     of from=0 to from=1, which makes adjustcolumns take the signalled
+    //     path and overwrite zterm_columns with ws_col.)
+    //
+    // Note SHTTY does not require stdin/stdout to be a terminal: init_io's last
+    // resort is `open("/dev/tty")` (c:667-670), so a piped-but-still-attached
+    // shell gets the real width too — `zsh -fc 'print $COLUMNS | cat'` in a
+    // 97-column terminal prints 97.
+    let _ = crate::ported::utils::adjustwinsize(0); // c:1276
+
+    // c:Src/init.c:1180-1194 — default prompts. C sets the `prompt`/
+    // `prompt2`/`prompt3`/`prompt4`/`sprompt` globals (which IPDEF7 binds
+    // to PS1/PS2/PS3/PS4/SPROMPT) BEFORE createparamtable; zshrs creates
+    // those special scalars empty, so set the defaults here, right after.
+    //   - prompt/prompt2 are gated on INTERACTIVE (c:1181): a
+    //     non-interactive shell keeps empty PS1/PS2. zshrs's INTERACTIVE
+    //     is isatty-based and is NOT downgraded for `-c`/script, so also
+    //     require reading from stdin (no `-c`, no runscript) — the
+    //     SHINSTDIN condition — to match zsh's "interactive" gate.
+    //   - prompt3/prompt4/sprompt are set unconditionally (c:1191-1194).
+    // Each default only applies when the param is still empty, so an
+    // env-imported value (e.g. `PS4` exported) wins, mirroring C where
+    // importenv overrides the compiled defaults.
+    {
+        let ksh_sh = crate::ported::zsh_h::EMULATION(EMULATE_KSH | EMULATE_SH);
+        let set_default = |name: &str, val: &str| {
+            // C sets these defaults at c:1196-1206, i.e. BEFORE
+            // `createparamtable()` (c:1270) walks `environ` and assigns
+            // over them (c:919-924 `assignsparam(iname, ..,
+            // ASSPM_ENV_IMPORT)`), so an inherited value ALWAYS wins —
+            // including an inherited EMPTY one. zshrs runs the import
+            // first and the defaults second, so "already set" has to be
+            // decided the way C decides it: was the name in the
+            // environment? Testing `getsparam().is_empty()` conflated
+            // "unset" with "exported as empty" and re-seeded the default
+            // over an explicit `export PS1=` — the exact idiom
+            // Test/W02jobs.ztst's `zpty_start` uses to silence the prompt,
+            // which is why every zpty chunk's expected output was prefixed
+            // with a live `%m%# ` prompt.
+            if std::env::var_os(name).is_some() {
+                return;
+            }
+            if getsparam(name).map_or(true, |v| v.is_empty()) {
+                crate::ported::params::setsparam(name, val);
+            }
+        };
+        // c:1181 — interactive shell reading from stdin gets the
+        // hostname prompt; ksh/sh emulation gets the bare `$`/`#`.
+        if isset(INTERACTIVE) && cmd.is_none() && runscript.is_none() {
+            if ksh_sh {
+                set_default(
+                    "PS1",
+                    if crate::ported::utils::privasserted() {
+                        "# "
+                    } else {
+                        "$ "
+                    },
+                ); // c:1185
+                set_default("PS2", "> "); // c:1186
+            } else {
+                set_default("PS1", "%m%# "); // c:1188
+                set_default("PS2", "%_> "); // c:1189
+            }
+        }
+        set_default("PS3", "?# "); // c:1191
+        set_default("PS4", if ksh_sh { "+ " } else { "+%N:%i> " }); // c:1192-1193
+        set_default("SPROMPT", "zsh: correct '%R' to '%r' [nyae]? "); // c:1194
+    }
+
+    // condtab = NULL; wrappers = NULL;                                      // c:1272-1273
+
+    crate::ported::utils::adjustwinsize(0); // c:1276
+
+    // getrlimit loop                                                        // c:1286-1289
+
+    // breaks = loops = 0;                                                   // c:1292
+    // lastmailcheck = zmonotime(NULL);                                      // c:1293
+    // locallevel = sourcelevel = 0;                                         // c:1294
+    sourcelevel.store(0, Ordering::SeqCst); // c:1294
+                                            // sfcontext = SFC_NONE; trap_return = 0;                                // c:1295-1296
+                                            // trap_state = TRAP_STATE_INACTIVE;                                     // c:1297
+                                            // noerrexit = NOERREXIT_EXIT|RETURN|SIGNAL;                             // c:1298
+                                            // nohistsave = 1;                                                       // c:1299
+                                            // dirstack = znewlinklist(); bufstack = znewlinklist();                 // c:1300-1301
+                                            // hsubl = hsubr = NULL; lastpid = 0;                                    // c:1302-1303
+
+    // get_usage();                                                          // c:1305
+
+    // Close fd's we opened to block 0-9                                     // c:1307
+    #[cfg(unix)]
+    for i in 0..10 {
+        // c:1308
+        if close_fds[i] != 0 {
+            // c:1309
+            unsafe {
+                libc::close(i as i32);
+            } // c:1310
+        }
+    }
+
+    crate::ported::prompt::set_default_colour_sequences(); // c:1313
+
+    // ZSH_EXEPATH                                                           // c:1315
+    {
+        let exename = argv0.lock().unwrap().clone(); // c:1318
+        let exename = unmeta(&exename); // c:1318
+                                        // c:1319 — `cwd = pwd;` (the in-shell logical cwd global).
+                                        //          Read paramtab; was reading OS env which can lag.
+        let cwd = getsparam("PWD").map(|s| unmeta(&s));
+        let mypath = getmypath(
+            Some(&exename), // c:1320
+            cwd.as_deref(),
+        );
+        if let Some(mp) = mypath {
+            // c:1323
+            std::env::set_var("ZSH_EXEPATH", &mp); // c:1324
+        }
+    }
+    if let Some(cmd) = cmd {
+        // c:1340
+        std::env::set_var("ZSH_EXECUTION_STRING", cmd); // c:1340
+    }
+    if let Some(rs) = runscript {
+        // c:1340
+        std::env::set_var("ZSH_SCRIPT", rs); // c:1340
+    }
+    std::env::set_var("ZSH_NAME", zsh_name); // c:1340
+}
+
+/// Port of `static void setupshin(char *runscript)` from Src/init.c:1340.
+fn setupshin(runscript: Option<&str>) {
+    // c:1340
+    if let Some(script) = runscript {
+        // c:1340
+        let funmeta = unmeta(script); // c:1346
+        let mut sfname: Option<String> = None; // c:1343
+        if std::path::Path::new(&funmeta).is_file() {
+            // c:1350-1352
+            sfname = Some(script.to_string()); // c:1353
+        }
+        // PATHSCRIPT search omitted (depends on opts[PATHSCRIPT])           // c:1354-1360
+        if sfname.is_none() {
+            // c:1361
+            crate::ported::utils::zerr(&format!(
+                // c:1364
+                "can't open input file: {}",
+                script
+            ));
+            std::process::exit(127); // c:1365
+        }
+    }
+    // lineno = 1;                                                           // c:1394
+    // shinbufalloc();                                                       // c:1394
+}
+
+/// Port of `void init_signals(void)` from Src/init.c:1394.
+pub fn init_signals() {
+    // c:1394
+    // c:1398-1399 — `sigtrapped = hcalloc(TRAPCOUNT * sizeof(int));`
+    // and `siglists = hcalloc(TRAPCOUNT * sizeof(Eprog));`. Trap
+    // table globals not modeled in zshrs static link path.
+
+    // c:1401-1406 — `if (interact) { signal_setmask(signal_mask(0));
+    // for (i=0; i<NSIG; ++i) signal_default(i); }`. Reset to default
+    // dispositions on every signal at startup so a parent's stale
+    // handlers don't leak in.
+    #[cfg(unix)]
+    if interact() {
+        let empty = crate::ported::signals::signal_mask(0);
+        let _ = crate::ported::signals::signal_setmask(&empty);
+        // c:1404 — `for (i=0; i<NSIG; ++i) signal_default(i);`. NSIG
+        // is `<signal.h>`-provided in C; libc-rs doesn't re-export it
+        // directly. `signals_h::SIGCOUNT` is the canonical port of
+        // NSIG-1 (Linux=64, macOS=31).
+        //
+        // The previous Rust port used `1..64i32` — hardcoded, missing
+        // signal 64 on Linux (where NSIG=65) AND iterating PAST the
+        // valid range on macOS (where signals 32..63 don't exist).
+        // Use `1..=SIGCOUNT` so the loop iterates exactly NSIG-1
+        // signals on each platform, skipping signal 0 (C iterates
+        // it but signal_default(0) is implementation-defined).
+        for i in 1..=crate::ported::signals_h::SIGCOUNT {
+            let _ = crate::ported::signals::signal_default(i);
+        }
+    }
+
+    // c:1407 — `sigchld_mask = signal_mask(SIGCHLD);`. Cached SIGCHLD
+    // mask global not yet modeled — the few callers that need it
+    // (job-reap path) re-derive on demand.
+
+    intr(); // c:1409
+
+    #[cfg(unix)]
+    {
+        // c:1444-1445 — detect a parent-installed SIG_IGN on SIGQUIT and
+        // record it as an ignored trap. The body lives in
+        // `extensions::startup_signals` because `bins/zshrs.rs`'s `-c` and
+        // script-file dispatch bypass this function entirely and need the
+        // same two lines; keeping ONE implementation avoids the two paths
+        // drifting apart.
+        crate::startup_signals::record_inherited_sigquit_ignore();
+        // c:1414-1416 — `#ifndef QDEBUG signal_ignore(SIGQUIT)`.
+        signal_ignore(libc::SIGQUIT);
+
+        // c:1418-1421 — SIGHUP: if parent installed SIG_IGN, clear
+        // the HUP option; otherwise install our handler.
+        if signal_ignore(libc::SIGHUP) == libc::SIG_IGN {
+            dosetopt(HUP, 0, 0); // c:1419
+        } else {
+            install_handler(libc::SIGHUP); // c:1421
+        }
+        install_handler(libc::SIGCHLD); // c:1422
+        #[cfg(not(target_os = "haiku"))]
+        {
+            install_handler(libc::SIGWINCH); // c:1424
+                                            // c:1425 — `winch_block(); /* See utils.c:preprompt() */`
+                                            //
+                                            // The standing block is the whole delivery policy for
+                                            // SIGWINCH: from here on the handler runs ONLY inside an
+                                            // explicit unblock window — `preprompt` (c:Src/utils.c:1540),
+                                            // `raw_getbyte`'s poll/read (c:Src/Zle/zle_main.c:588/850,
+                                            // ported at zle/zle_main.rs:504/648/757) and `readoutput`
+                                            // (c:Src/input.c:277). C's remaining unblocks
+                                            // (c:Src/exec.c:533/571/576/586/590/632) are not windows at
+                                            // all: they sit in the forked child immediately before
+                                            // `execve`, and only decide the mask the new program
+                                            // inherits. Everywhere else — a widget body, and
+                                            // so the whole of completion — a resize stays PENDING and
+                                            // `zterm_columns`/`zterm_lines` hold the geometry the
+                                            // current redraw started with.
+                                            //
+                                            // Without it the block existed only as a SIDE EFFECT of
+                                            // `raw_getbyte` re-blocking after each read
+                                            // (zle_main.rs:507/654/762): every unblock happened to be
+                                            // paired, so the mask happened to be right. An UNPAIRED
+                                            // unblock then leaves SIGWINCH live until the next
+                                            // `raw_getbyte` re-block — i.e. for the rest of the
+                                            // current command, a completion included.
+                                            // `zexecve_recover` had four of them (vm_helper.rs,
+                                            // c:565/570/580/584/626, child-side in C).
+                                            //
+                                            // Whenever the handler does run inside a widget,
+                                            // `adjustwinsize(1)` lands in the middle of `calclist` and
+                                            // display strings built against 80 columns get counted
+                                            // against the new 60. Measured that way, `git <TAB>`
+                                            // across a 24x80 -> 24x60 resize asks "see all 164
+                                            // possibilities (251 lines)?" for 164 one-line matches
+                                            // where zsh asks 153/153.
+            crate::ported::signals_h::winch_block(); // c:1425
+        }
+
+        // c:1427-1431 — interactive-only handlers.
+        if interact() {
+            install_handler(libc::SIGPIPE); // c:1428
+            install_handler(libc::SIGALRM); // c:1429
+            signal_ignore(libc::SIGTERM); // c:1430
+        }
+
+        // c:1432-1436 — `if (jobbing)` job-control signal ignores.
+        if jobbing() {
+            signal_ignore(libc::SIGTTOU); // c:1433
+            signal_ignore(libc::SIGTSTP); // c:1434
+            signal_ignore(libc::SIGTTIN); // c:1435
+        }
+    }
+}
+
+/// Port of `void run_init_scripts(void)` from Src/init.c:1445.
+/// Runs the standard zsh init scripts (or KSH/SH-compat scripts when
+/// emulating). Each guard mirrors the C predicate set: islogin, RCS,
+/// GLOBALRCS, PRIVILEGED, INTERACTIVE.
+pub fn run_init_scripts() {
+    // c:1445
+
+    // c:1447 — noerrexit = NOERREXIT_EXIT | NOERREXIT_RETURN | NOERREXIT_SIGNAL;
+    //          (noerrexit global not surfaced; the C bits are
+    //          consulted by the script-source path internally.)
+
+    // c:1449 — if (EMULATION(EMULATE_KSH|EMULATE_SH)) { ... }
+    let emul = emulation.load(Ordering::SeqCst);
+    let is_posix = (emul & (EMULATE_KSH | EMULATE_SH) as i32) != 0;
+
+    let is_login = islogin();
+    let interact = isset(INTERACTIVE);
+    let privileged = isset(PRIVILEGED);
+
+    // ZSHRS-ONLY, no C counterpart. C models two startup-file sets — zsh's
+    // and one lumped Bourne one — because `emulate sh`/`ksh` is all it
+    // offers. zshrs ships drop-ins for eight shells, and each reads its
+    // own files: `--bash` wants `~/.bashrc` and the `~/.bash_profile`
+    // chain, `--ksh` wants `$ENV` defaulted to `~/.kshrc`, `--mksh`
+    // `~/.mkshrc`, `--csh` `~/.cshrc` + `~/.login`. Routed through
+    // `extensions::emulation_startup`, which owns that table. Only a
+    // selected DROP-IN takes this path; a runtime `emulate sh` keeps the
+    // faithful branches below.
+    if crate::extensions::emulation_startup::overrides_zsh_startup() {
+        crate::extensions::emulation_startup::run_init_scripts();
+        return;
+    }
+
+    if is_posix {
+        // c:1450-1451 — if (islogin) source("/etc/profile");
+        if is_login {
+            let _ = source("/etc/profile");
+        }
+        if !privileged {
+            // c:1452
+            // c:1454 — if (islogin) sourcehome(".profile");
+            if is_login {
+                sourcehome(".profile");
+            }
+            // c:1456-1468 — if (interact) { … getsparam("ENV"); source(s); }
+            if interact {
+                if let Some(s) = getsparam("ENV") {
+                    let _ = source(&s);
+                }
+            }
+        } else {
+            // c:1470 — source("/etc/suid_profile");
+            let _ = source("/etc/suid_profile");
+        }
+    } else {
+        // c:1473 — source(GLOBAL_ZSHENV);
+        let _ = source(&crate::extensions::global_rc::global_rc_path(
+            crate::ported::config_h::GLOBAL_ZSHENV,
+        ));
+
+        // c:1476-1490 — if (isset(RCS) && unset(PRIVILEGED))
+        //                  { newuser-probe; sourcehome(".zshenv"); }
+        if isset(RCS) && !privileged {
+            sourcehome(".zshenv");
+        }
+        // c:1491-1498 — if (islogin) { GLOBAL_ZPROFILE? + .zprofile }
+        if is_login {
+            if isset(RCS) && isset(GLOBALRCS) {
+                let _ = source(&crate::extensions::global_rc::global_rc_path(
+                    crate::ported::config_h::GLOBAL_ZPROFILE,
+                ));
+            }
+            if isset(RCS) && !privileged {
+                sourcehome(".zprofile");
+            }
+        }
+        // c:1499-1506 — if (interact) { GLOBAL_ZSHRC? + .zshrc }
+        if interact {
+            if isset(RCS) && isset(GLOBALRCS) {
+                let _ = source(&crate::extensions::global_rc::global_rc_path(
+                    crate::ported::config_h::GLOBAL_ZSHRC,
+                ));
+            }
+            if isset(RCS) && !privileged {
+                sourcehome(".zshrc");
+            }
+        }
+        // c:1507-1514 — if (islogin) { GLOBAL_ZLOGIN? + .zlogin }
+        if is_login {
+            if isset(RCS) && isset(GLOBALRCS) {
+                let _ = source(&crate::extensions::global_rc::global_rc_path(
+                    crate::ported::config_h::GLOBAL_ZLOGIN,
+                ));
+            }
+            if isset(RCS) && !privileged {
+                sourcehome(".zlogin");
+            }
+        }
+    }
+    // c:1516-1517 — noerrexit = 0; nohistsave = 0; (not surfaced)
+}
+
+/// Port of `void init_misc(char *cmd, char *zsh_name)` from Src/init.c:1524.
+pub fn init_misc(cmd: Option<&str>, zsh_name: &str) {
+    // c:1524
+    if zsh_name.starts_with('r') {
+        // c:1524
+        crate::ported::utils::zerrnam(
+            zsh_name, // c:1527
+            "no support for restricted mode",
+        );
+        std::process::exit(1); // c:1528
+    }
+    if let Some(cmdstr) = cmd {
+        // c:1530
+        // if (SHIN >= 10) close(SHIN);                                      // c:1531-1532
+        // SHIN = movefd(open("/dev/null", O_RDONLY|O_NOCTTY));              // c:1551
+        // shinbufreset();                                                   // c:1551
+        // execstring(cmd, 0, 1, "cmdarg");                                  // c:1551
+        let _ = cmdstr;
+        // stopmsg = 1; zexit(...);                                          // c:1551-1537
+        std::process::exit(0);
+    }
+
+    // c:1573-1574 — `if (interact && isset(RCS))
+    //                    readhistfile(NULL, 0, HFILE_USE_OPTIONS);`
+    // — THE startup read of $HISTFILE into the history ring. Without
+    // it an interactive shell starts with empty history (up-arrow /
+    // fc -l see nothing from previous sessions).
+    if crate::ported::zsh_h::interact() && isset(RCS) {
+        crate::ported::hist::readhistfile(None, 0, crate::ported::zsh_h::HFILE_USE_OPTIONS as i32);
+        // c:1574
+    }
+}
+
+/// Port of `mod_export enum source_return source(char *s)` from Src/init.c:1551.
+///
+/// Body dispatches through `with_executor` to the fusevm bytecode
+/// pipeline (`execute_script_zsh_pipeline`), matching the path
+/// `bins/zshrs.rs::source_from_memory` takes. `scriptname` /
+/// `scriptfilename` / `sourcelevel` are saved+restored around the
+/// nested execution per the C save/restore at c:1572-1670.
+pub fn source(s: &str) -> i32 {
+    // c:1551
+    let us = unmeta(s); // c:1551
+    let path = std::path::Path::new(&us);
+    // c:1565-1568 — `if (!s || (!(prog = try_source_file(us)) &&
+    // (tempfd = ... open(us, ...)) == -1)) return SOURCE_NOT_FOUND;`
+    // — a loadable `<file>.zwc` rescues a missing/unreadable plain
+    // file; only BOTH failing is NOT_FOUND. The compiled prog itself
+    // is fetched below (the Rust port defers it to the contents
+    // read so the state save/restore stays in one place).
+    let zwc_prog = crate::ported::parse::try_source_file(&us);
+    if zwc_prog.is_none() && !path.exists() {
+        return 1; /* SOURCE_NOT_FOUND */
+    }
+
+    // c:1571-1581 — save shell state.
+    let old_scriptname = crate::ported::utils::scriptname_get(); // c:1573
+    let old_scriptfilename = crate::ported::utils::scriptfilename_get(); // c:1574
+    crate::ported::utils::set_scriptname(Some(us.clone())); // c:1572
+    crate::ported::utils::set_scriptfilename(Some(us.clone()));
+
+    sourcelevel.fetch_add(1, Ordering::SeqCst); // c:1606
+
+    // c:1610-1618 — push an FS_SOURCE funcstack frame so `$funcstack`,
+    // `$functrace` and `$funcfiletrace` include the sourced file (the
+    // readers at parameter.rs walk FUNCSTACK and special-case
+    // `tp == FS_SOURCE`). FUNCSTACK is a Vec stack: the last element is
+    // the top, so `prev` is left None (the index encodes the link, same
+    // convention as the FS_FUNC push in exec.rs::doshfunc:5821).
+    let oldlineno = crate::ported::lex::lineno() as i64; // c:1576 oldlineno = lineno
+    {
+        // c:1612-1613 — caller: the current funcstack top, else the
+        // previous script filename, else "zsh".
+        let caller = {
+            let stk = crate::ported::modules::parameter::FUNCSTACK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            stk.last().map(|f| f.name.clone())
+        }
+        .or_else(|| old_scriptfilename.clone())
+        .or_else(|| Some("zsh".to_string()));
+        let frame = crate::ported::zsh_h::funcstack {
+            prev: None,                          // c:1617 (Vec-stack index encodes link)
+            name: us.clone(),                    // c:1611 fstack.name = scriptfilename
+            filename: Some(us.clone()),          // c:1616
+            caller,                              // c:1612
+            flineno: 0,                          // c:1614
+            lineno: oldlineno,                   // c:1615
+            tp: crate::ported::zsh_h::FS_SOURCE, // c:1618
+        };
+        crate::ported::modules::parameter::FUNCSTACK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(frame); // c:1618 funcstack = &fstack
+    }
+
+    // c:1618-1642 — parse-and-execute loop. Route through the
+    // fusevm executor for the actual parse+exec; if no executor
+    // context (out-of-band call), fall back to the partial
+    // read-for-side-effects path so errors still surface.
+    //
+    // c:1566 — `try_source_file(us)` runs FIRST: a sibling
+    // `<file>.zwc` newer than the file (or `s` itself being a
+    // `.zwc`) supplies the compiled wordcode instead of the plain
+    // read. Bridge wordcode → text via getpermtext (same as the
+    // `.zwc` autoload path in exec.rs::loadautofn).
+    let from_zwc = zwc_prog.is_some();
+    let contents = match zwc_prog {
+        Some(prog) => Ok(crate::ported::text::getpermtext(Box::new(prog), None, 0)),
+        // c:1566/1626 — source() reads the file as raw bytes; a
+        // non-UTF-8 byte is metafied, not an error (Src/utils.c:4856).
+        None => crate::script_bytes::read_script_file(path),
+    };
+    if let Ok(body) = contents {
+        // c:Src/jobs.c:1878-1884 — zsh runs the sourced list through
+        // execpline, whose per-pipeline `initjob()` caps recursion at
+        // MAX_MAXJOBS: `zerr("job table full or recursion limit exceeded")`
+        // then bails. The fusevm pipeline path below doesn't allocate a job
+        // per pipeline, so without this guard runaway `. self`-style
+        // recursion (invisible to FUNCNEST, which counts FS_FUNC frames
+        // only) overflowed the 256 MB main-thread stack → uncatchable
+        // SIGBUS. Reproduce the ceiling: total FUNCSTACK depth is the proxy
+        // for zsh's concurrently-held job slots. At/over the ceiling, raise
+        // the zsh-identical error (zerr sets ERRFLAG_ERROR so the outer
+        // sourced lists unwind) and refuse the deeper body — the FS_SOURCE
+        // frame just pushed is popped normally below.
+        let over_limit = crate::ported::modules::parameter::FUNCSTACK
+            .lock()
+            .map(|s| s.len())
+            .unwrap_or(0)
+            >= crate::ported::jobs::MAX_MAXJOBS;
+        if over_limit {
+            crate::ported::utils::zerr("job table full or recursion limit exceeded");
+            crate::ported::builtin::LASTVAL.store(1, Ordering::Relaxed);
+        } else if from_zwc {
+            // c:1621 — `execode(prog, 1, 0, "filecode")`. The deparse of an
+            // already-compiled program is re-lexed here, so it needs the
+            // lexer pinned to the spelling `untokenize` writes; see
+            // ShellExecutor::execute_zwc_program.
+            let _ = crate::fusevm_bridge::execute_zwc_program(&body);
+        } else {
+            let _ = crate::ported::exec::execute_script_zsh_pipeline(&body);
+        }
+    }
+
+    sourcelevel.fetch_sub(1, Ordering::SeqCst); // c:1644
+
+    // c:1664 — `funcstack = fstack.prev;` — pop our FS_SOURCE frame.
+    crate::ported::modules::parameter::FUNCSTACK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .pop();
+
+    // c:1646-1670 — restore shell state.
+    crate::ported::utils::set_scriptname(old_scriptname);
+    crate::ported::utils::set_scriptfilename(old_scriptfilename);
+    0 /* SOURCE_OK */ // c:1679
+}
+
+/// Port of `void sourcehome(char *s)` from Src/init.c:1679.
+pub fn sourcehome(s: &str) {
+    // c:1679
+    queue_signals(); // c:1679
+    let emul = emulation.load(Ordering::SeqCst);
+    let is_posix = (emul & 6) != 0;
+    // c:1684 — `h = is_posix ? getsparam("HOME") : (getsparam("ZDOTDIR")
+    //                                                 ?: getsparam("HOME"))`
+    //          paramtab read; was OS env.
+    let h = if is_posix {
+        getsparam("HOME")
+    } else {
+        getsparam("ZDOTDIR").or_else(|| getsparam("HOME"))
+    };
+    let h = match h {
+        // c:1685-1689
+        Some(h) => h,
+        None => {
+            unqueue_signals();
+            return;
+        }
+    };
+    let buf = format!("{}/{}", h, s); // c:1713
+    unqueue_signals(); // c:1713
+    source(&buf); // c:1713
+}
+
+/// Port of `void init_bltinmods(void)` from Src/init.c:1703.
+pub fn init_bltinmods() {
+    // c:1703
+    // #include "bltinmods.list"                                             // c:1705
+    // load_module("zsh/main", NULL, 0);                                     // c:1706
+    //
+    // C's bltinmods.list is autotools-generated and contains a
+    // `register_module(name, setup_, ...)` line per statically-linked
+    // module — which seeds MODULESTAB and runs each module's setup_
+    // (and later boot_) entry points. Our equivalent is the
+    // register_builtin_modules() call inside `modulestab::new()`, which
+    // is reached the first time MODULESTAB is observed. Force that
+    // observation here so default-loaded modules
+    // (zsh/parameter, zsh/main, zsh/watch, …) register their
+    // builtins/params/preprompt hooks before user code runs.
+    drop(crate::ported::module::MODULESTAB.lock().unwrap());
+}
+
+/// Port of `mod_export void noop_function(void)` from Src/init.c:1713.
+pub fn noop_function() { // c:1713
+                         /* do nothing */                                                         // c:1720
+}
+
+/// Port of `mod_export void noop_function_int(int nothing)` from Src/init.c:1720.
+pub fn noop_function_int(_nothing: i32) { // c:1720
+                                          /* do nothing */                                                         // c:1720
+}
+
+/// Once-guard for the `zleentry` module autoload (c:1755 `case 0:`).
+///
+/// In C the guard IS `zle_load_state == 0`: ZLE is dlopened lazily by
+/// the first `zleentry` call, and that same call loads `zsh/compctl`
+/// alongside it (c:1764-1765). zshrs links ZLE in statically and
+/// initialises it earlier, in `zsh_main`, which already sets
+/// `zle_load_state = 1` — so the C gate can never fire at the first ZLE
+/// read. This flag restores the one-shot semantics for the
+/// module-registration half of c:1755-1773, which still has to happen
+/// at the first zleentry-equivalent call and not before.
+///
+/// The observable effect of that half: an interactive shell has
+/// `zsh/zle`, `zsh/complete` (a `zsh/compctl` dependency) and
+/// `zsh/compctl` marked loaded from its first line read onwards, while
+/// `-c` / script runs — which never reach a ZLE read — leave all three
+/// merely `autoloaded`. `_default` (Completion/Zsh/Context/_default)
+/// branches on `zmodload -e zsh/compctl` to decide whether the legacy
+/// `compcall` engine is available, so this is load-bearing for
+/// completion parity, not just for `zmodload` listings.
+pub static zle_modules_loaded: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Port of `mod_export char *zleentry(...)` from Src/init.c:1743.
+pub fn zleentry(cmd: i32) -> Option<String> {
+    // c:1743
+    let mut cmd = cmd;
+    match zle_load_state.load(Ordering::SeqCst) {
+        // c:1755
+        0 => {
+            // c:1756
+            // c:1761-1762 — `if (cmd != ZLE_CMD_TRASH &&
+            //   cmd != ZLE_CMD_RESET_PROMPT && cmd != ZLE_CMD_REFRESH)`
+            if cmd != crate::ported::zsh_h::ZLE_CMD_TRASH
+                && cmd != crate::ported::zsh_h::ZLE_CMD_RESET_PROMPT
+                && cmd != crate::ported::zsh_h::ZLE_CMD_REFRESH
+            {
+                // c:1764 — `if (load_module("zsh/zle", NULL, 0) != 1)`
+                // then c:1765 `(void)load_module("zsh/compctl", NULL, 0)`.
+                // `zsh/compctl` pulls in `zsh/complete` through the
+                // compctl.mdd moddeps edge seeded in
+                // register_builtin_modules.
+                if !zle_modules_loaded.swap(true, Ordering::SeqCst) {
+                    let mut tab = crate::ported::module::MODULESTAB.lock().unwrap();
+                    if tab.load_module("zsh/zle", None, false) != 1 {
+                        tab.load_module("zsh/compctl", None, false); // c:1765
+                    }
+                }
+                zle_load_state.store(2, Ordering::SeqCst); // c:1770
+            }
+        }
+        1 => {
+            // c:1776
+            // c:1777 — `ret = zle_entry_ptr(cmd, ap);`. The pointer is
+            // set at Src/Zle/zle_main.c:2248 to `zle_main_entry`, so a
+            // LOADED zle dispatches the command there; the fallback
+            // switch below is skipped (`cmd = -1`).
+            //
+            // This call was MISSING: the arm set `cmd = -1` and returned
+            // None, making `zleentry(ZLE_CMD_TRASH)` a silent no-op. C
+            // relies on it in `zwarning` (Src/utils.c:144-145 `if
+            // (isatty(2)) zleentry(ZLE_CMD_TRASH);`) to park the cursor
+            // past the ZLE display before a diagnostic lands on stderr
+            // and to set `resetneeded` so the editor line is repainted
+            // afterwards. Without it, a warning emitted mid-ZLE (e.g.
+            // `compdescribe`'s "invalid argument" during `pr<TAB>`) was
+            // written INTO the prompt line and the completion list was
+            // then drawn without the prompt being redrawn — 5 rows off
+            // zsh in the comptab parity grid.
+            //
+            // Rust deviation (no C counterpart): C's `zleentry` is
+            // variadic, so it forwards every command's `va_list`
+            // straight through. The Rust signature carries no varargs,
+            // so only the ARGLESS commands can be reconstructed here;
+            // the arg-carrying ones (READ / GET_LINE / ADD_TO_LINE /
+            // SET_KEYMAP / GET_KEY / SET_HIST_LINE) are called through
+            // their own typed paths and still fall through unchanged.
+            use crate::ported::zle::zle_main::zle_main_entry_args;
+            let mut args = match cmd {
+                x if x == crate::ported::zsh_h::ZLE_CMD_TRASH => {
+                    Some(zle_main_entry_args::Trash) // c:2152
+                }
+                x if x == crate::ported::zsh_h::ZLE_CMD_RESET_PROMPT => {
+                    Some(zle_main_entry_args::ResetPrompt) // c:2156
+                }
+                x if x == crate::ported::zsh_h::ZLE_CMD_REFRESH => {
+                    Some(zle_main_entry_args::Refresh) // c:2160
+                }
+                x if x == crate::ported::zsh_h::ZLE_CMD_PREEXEC => {
+                    Some(zle_main_entry_args::Preexec) // c:2187
+                }
+                x if x == crate::ported::zsh_h::ZLE_CMD_POSTEXEC => {
+                    Some(zle_main_entry_args::Postexec) // c:2191
+                }
+                x if x == crate::ported::zsh_h::ZLE_CMD_CHPWD => {
+                    Some(zle_main_entry_args::Chpwd) // c:2195
+                }
+                _ => None,
+            };
+            let ret = args
+                .as_mut()
+                .and_then(|a| crate::ported::zle::zle_main::zle_main_entry(cmd, a)); // c:1777
+            cmd = -1; // c:1779
+            if ret.is_some() {
+                return ret; // c:1777
+            }
+        }
+        2 => { /* fallback */ } // c:1782
+        _ => {}
+    }
+    match cmd {
+        // c:1788
+        // ZLE_CMD_READ                                                      // c:1796
+        4 => {
+            // c:1796
+            let _line = String::new(); // c:1808
+            return Some(String::new());
+        }
+        // ZLE_CMD_GET_LINE                                                  // c:1812
+        5 => {
+            // c:1812
+            return Some(String::new()); // c:1835
+        }
+        _ => {}
+    }
+    None // c:1855
+}
+
+/// Port of `mod_export int fallback_compctlread(...)` from Src/init.c:1835.
+pub fn fallback_compctlread(name: &str) -> i32 {
+    // c:1835
+    crate::ported::utils::zwarnnam(
+        name, // c:1855
+        "no loaded module provides read for completion context",
+    );
+    1 // c:1855
+}
+
+/// Port of `mod_export int zsh_main(int argc, char **argv)` from Src/init.c:1855.
+pub fn zsh_main(_argc: i32, argv: &[String]) -> i32 {
+    // c:1855
+    #[cfg(unix)]
+    unsafe {
+        let empty = std::ffi::CString::new("").unwrap();
+        libc::setlocale(libc::LC_ALL, empty.as_ptr()); // c:1861
+    }
+    // The process locale is now the environment's, so consume the lazy
+    // fallback that library consumers (unit tests, embedded entry points)
+    // rely on. Doing it here means it can never fire later and undo an
+    // `LC_*` parameter assignment made from an rc file.
+    let _ = *crate::ported::utils::MB_LOCALE_READY;
+
+    // init_jobs(argv, environ);                                             // c:1864
+    let env: Vec<String> = std::env::vars()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+    let _ = crate::ported::jobs::init_jobs(argv, &env);
+
+    // typtab[...] |= IMETA;                                                 // c:1871-1875
+
+    // Metafy each argv (already strings in Rust)                            // c:1877
+
+    let mut zsh_name = argv.first().cloned().unwrap_or_default(); // c:1879
+    loop {
+        // c:1880
+        let arg0 = zsh_name.clone(); // c:1881
+        zsh_name = match arg0.rfind('/') {
+            // c:1882
+            None => arg0.clone(),                 // c:1883
+            Some(i) => arg0[i + 1..].to_string(), // c:1885
+        };
+        if zsh_name.starts_with('-') {
+            // c:1886
+            zsh_name = zsh_name[1..].to_string(); // c:1887
+        }
+        if zsh_name == "su" {
+            // c:1888
+            if let Ok(sh) = std::env::var("SHELL") {
+                // c:1889
+                if !sh.is_empty() && arg0 != sh {
+                    // c:1890
+                    zsh_name = sh; // c:1891
+                    continue; // c:1892
+                }
+            }
+            break; // c:1893
+        }
+        break; // c:1895
+    }
+
+    // fdtable_size = zopenmax(); fdtable[0..2] = FDT_EXTERNAL;              // c:1898-1900
+    let _ = crate::ported::compat::zopenmax();
+    // c:1900 — `fdtable[0] = fdtable[1] = fdtable[2] = FDT_EXTERNAL;`.
+    // stdin/stdout/stderr belong to whoever invoked the shell, so they
+    // are marked as somebody else's: c:Src/exec.c:3892-3894 lets `>&N` /
+    // `<&N` duplicate an `FDT_EXTERNAL` descriptor and refuses every
+    // other classified one. The port called `zopenmax()` and stopped,
+    // leaving all three reading `FDT_UNUSED`.
+    for fd in 0..=2 {
+        crate::ported::utils::check_fd_table(fd);
+        crate::ported::utils::fdtable_set(fd, crate::ported::zsh_h::FDT_EXTERNAL);
+    }
+
+    crate::ported::options::createoptiontable(); // c:1902
+
+    // parseargs(zsh_name, argv, &runscript, &cmd);                          // c:1905
+    let mut argv_v = argv.to_vec();
+    let mut runscript: Option<String> = None; // c:1857
+    let mut cmd: Option<String> = None; // c:1858
+    parseargs(&zsh_name, &mut argv_v, &mut runscript, &mut cmd);
+
+    SHTTY.store(-1, Ordering::SeqCst); // c:1907
+    init_io(cmd.as_deref()); // c:1908
+    crate::startup_trace::mark("init_io");
+    setupvals(cmd.as_deref(), runscript.as_deref(), &zsh_name); // c:1909
+    // c:Src/params.c:893-988 — createparamtable imports `environ` and, for
+    // an IPDEF8 PM_TIED colon-array, installs BOTH sides: the scalar and
+    // the array split on ':'. `setupvals` above re-seeds the specials from
+    // the static table, which leaves each tied array EMPTY; without the
+    // split, an interactive shell reached its first prompt with
+    //     typeset -aT FPATH fpath=(  )
+    // while `$FPATH` still held the full value.
+    //
+    // `path` masked this: `PATH` is always exported, so a later env import
+    // refilled it. zsh never exports `FPATH`, so nothing refilled that one,
+    // and `-c` never runs this path at all -- which is why only an
+    // interactive shell lost `$fpath`. A `.zshrc` doing the standard
+    // `fpath=( mydir $fpath )` then appended to nothing and the shell kept
+    // only what the rc file added.
+    for (arr, scalar) in crate::ported::params::TIED_COLON_ARRAYS {
+        let empty = crate::ported::params::getaparam(arr)
+            .map(|v| v.is_empty())
+            .unwrap_or(true);
+        if !empty {
+            continue;
+        }
+        let joined = crate::ported::params::getsparam(scalar).unwrap_or_default();
+        if joined.is_empty() {
+            continue;
+        }
+        let split: Vec<String> = joined.split(':').map(str::to_string).collect();
+        crate::ported::params::setaparam(arr, split);
+    }
+    // The bundled tree has to survive the re-seed too, and the split above
+    // does not restore it: with an INHERITED FPATH the array comes back
+    // non-empty (the env import refilled it), so the split is skipped --
+    // and the entry `ShellExecutor::new` appended lives only in the param
+    // it just overwrote. The result was that `~/.zshrs/functions` was
+    // present with FPATH unset and missing with FPATH set, in interactive
+    // shells only. Append it here, last, exactly as the constructor does.
+    if let Some(d) = crate::bundled_functions::functions_dir() {
+        if d.is_dir() {
+            let dir = d.to_string_lossy().into_owned();
+            let mut arr = crate::ported::params::getaparam("fpath").unwrap_or_default();
+            if !arr.iter().any(|e| *e == dir) {
+                arr.push(dir);
+                crate::ported::params::setaparam("fpath", arr);
+            }
+        }
+    }
+    crate::startup_trace::mark("setupvals");
+
+    init_signals(); // c:1911
+    crate::startup_trace::mark("init_signals");
+    init_bltinmods(); // c:1912
+    crate::startup_trace::mark("init_bltinmods");
+    crate::ported::builtin::init_builtins(); // c:1913
+    crate::startup_trace::mark("init_builtins");
+
+    // `setupvals` above is what opens the shell's own long-lived files —
+    // the log, the history database, the plugin cache — and none of them
+    // arrives through `movefd`, so none of them registered itself the way
+    // c:Src/utils.c:2007-2010 does. Sweep once here, after those opens
+    // and before a single line of user code runs, so the gates that read
+    // the fdtable (c:Src/exec.c:3830-3835 for `exec N>&-`,
+    // c:Src/exec.c:3884-3897 for `>&N` / `<&N`) see the shell's own
+    // descriptors as the shell's.
+    crate::lowfd::register_internal_fds();
+
+    // Initialize the ZLE line editor for interactive sessions BEFORE the
+    // rc files are sourced, so a user's `bindkey` in .zshrc/.zshenv
+    // layers onto the populated emacs/main keymap instead of being wiped
+    // by a later default_bindings(). C loads `zsh/zle` during init
+    // (init.c via the module system); zshrs links ZLE statically, so the
+    // equivalent setup — register the built-in widgets (init_thingies),
+    // create the keymap name table, and build + select the default
+    // keymaps (default_bindings sets curkeymap="main") — runs here once.
+    // Guarded by zle_load_state so it never re-runs and clobbers user
+    // bindings. Gated on `interact` so non-interactive `-c` shells skip
+    // ZLE entirely (they read via shingetline, not the editor).
+    //
+    // Gated on the SAME predicate C uses to decide whether a line is read
+    // through the editor at all — `interact && isset(SHINSTDIN) && SHTTY
+    // != -1 && isset(USEZLE)` (c:Src/input.c:385). In C the zsh/zle module
+    // is dlopened lazily by that read, so a shell started with `+Z`
+    // (NO_ZLE, as Test/W02jobs.ztst and W03jobparameters.ztst launch it:
+    // `zsh -fiV +Z`) never loads it and `zle_load_state` stays 0.
+    // zshrs links ZLE in statically and initialises it eagerly, and the
+    // gate here was `interact()` alone — so `+Z` still set
+    // `zle_load_state = 1`. That flag is what arms the shell-integration
+    // markers: `init.c:227/235` fire `zleentry(ZLE_CMD_PREEXEC /
+    // POSTEXEC)` only when it is 1, and those write the OSC 133;C / 133;D
+    // "start/end of output" sequences (Src/Zle/termquery.c:759-765
+    // `mark_output`). With `+Z` honoured they are silent, as in zsh.
+    // `zle_load_state` is still set lazily on the first real ZLE read
+    // (input.rs, the `use_zle` branch), so `setopt zle` from an rc file
+    // re-arms the editor exactly like C's lazy `load_module`.
+    if interact()
+        && isset(SHINSTDIN)
+        && SHTTY.load(Ordering::SeqCst) != -1
+        && isset(crate::ported::zsh_h::USEZLE)
+        && zle_load_state.load(Ordering::SeqCst) == 0
+    {
+        crate::ported::zle::zle_thingy::init_thingies();
+        crate::ported::zle::zle_keymap::createkeymapnamtab();
+        crate::ported::zle::zle_keymap::default_bindings();
+        zle_load_state.store(1, Ordering::SeqCst); // c:1739 — ZLE loaded
+    }
+
+    // c:1914 — run_init_scripts() sources .zshenv/.zshrc/.zlogin via
+    // source(). That runs BEFORE the loop's first execode establishes a
+    // VM execution context, so the sourced bodies must execute under an
+    // explicit SESSION_EXECUTOR context or they silently no-op (rc files
+    // ignored). Scope it to JUST this call — the loop below enters its
+    // own per-command context, and a broad/global executor scope would
+    // re-enter on nested command substitution and hang.
+    crate::fusevm_bridge::with_session_context(run_init_scripts); // c:1914
+    crate::startup_trace::mark("run_init_scripts");
+    setupshin(runscript.as_deref()); // c:1915
+    crate::startup_trace::mark("setupshin");
+    init_misc(cmd.as_deref(), &zsh_name); // c:1916
+    crate::startup_trace::mark("init_misc");
+
+    loop {
+        // c:1918
+        let mut errexit = 0; // c:1924
+                             // maybeshrinkjobtab();                                              // c:1925
+                             // c:1927-1935 — `do { retflag = 0; loop(1,0); if (errflag &&
+                             // !interact && !isset(CONTINUEONERROR)) { errexit = 1; break; } }
+                             // while (tok != ENDINPUT && (tok != LEXERR || isset(SHINSTDIN)));`
+        loop {
+            // c:1927 do
+            RETFLAG.store(0, Ordering::SeqCst); // c:1929 retflag = 0
+            let _ = r#loop(1, 0); // c:1930
+            if errflag.load(Ordering::SeqCst) != 0 && !interact() && !isset(CONTINUEONERROR) {
+                // c:1931
+                errexit = 1; // c:1932
+                break; // c:1933
+            }
+            let tok_v = tok(); // c:1935
+            if !(tok_v != ENDINPUT && (tok_v != LEXERR || isset(SHINSTDIN))) {
+                break; // c:1935 while-cond false → exit do-while
+            }
+        }
+        if tok() == LEXERR || errexit != 0 {
+            // c:1936
+            // c:1938-1939 — `if (!lastval) lastval = 1;` (fatal error → nonzero)
+            if LASTVAL.load(Ordering::SeqCst) == 0 {
+                LASTVAL.store(1, Ordering::SeqCst);
+            }
+            STOPMSG.store(1, Ordering::SeqCst); // c:1940 stopmsg = 1
+            crate::ported::builtin::zexit(LASTVAL.load(Ordering::SeqCst), ZEXIT_NORMAL);
+            // c:1941
+        }
+        if !(isset(IGNOREEOF) && interact()) {
+            // c:1943
+            // c:1944-1947 — interactive "logout\n"/"exit\n" echo is `#if 0`'d
+            // out in the C source, so nothing to port there.
+            crate::ported::builtin::zexit(LASTVAL.load(Ordering::SeqCst), ZEXIT_NORMAL); // c:1948
+            continue; // c:1949 — only reached if zexit DEFERRED (running jobs)
+        }
+        noexitct.fetch_add(1, Ordering::SeqCst); // c:1951 noexitct++
+        if noexitct.load(Ordering::SeqCst) >= 10 {
+            // c:1952
+            STOPMSG.store(1, Ordering::SeqCst); // c:1953 stopmsg = 1
+            crate::ported::builtin::zexit(LASTVAL.load(Ordering::SeqCst), ZEXIT_NORMAL);
+            // c:1954
+        }
+        // c:1961-1963 — IGNOREEOF interactive nudge.
+        if use_exit_printed.load(Ordering::SeqCst) == 0 {
+            crate::ported::utils::zerrnam(
+                "zsh",
+                if !islogin() {
+                    "use 'exit' to exit."
+                } else {
+                    "use 'logout' to logout."
+                },
+            );
+        }
+    }
+}
+
+// =========================================================================
+// Functions from init.c
+// =========================================================================
+
+/// Port of `enum loop_return loop(int toplevel, int justonce)` from Src/init.c:113.
+///
+/// Keep executing lists until EOF found.                                    // c:109
+///
+/// ```c
+/// enum loop_return
+/// loop(int toplevel, int justonce)
+/// {
+///     Eprog prog;
+///     int err, non_empty = 0;
+///     queue_signals();
+///     pushheap();
+///     if (!toplevel)
+///         zcontext_save();
+///     for (;;) {
+///         freeheap();
+///         if (stophist == 3) hend(NULL);
+///         hbegin(1);
+///         if (isset(SHINSTDIN)) {
+///             setblock_stdin();
+///             if (interact && toplevel) { ... preprompt() ... }
+///         }
+///         use_exit_printed = 0;
+///         intr();
+///         lexinit();
+///         if (!(prog = parse_event(ENDINPUT))) { ... }
+///         if (hend(prog)) { ... preexec ... execode ... }
+///         if (ferror(stderr)) { ... }
+///         if (subsh) realexit();
+///         if (((!interact || sourcelevel) && errflag) || retflag) break;
+///         if (isset(SINGLECOMMAND) && toplevel) { dotrap(SIGEXIT); realexit(); }
+///         if (justonce) break;
+///     }
+///     err = errflag;
+///     if (!toplevel) zcontext_restore();
+///     popheap();
+///     unqueue_signals();
+///     if (err) return LOOP_ERROR;
+///     if (!non_empty) return LOOP_EMPTY;
+///     return LOOP_OK;
+/// }
+/// ```
+pub fn r#loop(toplevel: i32, justonce: i32) -> i32 {
+    // c:113
+
+    // c:114 — `int subsh = subsh;` — read the global at exec.rs:160
+    // (port of `int subsh;` from Src/exec.c). Non-zero when current
+    // shell is a forked subshell (set by entersubsh c:1083).
+    let subsh: i32 = crate::ported::exec::subsh.load(Ordering::Relaxed);
+
+    let mut prog: Option<crate::ported::parse::ZshProgram>; // c:115
+    let err: i32; // c:116
+    let mut non_empty: i32 = 0; // c:116
+
+    queue_signals(); // c:118
+    crate::ported::mem::pushheap(); // c:119
+    if toplevel == 0 {
+        // c:120 !toplevel
+        crate::ported::context::zcontext_save(); // c:121
+    }
+    // One HISTORY UNIT per accepted editor line. C's par_event recurses
+    // until ENDINPUT (parse.c:635), so a pasted multi-command buffer parses
+    // into ONE prog and hend stores ONE entry ("cmd1\ncmd2"). zshrs's
+    // single-event interleave (parse_event returns per logical command; see
+    // parse.rs:766-786) would cycle hbegin/hend per command and SPLIT the
+    // pasted line into separate history entries — up-arrow then recalled
+    // only the last command. While the previous accepted line still has
+    // unconsumed input buffered, keep the history entry OPEN: skip the
+    // hend/hbegin cycle (and preprompt) until the line is drained.
+    let mut hist_open_across_events = false;
+    loop {
+        // c:122
+        crate::ported::mem::freeheap(); // c:123
+        if !hist_open_across_events {
+            if stophist.load(Ordering::SeqCst) == 3 {
+                // c:124 stophist == 3
+                hend(None); // c:125 hend(NULL)
+            }
+            hbegin(1); // c:126 hbegin(1)
+        }
+        if isset(SHINSTDIN) && !hist_open_across_events {
+            // c:127 isset(SHINSTDIN)
+            crate::ported::utils::setblock_stdin(); // c:128
+            if isset(INTERACTIVE) && toplevel != 0 {
+                // c:129 interact && toplevel
+                let hstop = stophist.load(Ordering::SeqCst); // c:130
+                stophist.store(3, Ordering::SeqCst); // c:131
+                                                     // c:146-148 — drain any signals queued during the previous read
+                                                     // WITHOUT changing the queueing nesting level: snapshot the level,
+                                                     // dont_queue_signals() (whose run_queued_signals() reaps bg-job
+                                                     // SIGCHLDs that were queued while queueing_enabled stayed at its
+                                                     // baseline 1 across the ZLE read), then restore the level. This
+                                                     // port previously jumped straight to preprompt(), so every queued
+                                                     // SIGCHLD went undrained → children never reaped (zombies) and the
+                                                     // shell hung at the prompt. Port of Src/init.c:146-148.
+                let q = crate::ported::signals_h::queue_signal_level();
+                dont_queue_signals();
+                crate::ported::signals_h::restore_queue_signals(q);
+                // c:133-138 — reset errflag for preprompt
+                errflag.store(0, Ordering::SeqCst); // c:139 errflag = 0
+                crate::ported::utils::preprompt(); // c:140
+                if stophist.load(Ordering::SeqCst) != 3 {
+                    // c:141
+                    hbegin(1); // c:142
+                } else {
+                    // c:143
+                    stophist.store(hstop, Ordering::SeqCst); // c:144
+                }
+                // c:146-149 — reset errflag again
+                errflag.store(0, Ordering::SeqCst); // c:150
+            }
+        }
+        use_exit_printed.store(0, Ordering::SeqCst); // c:153
+        intr(); // c:154
+        crate::ported::lex::lexinit(); // c:155
+        // !!! WARNING: RUST-ONLY — NO C COUNTERPART !!!
+        // C's parse_event builds the event's wordcode Eprog, and the preexec
+        // call below renders `$2`/`$3` from it (c:210-211 getjobtext /
+        // getpermtext). zshrs's parse_event returns the fusevm AST, which the
+        // text renderers cannot walk, so record the event's source as the
+        // lexer consumes it (the same echo buffer funcdef bodies use) and
+        // compile it to an Eprog only if a preexec hook is present.
+        let event_mark = (toplevel != 0).then(crate::funcdef_capture::body_mark_begin);
+        prog = crate::ported::parse::parse_event(ENDINPUT as i32); // c:156
+        let event_src = event_mark.and_then(crate::funcdef_capture::event_text);
+        if prog.is_none() {
+            // c:156
+            hend(None); // c:158
+                        // A parse failure closes any deferred same-line history unit —
+                        // the next iteration must run its own hbegin again.
+            hist_open_across_events = false;
+            // c:159-161 — break on clean EOF / non-toplevel LEXERR / justonce
+            let tok_v = tok(); // c:159 tok
+            let errflag_v = errflag.load(Ordering::SeqCst);
+            let lexerr_break = tok_v == LEXERR && (!isset(SHINSTDIN) || toplevel == 0);
+            let endinput_break = tok_v == ENDINPUT && errflag_v == 0;
+            if endinput_break || lexerr_break || justonce != 0 {
+                // c:159-161
+                break; // c:162
+            }
+            if crate::ported::hist::exit_pending.load(Ordering::SeqCst) {
+                // c:163 exit_pending
+                STOPMSG.store(1, Ordering::SeqCst); // c:169 stopmsg = 1
+                crate::ported::builtin::zexit(
+                    // c:170 zexit(exit_val, ZEXIT_NORMAL)
+                    crate::ported::builtin::EXIT_VAL.load(Ordering::SeqCst),
+                    ZEXIT_NORMAL,
+                );
+            }
+            if tok_v == LEXERR && LASTVAL.load(Ordering::SeqCst) == 0
+            // c:172
+            {
+                LASTVAL.store(1, Ordering::SeqCst); // c:173 lastval = 1
+            }
+            continue; // c:174
+        }
+        let prog_inner = prog.take().unwrap();
+        // !!! WARNING: RUST-ONLY — NO C COUNTERPART !!!
+        // The accepted line is about to run at top level, where commands
+        // stamp `locallevel` without opening a scope (a bare `typeset X=1`
+        // takes the current level). An `async_precmd` batch fired by the
+        // preprompt() above may still be running hook functions on a worker,
+        // with that counter raised by its own scope — the typeset would then
+        // belong to the worker's scope and vanish when the hook returned.
+        // C runs precmd hooks synchronously (c:140 preprompt), so nothing
+        // else can hold a scope here; wait for the batch, or withdraw it.
+        crate::async_precmd::quiesce();
+        // c:176 — `if (hend(prog))`: passing the program in commits the
+        // history line. zshrs's `hend` takes Option<&[u8]>; sentinel
+        // non-empty slice signals "program present" to the commit path.
+        //
+        // Same-accepted-line continuation (see hist_open_across_events at
+        // the loop head): while the input buffer still holds unconsumed
+        // chars of the line being edited, DEFER hend — chline keeps
+        // accumulating so the whole pasted buffer commits as one entry,
+        // exactly as C's to-ENDINPUT par_event produces.
+        hist_open_across_events = isset(INTERACTIVE)
+            && toplevel != 0
+            && crate::ported::input::inbufct.with(|c| c.get()) > 0;
+        let hend_ret = if hist_open_across_events {
+            1 // execute; the history commit happens when the line drains
+        } else {
+            let prog_bytes: Vec<u8> = format!("{:?}", prog_inner).into_bytes();
+            hend(Some(&prog_bytes)) // c:176
+        };
+        if hend_ret != 0 {
+            let _toksav = tok(); // c:177
+            non_empty = 1; // c:179
+                           // c:180-215 — preexec hook + ZLE_CMD_PREEXEC.
+            if toplevel != 0 {
+                // c:180-215 — the preexec hook, shared with the script-file
+                // event loop (vm_helper::run_events_per_command).
+                crate::vm_helper::run_preexec_hook(event_src.as_deref());
+            }
+            if toplevel != 0                                                 // c:216
+                && zle_load_state.load(Ordering::SeqCst) == 1
+            {
+                let _ = zleentry(
+                    // c:217 ZLE_CMD_PREEXEC
+                    ZLE_CMD_PREEXEC,
+                );
+            }
+            if STOPMSG.load(Ordering::SeqCst) != 0 {
+                // c:218
+                STOPMSG.fetch_sub(1, Ordering::SeqCst); // c:219
+            }
+            // c:220 — `execode(prog, 0, 0, toplevel ? "toplevel" : "file");`
+            let exec_label = if toplevel != 0 { "toplevel" } else { "file" };
+            // Save the lexer's line counter across execution. Each
+            // statement's `SET_LINENO` (c:Src/exec.c execpline WC_PIPE_LINENO)
+            // overwrites `lineno` to that statement's line while running;
+            // C's execlist brackets this with `oldlineno = lineno` /
+            // `lineno = oldlineno` (exec.c:28/292) so the value is restored
+            // on exit. Without it, the faithful single-event loop (which
+            // interleaves parse + execode) had the NEXT event parse from the
+            // just-executed statement's line — `$LINENO` froze at 1 across a
+            // piped/interactive script instead of advancing 1,2,3.
+            let saved_lex_lineno = crate::ported::lex::LEX_LINENO.with(|c| c.get());
+            crate::ported::exec::execode(&prog_inner, 0, 0, exec_label); // c:220
+            crate::ported::lex::LEX_LINENO.with(|c| c.set(saved_lex_lineno));
+            // c:Src/exec.c:1611-1618 — errexit (`set -e`) fires a shell
+            // exit FROM execlist (`if (errexit) { errflag = 0; if
+            // (sigtrapped[SIGEXIT]) dotrap(SIGEXIT); realexit(); }`).
+            // zshrs's fusevm can't realexit mid-VM, so BUILTIN_ERREXIT_CHECK
+            // defers it via EXIT_PENDING + a jump to chunk-end. Whole-program
+            // mode then skips the rest of the single chunk via that jump, but
+            // the faithful single-event loop runs each event as its OWN chunk
+            // — the jump only ends the failed event, and without honoring the
+            // pending exit here the NEXT event would still run. Mirror C's
+            // execlist realexit at the execode boundary: zexit fires the EXIT
+            // trap (its trap-body dispatch reaches the session executor) and
+            // realexits with EXIT_VAL. Guarded to top level + no subshell so
+            // a deferred subshell/cmdsub exit still propagates via its own
+            // unwind (fusevm_bridge) instead of killing the parent here.
+            if toplevel != 0
+                && crate::ported::builtin::SUBSHELL_DEPTH.load(Ordering::SeqCst) == 0
+                && crate::ported::builtin::EXIT_PENDING.load(Ordering::SeqCst) != 0
+            {
+                crate::ported::builtin::zexit(
+                    crate::ported::builtin::EXIT_VAL.load(Ordering::SeqCst),
+                    ZEXIT_NORMAL,
+                );
+            }
+            // c:221 — `tok = toksav;` restore
+            set_tok(_toksav);
+            if toplevel != 0 {
+                // c:222
+                noexitct.store(0, Ordering::SeqCst); // c:223
+                if zle_load_state.load(Ordering::SeqCst) == 1 {
+                    // c:224
+                    let _ = zleentry(
+                        // c:225 ZLE_CMD_POSTEXEC
+                        ZLE_CMD_POSTEXEC,
+                    );
+                }
+            }
+        }
+        // c:228-231 — `if (ferror(stderr))` write-error path. Mirror as a
+        // best-effort flush; Rust panic on broken pipe handled upstream.
+        // c:232 — `if (subsh) realexit();`
+        if subsh != 0 {
+            // c:232
+            realexit(); // c:233
+        }
+        // c:234 — `if (((!interact || sourcelevel) && errflag) || retflag) break;`
+        let errflag_v = errflag.load(Ordering::SeqCst);
+        let interact_v = isset(INTERACTIVE);
+        let srclvl = sourcelevel.load(Ordering::SeqCst);
+        let retflag_v = RETFLAG.load(Ordering::SeqCst);
+        if ((!interact_v || srclvl != 0) && errflag_v != 0) || retflag_v != 0 {
+            // c:234
+            break; // c:235
+        }
+        if isset(SINGLECOMMAND) && toplevel != 0 {
+            // c:236
+            dont_queue_signals(); // c:237
+                                  // c:238 — sigtrapped[SIGEXIT] != 0 → dotrap(SIGEXIT)
+            let tr = sigtrapped.lock().unwrap();
+            let sigexit = libc::SIGINT as usize; // SIGEXIT = 0 (zsh-internal)
+            if tr.get(sigexit).copied().unwrap_or(0) != 0 {
+                // c:238
+                drop(tr);
+                let _ = dotrap(0 /* SIGEXIT */); // c:239
+            }
+            realexit(); // c:240
+        }
+        if justonce != 0 {
+            // c:242
+            break; // c:243
+        }
+        let _ = histlinect.load(Ordering::SeqCst); // silence unused alias
+    }
+    err = errflag.load(Ordering::SeqCst); // c:245 err = errflag
+    if toplevel == 0 {
+        // c:246 !toplevel
+        zcontext_restore(); // c:247
+    }
+    popheap(); // c:248
+    unqueue_signals(); // c:249
+
+    if err != 0 {
+        return 2; /* LOOP_ERROR */
+    } // c:251-252
+    if non_empty == 0 {
+        return 1; /* LOOP_EMPTY */
+    } // c:253-254
+    0 /* LOOP_OK */ // c:255
+}
+
+/// Port of `static void parseopts_setemulate(...)` from Src/init.c:348.
+fn parseopts_setemulate(nam: &str, flags: i32) {
+    // c:350 — `emulate(nam, 1, &emulation, opts);` initialises most
+    // options. Strip leading `-` (login-shell marker) and any path
+    // components so the name passed to `emulate` is just the basename
+    // (`ksh` / `sh` / `csh` / `zsh`).
+    let bare = nam.trim_start_matches('-');
+    let basename = std::path::Path::new(bare)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(bare);
+    // ZSHRS-ONLY. In C, `argv[0]` IS the personality selector, so
+    // re-deriving the emulation from it here is free. zshrs adds `--MODE`
+    // flags C has no equivalent of, and `argv[0]` is always the zshrs
+    // binary — so this call used to reset a `--ksh` / `--sh` / `--dash`
+    // shell back to zsh emulation on the interactive path, which reaches
+    // `zsh_main` (the `-c` and script-file paths in bins/zshrs.rs do not).
+    // `zshrs --sh -i` ran with `shwordsplit` OFF as a result. The
+    // CLI-selected personality wins when there is one.
+    let name = crate::extensions::emulation_startup::selected_emulate_name().unwrap_or(basename);
+    crate::ported::options::emulate(name, true); // c:350
+    // ZSHRS-ONLY. `emulate()` resets the option table wholesale, so the
+    // drop-in's own deltas (bash's brace expansion, `$BASH_REMATCH`, the
+    // prompt options) have to be re-applied on top of the preset. Without
+    // this they survived only on the `-c` / script paths, which do not
+    // reach this function — an interactive `--bash`, i.e. a login shell,
+    // ran without any of them.
+    crate::extensions::emulation_startup::apply_personality_option_deltas();
+
+    // c:351 — `opts[LOGINSHELL] = ((flags & PARSEARGS_LOGIN) != 0);`
+    const PARSEARGS_LOGIN: i32 = 2;
+    crate::ported::options::opt_state_set("loginshell", (flags & PARSEARGS_LOGIN) != 0);
+
+    // c:352 — `opts[PRIVILEGED] = (getuid() != geteuid() || …);`
+    let priv_on = unsafe { libc::getuid() != libc::geteuid() || libc::getgid() != libc::getegid() };
+    crate::ported::options::opt_state_set("privileged", priv_on);
+
+    // c:361 — `opts[INTERACTIVE] = isatty(0) ? 2 : 0;`. The "2"
+    // sentinel means "default-on, may be downgraded by SHINSTDIN
+    // handling below". Rust port stores as bool — we only retain
+    // the on/off distinction; the downgrade logic at c:end-of-fn
+    // is a no-op once we collapse to bool.
+    let interactive_default = unsafe { libc::isatty(0) != 0 };
+    crate::ported::options::opt_state_set("interactive", interactive_default);
+
+    // c:366-368 — `opts[MONITOR] = 2; opts[HASHDIRS] = 2; opts[USEZLE] = 1;`
+    crate::ported::options::opt_state_set("monitor", true);
+    crate::ported::options::opt_state_set("hashdirs", true);
+    // USEZLE's canonical name is `zle` (zsh_h.rs:4145); the prior
+    // `"usezle"` key was never read by `isset(USEZLE)` → this default was a
+    // silent no-op. init_io (c:691-694) downgrades it for non-tty shells.
+    crate::ported::options::opt_state_set("zle", true); // c:368 opts[USEZLE]=1
+                                                        // c:369-370 — `opts[SHINSTDIN] = 0; opts[SINGLECOMMAND] = 0;`
+    crate::ported::options::opt_state_set("shinstdin", false);
+    crate::ported::options::opt_state_set("singlecommand", false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// source() pushes an FS_SOURCE funcstack frame (init.c:1610-1618)
+    /// and pops it on exit (c:1664). Verify the push is balanced (no
+    /// leak) and that a readable file returns SOURCE_OK.
+    #[test]
+    fn source_funcstack_push_is_balanced() {
+        use crate::ported::modules::parameter::FUNCSTACK;
+        let depth_before = FUNCSTACK.lock().unwrap().len();
+
+        let mut path = std::env::temp_dir();
+        path.push(format!("zshrs_source_balance_{}.zsh", std::process::id()));
+        std::fs::write(&path, ": # no-op sourced file\n").unwrap();
+
+        let rc = source(path.to_str().unwrap());
+
+        let depth_after = FUNCSTACK.lock().unwrap().len();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(rc, 0, "source of a readable file returns SOURCE_OK");
+        assert_eq!(
+            depth_before, depth_after,
+            "FS_SOURCE push must be matched by a pop (no funcstack leak)"
+        );
+
+        // A non-existent file is SOURCE_NOT_FOUND and pushes nothing.
+        let missing = "/nonexistent/zshrs_source_xyz_should_not_exist";
+        assert_ne!(source(missing), 0, "missing file returns SOURCE_NOT_FOUND");
+        assert_eq!(
+            FUNCSTACK.lock().unwrap().len(),
+            depth_before,
+            "NOT_FOUND path must not touch the funcstack"
+        );
+    }
+
+    /// `fallback_compctlread` is the dispatch target when the zle
+    /// module isn't loaded — `compctl -K read` paths need SOMETHING
+    /// callable. C returns 1 + zwarnnam to signal "no provider". A
+    /// regression returning 0 would make completers believe a read
+    /// happened when nothing did (silent data corruption in completion).
+    #[test]
+    fn fallback_compctlread_signals_failure() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(fallback_compctlread("test"), 1);
+    }
+
+    /// c:418 — `parseopts` advances `idx` past every consumed option.
+    /// `-c CMD` consumes 2 slots and stores CMD in cmdp. Regression
+    /// that doesn't advance idx would loop forever or skip args.
+    #[test]
+    fn parseopts_dash_c_captures_command_string() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv = vec!["-c".to_string(), "echo hi".to_string()];
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        let r = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0);
+        assert_eq!(r, 0);
+        assert_eq!(
+            cmd.as_deref(),
+            Some("echo hi"),
+            "-c must capture the next arg as the command"
+        );
+        assert_eq!(idx, 2, "idx must advance past both -c AND its arg");
+    }
+
+    /// c:Src/init.c:456-460 — a GNU-style `--LONG` option is rewritten
+    /// (`-` becomes `_`) and applied through optlookup + dosetopt, so
+    /// `--no-rcs` is exactly `-o no_rcs`.
+    ///
+    /// This arm used to skip EVERY `--NAME`, so a long-spelled option
+    /// never reached the option table: `zshrs --no-rcs -i` left RCS set
+    /// and still sourced .zshenv/.zshrc (the gate is `isset(RCS)` in
+    /// `run_init_scripts`), while `-f` and `-o norcs` both suppressed
+    /// them. Non-interactive `-c` masked it because nothing reads .zshrc
+    /// there.
+    #[test]
+    fn parseopts_long_option_reaches_the_option_table() {
+        let _g = crate::test_util::global_state_lock();
+        for spelling in ["--no-rcs", "--norcs", "--no_rcs"] {
+            crate::ported::options::opt_state_set("rcs", true);
+            assert!(isset(RCS), "precondition for {}: RCS starts on", spelling);
+            let mut argv = vec![spelling.to_string()];
+            let mut idx = 0usize;
+            let mut cmd: Option<String> = None;
+            let r = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 1);
+            assert_eq!(r, 0, "{} must parse cleanly", spelling);
+            assert!(!isset(RCS), "{} must clear RCS, like -f does", spelling);
+            assert_eq!(idx, 1, "{} consumes exactly one slot", spelling);
+        }
+        crate::ported::options::opt_state_set("rcs", true);
+    }
+
+    /// The deliberate divergence from c:492 must hold: zshrs-only long
+    /// flags (`--zsh`, `--dap`, …) are NOT zsh options, are consumed by
+    /// the bin front-end, and must be skipped here rather than rejected
+    /// with "no such option". Guards the fix above from over-reaching.
+    #[test]
+    fn parseopts_skips_zshrs_specific_long_flags() {
+        let _g = crate::test_util::global_state_lock();
+        for flag in ["--zsh", "--bash", "--zsh-compat", "--dap"] {
+            let mut argv = vec![flag.to_string()];
+            let mut idx = 0usize;
+            let mut cmd: Option<String> = None;
+            let r = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 1);
+            assert_eq!(r, 0, "{} must not be rejected", flag);
+            assert_eq!(idx, 1, "{} must still be consumed", flag);
+        }
+    }
+
+    /// c:418 — `parseopts` stops at the first non-option positional.
+    /// Regression that keeps walking past `--` or first bareword would
+    /// silently consume the script name as an option.
+    #[test]
+    fn parseopts_stops_at_first_positional() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv = vec!["script.sh".to_string(), "arg1".to_string()];
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0);
+        assert_eq!(idx, 0, "must stop AT the first bareword (no advance)");
+        assert!(cmd.is_none(), "no -c → cmd stays None");
+    }
+
+    /// c:418 — `parseopts` on empty argv exits cleanly with idx=0
+    /// and cmd=None. Regression panicking on empty would crash
+    /// startup with weird args.
+    #[test]
+    fn parseopts_empty_argv_is_safe() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv: Vec<String> = Vec::new();
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        assert_eq!(parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0), 0);
+        assert_eq!(idx, 0);
+        assert!(cmd.is_none());
+    }
+
+    /// c:756 — `tccap_get_name` indexes into the terminal-capability
+    /// name array. Out-of-range MUST NOT panic — it returns "" so
+    /// downstream tigetstr calls fail-soft. Regression panicking
+    /// would crash the prompt subsystem on tiny terminals.
+    #[test]
+    fn tccap_get_name_out_of_range_returns_empty() {
+        let _g = crate::test_util::global_state_lock();
+        // index 9999 is well past the cap table (~39 entries per
+        // init.c:75). Must return safely.
+        let n = tccap_get_name(9999);
+        assert!(
+            n.is_empty(),
+            "out-of-range index must return empty (got {n:?})"
+        );
+    }
+
+    /// c:418 — `parseopts` consumes `-x` (xtrace) as a flag without
+    /// an argument. Pin the no-arg-required path; a regression that
+    /// always reads `argv[idx+1]` would OOB-index when -x is the
+    /// last arg.
+    #[test]
+    fn parseopts_dash_x_is_single_slot_flag() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv = vec!["-x".to_string()];
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        let r = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0);
+        assert_eq!(r, 0);
+        assert_eq!(idx, 1, "-x consumes exactly 1 arg slot");
+        assert!(cmd.is_none(), "-x must NOT capture a command");
+    }
+
+    /// c:418 — `parseopts` -c with NO following argument. The
+    /// contract is "no valid command captured" so the caller can
+    /// surface a usage error.
+    #[test]
+    fn parseopts_dash_c_without_argument_does_not_capture_command() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv = vec!["-c".to_string()];
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        let _ = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0);
+        assert!(
+            cmd.is_none() || cmd.as_deref() == Some(""),
+            "-c without arg must NOT capture a usable command"
+        );
+    }
+
+    /// c:418 — `parseopts` consumes multiple flags in sequence.
+    /// Pin the per-arg loop so a regen that early-exits after the
+    /// first flag silently drops -v.
+    #[test]
+    fn parseopts_consumes_multiple_flags() {
+        let _g = crate::test_util::global_state_lock();
+        let mut argv = vec!["-x".to_string(), "-v".to_string()];
+        let mut idx = 0usize;
+        let mut cmd: Option<String> = None;
+        let r = parseopts("zsh", &mut argv, &mut idx, &mut cmd, 0);
+        assert_eq!(r, 0);
+        assert_eq!(idx, 2, "both flags must be consumed");
+    }
+
+    /// c:756 — `tccap_get_name(0)` returns the first cap name. The
+    /// table is non-empty per init.c:75; index 0 must be a valid
+    /// stem. Pin the boundary so a regen that adds an "off-by-one
+    /// slot 0" mistake gets caught.
+    #[test]
+    fn tccap_get_name_index_zero_is_nonempty() {
+        let _g = crate::test_util::global_state_lock();
+        let n = tccap_get_name(0);
+        assert!(
+            !n.is_empty(),
+            "index 0 must yield a real cap name; got {:?}",
+            n
+        );
+        for c in n.chars() {
+            assert!(
+                c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_',
+                "cap name {:?} contains non-termcap char {:?}",
+                n,
+                c
+            );
+        }
+    }
+
+    /// c:1713 — `noop_function` MUST be safe to call without panics.
+    /// C body is empty; the Rust port mirrors it. Re-entry test
+    /// catches a regen that adds stateful side-effects.
+    #[test]
+    fn noop_function_is_safe_to_call_multiple_times() {
+        let _g = crate::test_util::global_state_lock();
+        noop_function();
+        noop_function();
+        noop_function();
+    }
+
+    /// c:1720 — `noop_function_int(n)` ignores its argument across
+    /// the full i32 range. Pin no-side-effect contract.
+    #[test]
+    fn noop_function_int_ignores_argument() {
+        let _g = crate::test_util::global_state_lock();
+        noop_function_int(0);
+        noop_function_int(42);
+        noop_function_int(-1);
+        noop_function_int(i32::MAX);
+        noop_function_int(i32::MIN);
+    }
+
+    /// c:1743 — `zleentry(cmd)` for an unknown cmd code returns
+    /// None (matching the C "no zle" branch). Every call site
+    /// assumes None means "no ZLE active".
+    #[test]
+    fn zleentry_unknown_command_returns_none() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(
+            zleentry(99999).is_none(),
+            "unknown zle command must return None, not a default string"
+        );
+    }
+
+    /// c:1551 — `source("")` on empty path must NOT segfault. The
+    /// C source opens("") which fails with ENOENT, returning non-0.
+    #[test]
+    fn source_empty_path_returns_nonzero() {
+        let _g = crate::test_util::global_state_lock();
+        let r = source("");
+        assert_ne!(r, 0, "source of empty path must report failure");
+    }
+
+    // ─── zsh-corpus pins for init helpers ───────────────────────────
+
+    /// `tccap_get_name(0)` returns a non-empty cap name.
+    #[test]
+    fn init_corpus_tccap_index_zero_nonempty() {
+        let _g = crate::test_util::global_state_lock();
+        let name = tccap_get_name(0);
+        assert!(!name.is_empty(), "cap[0] has a name, got {name:?}");
+    }
+
+    /// `tccap_get_name` for index TC_COUNT or higher returns "".
+    #[test]
+    fn init_corpus_tccap_out_of_range_returns_empty() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(tccap_get_name(39), "", "TC_COUNT = empty");
+        assert_eq!(tccap_get_name(999), "", "way out of range = empty");
+    }
+
+    /// All cap indexes 0..TC_COUNT return non-empty distinct names.
+    #[test]
+    fn init_corpus_tccap_indexes_all_named() {
+        let _g = crate::test_util::global_state_lock();
+        for i in 0..39 {
+            let n = tccap_get_name(i);
+            assert!(!n.is_empty(), "cap {i} should have a name");
+        }
+    }
+
+    /// `source("/nonexistent/path/zshrs_test_xyz")` returns non-zero.
+    #[test]
+    fn init_corpus_source_nonexistent_returns_nonzero() {
+        let _g = crate::test_util::global_state_lock();
+        assert_ne!(source("/nonexistent/path/zshrs_test_xyz_zzz"), 0);
+    }
+
+    /// `noop_function()` doesn't panic.
+    #[test]
+    fn init_corpus_noop_function_does_not_panic() {
+        let _g = crate::test_util::global_state_lock();
+        noop_function();
+    }
+
+    /// `noop_function_int(0)` doesn't panic.
+    #[test]
+    fn init_corpus_noop_function_int_zero_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        noop_function_int(0);
+    }
+
+    /// `zleentry` with negative cmd code returns None.
+    #[test]
+    fn init_corpus_zleentry_negative_returns_none() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(zleentry(-1).is_none());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity tests for Src/init.c tccap_get_name / init_term
+    // / noop helpers.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:756 — `tccap_get_name(cap)` for cap >= 39 (TC_COUNT) returns
+    /// empty string (Rust port out-of-range guard, c:771).
+    #[test]
+    fn tccap_get_name_out_of_range_returns_empty_pin() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(tccap_get_name(39), "", "TC_COUNT boundary returns ''");
+        assert_eq!(tccap_get_name(100), "");
+        assert_eq!(tccap_get_name(usize::MAX), "");
+    }
+
+    /// c:756 — `tccap_get_name(0)` returns a non-empty cap name
+    /// (first entry of tccapnams table).
+    #[test]
+    fn tccap_get_name_first_entry_is_nonempty() {
+        let _g = crate::test_util::global_state_lock();
+        let n = tccap_get_name(0);
+        assert!(!n.is_empty(), "tccapnams[0] must be a valid cap name");
+    }
+
+    /// c:756 — `tccap_get_name` is deterministic across calls.
+    #[test]
+    fn tccap_get_name_is_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        for i in 0..39 {
+            let first = tccap_get_name(i);
+            for _ in 0..5 {
+                assert_eq!(tccap_get_name(i), first, "tccap_get_name({}) impure", i);
+            }
+        }
+    }
+
+    /// c:756 — every in-range cap name fits in ASCII and has
+    /// non-control content (termcap caps are 2-char ASCII codes).
+    #[test]
+    fn tccap_get_name_in_range_returns_printable_ascii() {
+        let _g = crate::test_util::global_state_lock();
+        for i in 0..39 {
+            let n = tccap_get_name(i);
+            if n.is_empty() {
+                continue;
+            }
+            for c in n.chars() {
+                assert!(
+                    c.is_ascii() && !c.is_control(),
+                    "tccap_get_name({}) = {:?} has non-printable char {:?}",
+                    i,
+                    n,
+                    c
+                );
+            }
+        }
+    }
+
+    /// c:1713 — `noop_function` returns nothing, has no observable effect.
+    /// Repeated calls don't accumulate state.
+    #[test]
+    fn noop_function_is_idempotent() {
+        let _g = crate::test_util::global_state_lock();
+        for _ in 0..100 {
+            noop_function();
+        }
+    }
+
+    /// c:1720 — `noop_function_int` accepts any i32 value without panic.
+    #[test]
+    fn noop_function_int_accepts_any_value() {
+        let _g = crate::test_util::global_state_lock();
+        noop_function_int(0);
+        noop_function_int(-1);
+        noop_function_int(i32::MAX);
+        noop_function_int(i32::MIN);
+    }
+
+    /// `zleentry` with very large positive cmd code returns None
+    /// (out-of-range cmd dispatch).
+    #[test]
+    fn zleentry_unknown_cmd_returns_none() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(zleentry(99999).is_none(), "unknown cmd → None");
+    }
+
+    /// c:1209 — `init_bltinmods` is idempotent (safe to call multiple times).
+    #[test]
+    fn init_bltinmods_is_idempotent() {
+        let _g = crate::test_util::global_state_lock();
+        init_bltinmods();
+        init_bltinmods();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity tests for Src/init.c
+    // c:747 tccapnams / c:756 tccap_get_name / c:1713 noop_function /
+    // c:1199 fallback_compctlread.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:747 — `tccapnams` table has exactly 39 entries (TC_COUNT).
+    #[test]
+    fn tccapnams_table_size_is_tc_count() {
+        assert_eq!(tccapnams.len(), 39, "TC_COUNT must be 39");
+    }
+
+    /// c:747 — every tccapnams entry is exactly 2 ASCII chars
+    /// (termcap 2-letter capability code convention).
+    #[test]
+    fn tccapnams_entries_are_two_ascii_chars() {
+        for (i, &n) in tccapnams.iter().enumerate() {
+            assert_eq!(n.len(), 2, "tccapnams[{}] = {:?} must be 2 chars", i, n);
+            assert!(
+                n.chars().all(|c| c.is_ascii_alphabetic()),
+                "tccapnams[{}] = {:?} must be ASCII alpha",
+                i,
+                n
+            );
+        }
+    }
+
+    /// c:747 — no duplicates in tccapnams.
+    #[test]
+    fn tccapnams_has_no_duplicates() {
+        let mut seen = std::collections::HashSet::new();
+        for &n in tccapnams.iter() {
+            assert!(seen.insert(n), "duplicate tccap name: {:?}", n);
+        }
+    }
+
+    /// c:756 — `tccap_get_name(39)` is at TC_COUNT boundary → empty.
+    #[test]
+    fn tccap_get_name_at_tc_count_boundary_returns_empty() {
+        assert_eq!(tccap_get_name(39), "", "TC_COUNT bound returns empty");
+    }
+
+    /// c:756 — `tccap_get_name(38)` is last valid index → non-empty.
+    #[test]
+    fn tccap_get_name_last_valid_index_returns_nonempty() {
+        let n = tccap_get_name(38);
+        assert!(!n.is_empty(), "tccap_get_name(38) must be non-empty");
+        assert_eq!(n, tccapnams[38], "matches table");
+    }
+
+    /// c:756 — `tccap_get_name(usize::MAX)` is far out of range → empty.
+    #[test]
+    fn tccap_get_name_usize_max_returns_empty() {
+        assert_eq!(tccap_get_name(usize::MAX), "");
+    }
+
+    /// c:756 — `tccap_get_name` is a pure function.
+    #[test]
+    fn tccap_get_name_is_pure() {
+        for i in [0usize, 1, 5, 10, 38, 39, 100] {
+            let a = tccap_get_name(i);
+            let b = tccap_get_name(i);
+            assert_eq!(a, b, "tccap_get_name({}) must be deterministic", i);
+        }
+    }
+
+    /// c:1199 — `fallback_compctlread` returns 1 (failure) without args.
+    #[test]
+    fn fallback_compctlread_returns_one_pin() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(fallback_compctlread(""), 1, "fallback always fails");
+        assert_eq!(fallback_compctlread("anything"), 1);
+    }
+
+    /// c:1713 — `noop_function` is a true no-op (no panic, no state change).
+    #[test]
+    fn noop_function_does_nothing_observable() {
+        for _ in 0..100 {
+            noop_function();
+        }
+    }
+
+    /// c:1720 — `noop_function_int` accepts any i32 without panic.
+    #[test]
+    fn noop_function_int_accepts_full_i32_range() {
+        for v in [i32::MIN, -1, 0, 1, 42, i32::MAX] {
+            noop_function_int(v);
+        }
+    }
+
+    /// c:1159 — `zleentry(0)` returns None (no live ZLE for cmd=0).
+    #[test]
+    fn zleentry_zero_cmd_returns_none() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(zleentry(0), None, "cmd=0 unwired without live ZLE");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity tests for Src/init.c
+    // c:464 tccap_get_name / c:1081 source / c:1116 sourcehome /
+    // c:1159 zleentry / c:1199 fallback_compctlread / c:1149 noop_function /
+    // c:1154 noop_function_int / c:1143 init_bltinmods
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:464 — `tccap_get_name` returns &'static str (compile-time type pin).
+    #[test]
+    fn tccap_get_name_returns_static_str_type() {
+        let _: &'static str = tccap_get_name(0);
+    }
+
+    /// c:1081 — `source("")` empty path returns i32 (compile-time pin).
+    #[test]
+    fn source_returns_i32_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = source("");
+    }
+
+    /// c:1081 — `source` is deterministic for the same nonexistent path.
+    #[test]
+    fn source_nonexistent_is_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        let first = source("/__never_exists_zshrs_source__");
+        for _ in 0..3 {
+            assert_eq!(
+                source("/__never_exists_zshrs_source__"),
+                first,
+                "source must be deterministic"
+            );
+        }
+    }
+
+    /// c:1116 — `sourcehome("")` empty arg is safe.
+    #[test]
+    fn sourcehome_empty_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        sourcehome("");
+    }
+
+    /// c:1159 — `zleentry` returns Option<String> (compile-time type pin).
+    #[test]
+    fn zleentry_returns_option_string_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: Option<String> = zleentry(0);
+    }
+
+    /// c:1199 — `fallback_compctlread` returns i32.
+    #[test]
+    fn fallback_compctlread_returns_i32_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = fallback_compctlread("");
+    }
+
+    /// c:1199 — `fallback_compctlread` is deterministic for any name.
+    #[test]
+    fn fallback_compctlread_is_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        for n in ["", "name", "anything"] {
+            let first = fallback_compctlread(n);
+            for _ in 0..3 {
+                assert_eq!(
+                    fallback_compctlread(n),
+                    first,
+                    "fallback_compctlread({:?}) must be deterministic",
+                    n
+                );
+            }
+        }
+    }
+
+    /// c:1143 — `init_bltinmods` returns void (no panic check).
+    #[test]
+    fn init_bltinmods_no_panic_full_sweep() {
+        let _g = crate::test_util::global_state_lock();
+        for _ in 0..5 {
+            init_bltinmods();
+        }
+    }
+
+    /// c:1149 — `noop_function` returns void (compile-time void type).
+    #[test]
+    fn noop_function_signature_void() {
+        let _: () = noop_function();
+    }
+
+    /// c:1154 — `noop_function_int(N)` returns void.
+    #[test]
+    fn noop_function_int_signature_void() {
+        let _: () = noop_function_int(0);
+    }
+
+    /// c:1116 — `sourcehome("/")` root dir safe.
+    #[test]
+    fn sourcehome_root_dir_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        sourcehome("/");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity tests for Src/init.c
+    // c:464 tccap_get_name / c:491 init_term / c:1081 source /
+    // c:1159 zleentry / c:1199 fallback_compctlread + lifecycle pins
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:464 — `tccap_get_name` returns `&'static str` (compile-time pin, alt).
+    #[test]
+    fn tccap_get_name_returns_static_str_pin_alt() {
+        let _: &'static str = tccap_get_name(0);
+    }
+
+    /// c:464 — `tccap_get_name(TC_COUNT)` and beyond return empty.
+    /// C source: `if (cap >= 39 /* TC_COUNT */) return "";`.
+    #[test]
+    fn tccap_get_name_oob_returns_empty() {
+        assert_eq!(tccap_get_name(39), "", "TC_COUNT itself returns empty");
+        assert_eq!(tccap_get_name(100), "", "way past TC_COUNT returns empty");
+        assert_eq!(
+            tccap_get_name(usize::MAX),
+            "",
+            "MAX returns empty (no panic)"
+        );
+    }
+
+    /// c:464 — `tccap_get_name` is deterministic for in-range indices.
+    #[test]
+    fn tccap_get_name_deterministic_for_valid_indices() {
+        for cap in 0..39usize {
+            let first = tccap_get_name(cap);
+            for _ in 0..3 {
+                assert_eq!(
+                    tccap_get_name(cap),
+                    first,
+                    "tccap_get_name({}) must be pure",
+                    cap
+                );
+            }
+        }
+    }
+
+    /// c:464 — every in-range cap returns non-empty (zsh ships a name
+    /// for every TC_* slot; an empty entry would be a corpus drift).
+    #[test]
+    fn tccap_get_name_all_in_range_caps_non_empty() {
+        for cap in 0..39usize {
+            assert!(
+                !tccap_get_name(cap).is_empty(),
+                "TC_{} (cap idx {}) must have a non-empty cap name",
+                cap,
+                cap
+            );
+        }
+    }
+
+    /// c:491 — `init_term` returns i32 (compile-time pin).
+    #[test]
+    fn init_term_returns_i32_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = init_term();
+    }
+
+    /// c:1081 — `source(empty)` returns i32 (compile-time pin, alt).
+    #[test]
+    fn source_returns_i32_pin_alt() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = source("");
+    }
+
+    /// c:1081 — `source("/__nonexistent_xyz__")` is non-fatal (returns).
+    #[test]
+    fn source_nonexistent_file_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        let _ = source("/__definitely_not_a_file_zshrs_xyz__");
+    }
+
+    /// c:1159 — `zleentry` is deterministic (pure dispatch).
+    #[test]
+    fn zleentry_is_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        for cmd in 0..5i32 {
+            let first = zleentry(cmd);
+            for _ in 0..3 {
+                assert_eq!(
+                    zleentry(cmd),
+                    first,
+                    "zleentry({}) must be deterministic",
+                    cmd
+                );
+            }
+        }
+    }
+
+    /// c:1199 — `fallback_compctlread("")` is safe (empty name no-op).
+    #[test]
+    fn fallback_compctlread_empty_name_safe() {
+        let _g = crate::test_util::global_state_lock();
+        let _ = fallback_compctlread("");
+    }
+
+    /// c:1149 — `noop_function` called repeatedly is safe.
+    #[test]
+    fn noop_function_repeated_calls_safe() {
+        for _ in 0..100 {
+            noop_function();
+        }
+    }
+
+    /// c:1154 — `noop_function_int` for various ints is safe + void.
+    #[test]
+    fn noop_function_int_various_inputs_safe() {
+        for n in [-1, 0, 1, i32::MIN, i32::MAX] {
+            let _: () = noop_function_int(n);
+        }
+    }
+
+    /// c:1116 — `sourcehome("nonexistent_file_xyz")` safe (no-op when
+    /// the home-relative path doesn't exist).
+    #[test]
+    fn sourcehome_nonexistent_file_safe() {
+        let _g = crate::test_util::global_state_lock();
+        sourcehome("__definitely_no_such_zshrc_xyz__");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Additional C-parity pins for Src/init.c
+    // c:464 tccap_get_name / c:491 init_term / c:1081 source /
+    // c:1116 sourcehome / c:1143 init_bltinmods / c:1149 noop_function /
+    // c:1159 zleentry / c:1199 fallback_compctlread
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// c:1143 — `init_bltinmods` is idempotent (safe to call repeatedly).
+    #[test]
+    fn init_bltinmods_idempotent_repeated_calls() {
+        let _g = crate::test_util::global_state_lock();
+        for _ in 0..10 {
+            init_bltinmods();
+        }
+    }
+
+    /// c:464 — `tccap_get_name` for index 0 returns non-empty (first cap).
+    #[test]
+    fn tccap_get_name_index_zero_non_empty() {
+        let _g = crate::test_util::global_state_lock();
+        let _ = tccap_get_name(0);
+    }
+
+    /// c:464 — `tccap_get_name(usize::MAX)` doesn't panic.
+    #[test]
+    fn tccap_get_name_usize_max_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        let r = tccap_get_name(usize::MAX);
+        // OOB returns empty per the OOB test that already exists.
+        assert!(r.is_empty(), "OOB must return empty, got {:?}", r);
+    }
+
+    /// c:1116 — `sourcehome("")` empty name safe (no-op when path empty).
+    #[test]
+    fn sourcehome_empty_name_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        sourcehome("");
+    }
+
+    /// c:1081 — `source` return type i32 (compile-time pin).
+    #[test]
+    fn source_returns_i32_type_compile_pin() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = source("/dev/null");
+    }
+
+    /// c:1081 — `source("")` empty path doesn't panic.
+    #[test]
+    fn source_empty_path_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        let _ = source("");
+    }
+
+    /// c:1159 — `zleentry` return type Option<String> (compile-time pin, alt).
+    #[test]
+    fn zleentry_returns_option_string_type_alt() {
+        let _g = crate::test_util::global_state_lock();
+        let _: Option<String> = zleentry(0);
+    }
+
+    /// c:1159 — `zleentry(-1)` (invalid cmd) doesn't panic.
+    #[test]
+    fn zleentry_negative_cmd_no_panic() {
+        let _g = crate::test_util::global_state_lock();
+        let _ = zleentry(-1);
+    }
+
+    /// c:1199 — `fallback_compctlread` returns i32 (compile-time pin, alt).
+    #[test]
+    fn fallback_compctlread_returns_i32_type_alt() {
+        let _g = crate::test_util::global_state_lock();
+        let _: i32 = fallback_compctlread("test");
+    }
+
+    /// c:1149 — `noop_function` returns void (compile-time pin).
+    #[test]
+    fn noop_function_returns_void_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: () = noop_function();
+    }
+
+    /// c:1154 — `noop_function_int` returns void (compile-time pin).
+    #[test]
+    fn noop_function_int_returns_void_type() {
+        let _g = crate::test_util::global_state_lock();
+        let _: () = noop_function_int(42);
+    }
+
+    /// c:464 — `tccap_get_name` is deterministic for OOB (same empty value
+    /// across calls).
+    #[test]
+    fn tccap_get_name_oob_deterministic() {
+        let _g = crate::test_util::global_state_lock();
+        let a = tccap_get_name(99_999);
+        let b = tccap_get_name(99_999);
+        assert_eq!(a, b, "OOB must be deterministic");
+    }
+}

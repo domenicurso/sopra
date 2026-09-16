@@ -1,0 +1,2350 @@
+//! Tiny helpers shared between per-fn ports. Kept here (not in
+//! library.rs) so the `ported/` tree stands alone.
+
+use std::path::Path;
+
+// =====================================================================
+// Function-local parameter declarations for the Rust ports.
+// =====================================================================
+//
+// An upstream completion function opens with a `local`/`typeset` line
+// (`Completion/Base/Core/_main_complete:11,27-54`). Every scratch name
+// it touches is therefore created at `locallevel`, reads back as
+// `…-local` through `${(t)name}`, and is unwound by `endparamscope`
+// when the function returns.
+//
+// A Rust port assigns the same names with `setsparam`/`setaparam`,
+// which routes through `createparam(name, PM_SCALAR)` — no PM_LOCAL,
+// so the parameter is born at level 0 and both properties are lost:
+// `${(t)_comp_tags}` reads `scalar` and the name survives the call.
+// That is observable: the user's `_parameters`
+// (`~/.zpwr/autoload/comp_utils/_parameters:34`) filters candidates
+// with `${(@k)parameters[(R)${pattern[2]}~*local*]}`, i.e. it drops
+// every parameter whose type string contains `local`. Leaked port
+// scratch names slipped through that filter and `unset <TAB>` offered
+// them alongside the user's real parameters.
+//
+// `declare_locals` is the one place that gap is closed: it is the
+// Rust-port spelling of the upstream `local NAME …` line and mirrors
+// the PM_LOCAL branch of `bin_typeset` (`src/ported/builtin.rs:5570`,
+// port of `Src/builtin.c:2469-2575`).
+
+pub use crate::ported::zsh_h::{PM_ARRAY, PM_HASHED, PM_INTEGER, PM_READONLY, PM_UNIQUE};
+
+/// Declare `names` local to the CURRENT function scope — the Rust-port
+/// equivalent of an upstream completion function's `local NAME …` line.
+///
+/// `kind` carries the type/attribute bits the shell source spells out
+/// (`PM_ARRAY` for `local -a`, `PM_HASHED` for `local -A`, `PM_UNIQUE`
+/// for `typeset -U`); pass `0` for a plain scalar `local`.
+///
+/// Mirrors `Src/builtin.c:2469-2575` (`typeset_single`'s PM_LOCAL arm):
+/// only allocate a shadow when the visible parameter lives at a LOWER
+/// scope than the current `locallevel`, then stamp `pm->level =
+/// locallevel` so `endparamscope` unwinds it. At top level
+/// (`locallevel == 0`) C's `pm->level < locallevel` can never hold, so
+/// nothing is declared — the port then behaves exactly as it does today
+/// when run outside a function (unit tests, `--doctor`).
+pub fn declare_locals(names: &[&str], kind: u32) {
+    use crate::ported::params::{createparam, locallevel, paramtab};
+    use crate::ported::zsh_h::{PM_HIDE, PM_LOCAL, PM_SPECIAL};
+    use std::sync::atomic::Ordering;
+
+    let cur = locallevel.load(Ordering::Relaxed); // c:2469 locallevel
+    if cur == 0 {
+        return;
+    }
+    for name in names {
+        // c:2469 — `(!pm || pm->level < locallevel)`.
+        //
+        // The same table read also settles `newspecial`. c:2083-2085:
+        //   if ((pm->node.flags & PM_SPECIAL)
+        //       && !(on & PM_HIDE) && !(pm->node.flags & PM_HIDE & ~off))
+        //       newspecial = NS_NORMAL;
+        // i.e. localizing a PM_SPECIAL parameter keeps it special unless
+        // `-h` hides it, on either the special itself or this statement.
+        let (needs_shadow, newspecial) = paramtab()
+            .read()
+            .ok()
+            .and_then(|t| {
+                t.get(*name).map(|pm| {
+                    let special = (pm.node.flags as u32 & PM_SPECIAL) != 0
+                        && (kind & PM_HIDE) == 0
+                        && (pm.node.flags as u32 & PM_HIDE) == 0;
+                    (pm.level < cur, special)
+                })
+            })
+            .unwrap_or((true, false));
+        if !needs_shadow {
+            continue;
+        }
+        // c:2470 — `createparam(pname, on | PM_LOCAL)`.
+        let _ = createparam(name, (kind | PM_LOCAL) as i32);
+        // c:2575 — `else if (on & PM_LOCAL) pm->level = locallevel;`
+        // plus the attribute stamp so `typeset -U` keeps PM_UNIQUE.
+        if let Ok(mut tab) = paramtab().write() {
+            if let Some(pm) = tab.get_mut(*name) {
+                pm.level = cur;
+                pm.node.flags |= (kind & PM_UNIQUE) as i32;
+                // c:2425 — `pm->node.flags = (PM_TYPE(pm->node.flags) | on
+                // | PM_SPECIAL) & ~off;`. `createparam` deliberately drops
+                // the bit (`Src/params.c:1174` stores `flags & ~PM_LOCAL`
+                // on the fresh struct), so the special-ness of the shadowed
+                // parameter has to be re-stamped here the way the
+                // `newspecial` arm of `typeset_single` does. Without it
+                // `integer SECONDS=0` (_main_complete sh:162) read
+                // `integer-local` where zsh reads `integer-local-special`,
+                // and `_parameters` — which drops every candidate whose
+                // type matches `*local*` — mis-classified the shadow.
+                if newspecial {
+                    pm.node.flags |= PM_SPECIAL as i32;
+                }
+            }
+        }
+    }
+}
+
+/// A parameter scope for a Rust port that is invoked as a DIRECT Rust
+/// call rather than through `dispatch_function_call`.
+///
+/// `declare_locals` only stamps `pm->level = locallevel`; the unwind is
+/// `endparamscope`'s job, and that runs from `doshfunc`. A port reached
+/// by a plain Rust call (`_alternative` -> `_tags(&…)` /
+/// `_next_label(&…)` -> `_description(&…)`) therefore never gets one, so
+/// every name in its `declare_locals` list stayed shadowed for the rest
+/// of the CALLER's body.
+///
+/// Concretely: `_tags` declares `tmp` and `_description` declares
+/// `opts`, and both names are `_files`' own locals holding the results
+/// of its `zparseopts -a opts '/=tmp' 'g+:-=tmp' … W: …` line. After
+/// `_alternative` ran either port, `_files` saw `opts=()` / `tmp=()`, so
+/// `-W /dev` and `-g '*(-%b,-/)'` were both dropped — `mount /dev/<TAB>`
+/// listed every file in `$PWD` and `PATH=…:<TAB>` listed files instead
+/// of directories.
+///
+/// Holding one of these for the port's body reproduces the visible half
+/// of what a real shell function gets from `endparamscope`
+/// (`Src/params.c:5867-5933`, the `pm->level > locallevel` arm): each
+/// declared name is put back exactly as the caller left it.
+///
+/// It restores by NAME rather than by bumping `locallevel` and calling
+/// `endparamscope`, because a port's body also writes caller-visible
+/// state (`_comp_tags`, `curtag`, the `expl` array named by
+/// `_description`'s `$2`). A whole-scope unwind takes those with it —
+/// `_tags` then reported "comptags: no tags registered" for every
+/// context.
+pub struct LocalScope {
+    saved: Vec<(String, Option<Box<crate::ported::zsh_h::param>>)>,
+    /// The parallel assoc backing for each saved name.
+    ///
+    /// A PM_HASHED parameter keeps its key/value pairs in
+    /// `paramtab_hashed_storage` — a map keyed by NAME with no scope
+    /// dimension (`params.rs`, the `copyparam` PM_HASHED note in
+    /// `typeset_single`) — not in the `param` struct. Putting the
+    /// `paramtab` node back is therefore only half an unwind: a name
+    /// declared through this scope and then filled by `sethparam` kept
+    /// its row for the rest of the process, and `${(t)name}` /
+    /// `${#name}` / `${(k)name}` all still answered from that row with
+    /// the node long gone.
+    ///
+    /// `endparamscope` does the same two-sided restore for the scopes it
+    /// unwinds, so this is the parallel-storage half of the same unwind,
+    /// saved and replayed by name.
+    saved_hash: Vec<(String, Option<indexmap::IndexMap<String, String>>)>,
+}
+
+impl LocalScope {
+    /// Declare `names` local (see [`declare_locals`]) and remember what
+    /// each one looked like beforehand.
+    pub fn declare(names: &[&str], kind: u32) -> Self {
+        let mut scope = LocalScope {
+            saved: Vec::new(),
+            saved_hash: Vec::new(),
+        };
+        scope.also(names, kind);
+        scope
+    }
+
+    /// Remember the parallel assoc backing (see [`LocalScope::saved_hash`])
+    /// for each name about to be declared.
+    fn remember_hash(&mut self, names: &[&str]) {
+        if let Ok(store) = crate::ported::params::paramtab_hashed_storage().lock() {
+            for name in names {
+                self.saved_hash
+                    .push(((*name).to_string(), store.get(*name).cloned()));
+            }
+        }
+    }
+
+    /// Add more names to an existing scope — the port equivalent of a
+    /// second `local -a …` line.
+    pub fn also(&mut self, names: &[&str], kind: u32) {
+        if let Ok(tab) = crate::ported::params::paramtab().read() {
+            for name in names {
+                self.saved
+                    .push(((*name).to_string(), tab.get(*name).cloned()));
+            }
+        }
+        self.remember_hash(names);
+        declare_locals(names, kind);
+    }
+
+    /// `local NAME="$NAME"` — see [`declare_locals_keeping_value`].
+    pub fn also_keeping_value(&mut self, names: &[&str]) {
+        if let Ok(tab) = crate::ported::params::paramtab().read() {
+            for name in names {
+                self.saved
+                    .push(((*name).to_string(), tab.get(*name).cloned()));
+            }
+        }
+        self.remember_hash(names);
+        declare_locals_keeping_value(names);
+    }
+}
+
+impl Drop for LocalScope {
+    fn drop(&mut self) {
+        if let Ok(mut tab) = crate::ported::params::paramtab().write() {
+            for (name, prev) in self.saved.iter().rev() {
+                match prev {
+                    Some(pm) => {
+                        tab.insert(name.clone(), pm.clone());
+                    }
+                    None => {
+                        tab.remove(name);
+                    }
+                }
+            }
+        }
+        // The assoc half of the same unwind — see [`LocalScope::saved_hash`].
+        // Taken after the `paramtab` lock is released: nothing here needs both,
+        // and holding one across the other is how a port deadlocks itself.
+        if let Ok(mut store) = crate::ported::params::paramtab_hashed_storage().lock() {
+            for (name, prev) in self.saved_hash.iter().rev() {
+                match prev {
+                    Some(map) => {
+                        store.insert(name.clone(), map.clone());
+                    }
+                    None => {
+                        store.remove(name);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `typeset -r NAME` applied AFTER the value is in place — the second
+/// half of an upstream `local -ar NAME=(…)` / `local -r NAME=…` line.
+///
+/// [`declare_locals`] cannot carry `PM_READONLY` itself: `createparam`
+/// stamps the bit immediately, and the port assigns the value on the
+/// NEXT statement, so the assignment would be rejected as a write to a
+/// read-only parameter. Upstream has no such split — `local -ar x=(…)`
+/// is one operation whose value lands before the bit does — so the port
+/// declares, assigns, then calls this.
+///
+/// Mirrors the `PM_READONLY` arm of `typeset_single`
+/// (`Src/builtin.c:2469-2575`): the bit is OR'd onto the existing
+/// `pm->node.flags`, and because the param already lives at
+/// `locallevel`, `endparamscope` unwinds it with the rest of the scope.
+///
+/// Skipped at `locallevel == 0` for the same reason [`declare_locals`]
+/// returns early there: with no function scope there is no shadow to
+/// stamp and no `endparamscope` to unstamp it, so the bit would pin the
+/// caller's GLOBAL parameter read-only forever — the next completion's
+/// own assignment would then fail with "read-only variable". Upstream
+/// cannot reach that state at all: `local -ar` is a syntax error outside
+/// a function.
+pub fn mark_readonly(names: &[&str]) {
+    use crate::ported::params::{locallevel, paramtab};
+    use crate::ported::zsh_h::PM_READONLY;
+    use std::sync::atomic::Ordering;
+    if locallevel.load(Ordering::Relaxed) == 0 {
+        return;
+    }
+    if let Ok(mut tab) = paramtab().write() {
+        for name in names {
+            if let Some(pm) = tab.get_mut(*name) {
+                pm.node.flags |= PM_READONLY as i32;
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Boolean style tests — `zstyle -t` / `zstyle -T`.
+// =====================================================================
+//
+// !!! WARNING: RUST-ONLY HELPERS !!!
+//
+// These two have no C counterpart, because upstream has no function to
+// port here: every compsys boolean style test is literally the COMMAND
+// `zstyle -t "$ctx" <style>` (or `-T`) in the shell source, with the
+// arms below it reading `$?`. The helpers run that same builtin —
+// [`bin_zstyle`](crate::ported::modules::zutil::bin_zstyle), the port of
+// `Src/Modules/zutil.c:487` — so the tri-state exit is the builtin's
+// own rather than a re-derivation of it.
+//
+// They exist because the obvious-looking
+// [`testforstyle`](crate::ported::modules::zutil::testforstyle)
+// (`Src/Modules/zutil.c:465`) is NOT `zstyle -t`. It is the primitive
+// behind `zstyle -q` (c:749-756) and answers "is this style DEFINED for
+// this context", ignoring the value entirely — so
+// `zstyle ':completion:*' <style> 0` made every port that called it take
+// the TRUE branch, the exact opposite of what the style asks for. The
+// same misport was measured and fixed at `_setup`'s `last-prompt`
+// (e3f05f5c05); these helpers are that fix generalised so the shape is
+// written once instead of once per completer.
+//
+// The exits are the `case 't': case 'T':` arm at c:701-724:
+//
+//   * 0 — style set for the context AND its first value is one of
+//     `true` / `yes` / `on` / `1` (c:719-722).
+//   * 1 — style set for the context but its first value is not one of
+//     those (c:719-722), or set with NO values (c:724 `vals ? 1 : 2`).
+//   * 2 — no style pattern matched this context (c:724 `: 2`), for `-t`
+//     only; `-T` returns 0 there instead (c:724 `: 0`), which is the
+//     whole difference between the two letters.
+
+/// Build the empty `options` struct `bin_zstyle` wants. It parses
+/// `args[0]` itself (the BUILTIN spec carries a NULL optstr at c:2139),
+/// so nothing needs to be pre-set here.
+fn empty_ops() -> crate::ported::zsh_h::options {
+    crate::ported::zsh_h::options {
+        ind: [0u8; crate::ported::zsh_h::MAX_OPS],
+        args: Vec::new(),
+        argscount: 0,
+        argsalloc: 0,
+    }
+}
+
+/// `zstyle -t <ctx> <style>` — 0 boolean-true, 1 set-but-not-true,
+/// 2 unset for this context. See the block comment above.
+pub fn zstyle_t(ctx: &str, style: &str) -> i32 {
+    crate::ported::modules::zutil::bin_zstyle(
+        "zstyle",
+        &["-t".to_string(), ctx.to_string(), style.to_string()],
+        &empty_ops(),
+        0,
+    )
+}
+
+/// `zstyle -s <ctx> <style> <name>` — the SCALAR style lookup, as the value
+/// it assigns plus the truth of its return status.
+///
+/// Port of `bin_zstyle`'s `case 's'` (`Src/Modules/zutil.c:643-658`):
+///
+/// ```text
+/// c:648      if ((vals = lookupstyle(args[1], args[2])) && vals[0]) {
+/// c:649          ret = sepjoin(vals, (args[4] ? args[4] : " "), 0);
+/// c:650          val = 0;
+/// c:651      } else {
+/// c:652          ret = ztrdup("");
+/// c:653          val = 1;
+/// c:654      }
+/// ```
+///
+/// Two things every `.first()` spelling of this gets wrong, and both are
+/// load-bearing for the `command` style (`_call_program` sh:26):
+///
+///   * c:649 joins the WHOLE value array with the separator (`" "` unless a
+///     fourth argument overrides it). `zstyle :ctx command ps -e` is a
+///     two-element style whose scalar value is `ps -e`; reading element 1
+///     alone silently drops `-e`. The manual states the contract in as many
+///     words — "The _string_s ... are concatenated with spaces between them
+///     and the resulting string is evaluated."
+///
+///   * c:648 branches on whether the style HAS a first element, not on
+///     whether that element is non-empty. `zstyle :ctx command ''` is SET,
+///     c:650 returns true, and the caller runs the empty command rather than
+///     falling through to its default. Treating `""` as unset inverts that.
+///
+/// `None` is c:651-653 (`val = 1`, the style does not apply here); `Some` is
+/// c:648-650 and carries the joined value, which may legitimately be `""`.
+pub fn zstyle_s(ctx: &str, style: &str) -> Option<String> {
+    // c:648 `lookupstyle(args[1], args[2]) && vals[0]` — an empty Vec is both
+    // C's NULL return (c:447) and its zero-element array; C answers `val = 1`
+    // for either, so one test covers both.
+    let vals = crate::ported::modules::zutil::lookupstyle(ctx, style);
+    if vals.is_empty() {
+        return None; // c:652-653
+    }
+    // c:649 `sepjoin(vals, " ", 0)`
+    Some(crate::ported::utils::zjoin(&vals, ' '))
+}
+
+/// `zstyle -T <ctx> <style>` — as [`zstyle_t`], except that an UNSET
+/// style is true (0) rather than 2 (c:724). This is the "default yes"
+/// spelling upstream uses for styles like `add-space` and `verbose`.
+#[allow(non_snake_case)]
+pub fn zstyle_T(ctx: &str, style: &str) -> i32 {
+    crate::ported::modules::zutil::bin_zstyle(
+        "zstyle",
+        &["-T".to_string(), ctx.to_string(), style.to_string()],
+        &empty_ops(),
+        0,
+    )
+}
+
+/// Hand `args` to `bin_zparseopts` through its `-v <name>` source array,
+/// declared LOCAL to the enclosing function scope first.
+///
+/// zsh's `zparseopts` has no `-v`: upstream reads the positional list, so
+/// there is no `sh:NN local __compsys_argv` line to port. The bridge array
+/// exists only because `bin_zparseopts` takes its argv from `paramtab` by
+/// name, and it cannot be dropped without rewriting that builtin's entry
+/// point — the DESTINATION arrays (`-a __gopt`, …) go through `paramtab`
+/// too. What it must not be is GLOBAL.
+///
+/// A completer is allowed to turn `WARN_CREATE_GLOBAL` on for its own body
+/// (`~/.zinit/completions/_mc:36` — `setopt localoptions warncreateglobal
+/// typesetsilent` — the house style of the zsh-completions collection;
+/// `compinit`'s `_comp_options` only turns it OFF for the utility functions
+/// that do not opt back in). Every port reached from such a completer then
+/// printed one `_requested: array parameter __compsys_argv created globally
+/// in function _requested` per call, on the terminal, in place of the match
+/// list.
+///
+/// The destination arrays escaped the same diagnostic only by accident: they
+/// are left behind after the call, so `createparam` reports `created == 0`
+/// from the second completion onwards and `check_warn_pm`
+/// (`src/ported/params.rs:6669`) returns early. `__compsys_argv` is unset
+/// after every call — the tidier lifetime — so it was re-created, and warned
+/// about, every single time.
+pub fn set_bridge_argv(name: &str, args: &[String]) {
+    declare_locals(&[name], PM_ARRAY);
+    let _ = crate::ported::params::setaparam(name, args.to_vec());
+}
+
+/// `local NAME="$NAME"` — declare `names` local while carrying the
+/// enclosing scope's scalar value into the shadow.
+///
+/// Upstream spells this out where the completer chain must keep
+/// reading an inherited value it is also allowed to overwrite:
+/// `_main_complete:31` (`curcontext="$curcontext"`), `_tags:19`,
+/// `_dispatch:4`. A bare [`declare_locals`] would hand the port an
+/// empty parameter instead.
+pub fn declare_locals_keeping_value(names: &[&str]) {
+    for name in names {
+        let inherited = crate::ported::params::getsparam(name);
+        declare_locals(&[name], 0);
+        if let Some(v) = inherited {
+            let _ = crate::ported::params::setsparam(name, &v);
+        }
+    }
+}
+/// The directory list `compinit` must scan: `$fpath` as it stands at
+/// call time (`Completion/compinit:523` `for _i_dir in $fpath`, and
+/// `compaudit` at sh:455), falling back to `env_fpath` when the array is
+/// unset or empty.
+///
+/// `ShellExecutor::fpath` (vm_helper.rs:532) is seeded once at startup
+/// from `$FPATH` (vm_helper.rs:1174/1287) and never resynced, so the
+/// `fpath=( … )` line that precedes `compinit` in every .zshrc was
+/// invisible to the scan. With `$FPATH` exported the two agreed by
+/// accident; without it — `zsh -f`, a login shell that builds `fpath` in
+/// .zshrc, the parity harness's child env — the scan got ZERO
+/// directories, and the worker's empty result was then written over the
+/// completion cache, leaving `$_comps` empty and every command falling
+/// through to `-default-`.
+pub fn compinit_scan_dirs(env_fpath: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    match crate::ported::params::getaparam("fpath") {
+        Some(live) if !live.is_empty() => live.iter().map(std::path::PathBuf::from).collect(),
+        _ => env_fpath.to_vec(),
+    }
+}
+
+/// `is_executable` — see implementation.
+pub fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = path.metadata() {
+            let mode = meta.permissions().mode();
+            return mode & 0o111 != 0;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Some(ext) = path.extension() {
+            let ext = ext.to_string_lossy().to_lowercase();
+            return matches!(ext.as_str(), "exe" | "bat" | "cmd" | "com");
+        }
+    }
+    false
+}
+
+/// Shell-glob matcher — supports `*`, `?`, and `(a|b|c)`
+/// alternation (zsh extended-glob's `(…|…)` form). Sufficient for
+/// the patterns end-user completion files use (e.g.
+/// `*.(md|rs|toml)` from `_suffix_alias_files`).
+pub fn glob_matches(pattern: &str, text: &str) -> bool {
+    // Handle leading `(alt1|alt2|…)` at the top level — split at the
+    // matching close paren, try each alternative concatenated with
+    // the remainder.
+    if let Some(rest) = pattern.strip_prefix('(') {
+        if let Some(close) = find_top_close_paren(rest) {
+            let group = &rest[..close];
+            let after = &rest[close + 1..];
+            return group.split('|').any(|alt| {
+                let combined = format!("{}{}", alt, after);
+                glob_matches(&combined, text)
+            });
+        }
+    }
+    let pat: Vec<char> = pattern.chars().collect();
+    let txt: Vec<char> = text.chars().collect();
+    glob_helper(&pat, &txt)
+}
+
+fn find_top_close_paren(s: &str) -> Option<usize> {
+    let mut depth: i32 = 1;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn glob_helper(pat: &[char], txt: &[char]) -> bool {
+    if pat.is_empty() {
+        return txt.is_empty();
+    }
+    // Inline alternation at any position: when we encounter `(...)`,
+    // re-route through `glob_matches` on the remainder.
+    if pat[0] == '(' {
+        let rest: String = pat[1..].iter().collect();
+        let txt_str: String = txt.iter().collect();
+        if let Some(close) = find_top_close_paren(&rest) {
+            let group = &rest[..close];
+            let after = &rest[close + 1..];
+            return group.split('|').any(|alt| {
+                let combined = format!("{}{}", alt, after);
+                glob_matches(&combined, &txt_str)
+            });
+        }
+    }
+    match pat[0] {
+        '*' => {
+            for i in 0..=txt.len() {
+                if glob_helper(&pat[1..], &txt[i..]) {
+                    return true;
+                }
+            }
+            false
+        }
+        '?' => !txt.is_empty() && glob_helper(&pat[1..], &txt[1..]),
+        c => !txt.is_empty() && txt[0] == c && glob_helper(&pat[1..], &txt[1..]),
+    }
+}
+
+/// Shell-glob matcher mirror of the helper that used to live in
+/// `compsys/functions.rs` — kept as a separate symbol because callers
+/// were spelled `functions::glob_match(...)`, distinct from
+/// `glob_matches` above (which the `library.rs`/`ported/_path_files`
+/// code used). Both share semantics; the duplicate is intentional for
+/// API-shape compat with both call-site ()/* styles */.
+pub fn glob_match(pattern: &str, text: &str) -> bool {
+    glob_matches(pattern, text)
+}
+
+/// Levenshtein edit distance, used by `_approximate`, `_correct`,
+/// `_correct_filename`, and `_correct_word`. Moved out of
+/// `compsys/functions.rs` so it can be shared across the per-fn ports
+/// without introducing a circular dependency between them.
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let m = a_chars.len();
+    let n = b_chars.len();
+
+    let mut dp = vec![vec![0; n + 1]; m + 1];
+
+    // Levenshtein DP base row/col init — needless_range_loop trips here
+    // but the index IS the value being written, not a positional access.
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..=m {
+        dp[i][0] = i;
+    }
+    #[allow(clippy::needless_range_loop)]
+    for j in 0..=n {
+        dp[0][j] = j;
+    }
+
+    for i in 1..=m {
+        for j in 1..=n {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            dp[i][j] = (dp[i - 1][j] + 1)
+                .min(dp[i][j - 1] + 1)
+                .min(dp[i - 1][j - 1] + cost);
+        }
+    }
+
+    dp[m][n]
+}
+
+/// Check if a string matches any ignored pattern. Extracted from
+/// `compsys/base.rs::is_ignored`. Uses the same `glob_match` helper
+/// as the rest of the per-fn ports.
+pub fn is_ignored(s: &str, patterns: &[String]) -> bool {
+    for pattern in patterns {
+        if glob_match(pattern, s) {
+            return true;
+        }
+    }
+    false
+}
+
+/// `get_ignored_patterns(context)` — collect `ignored-patterns`
+/// zstyle values for `context` via the real `lookupstyle` in
+/// `src/ported/modules/zutil.rs`.
+pub fn get_ignored_patterns(context: &str) -> Vec<String> {
+    crate::ported::modules::zutil::lookupstyle(context, "ignored-patterns")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `_dispatch:51` is handed `$words[1]` verbatim, so the `$_comps` key it
+    /// needs is only reachable through `${(Q)}`. These are the exact word
+    /// shapes the completion line produces.
+    #[test]
+    fn dequote_q_recovers_the_command_name_from_a_quoted_word() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(dequote_q("\"env\""), "env");
+        assert_eq!(dequote_q("'rm'"), "rm");
+        assert_eq!(dequote_q("\\rm"), "rm");
+        assert_eq!(dequote_q("/usr/bin/ls"), "/usr/bin/ls");
+        assert_eq!(dequote_q("-default-"), "-default-");
+    }
+
+    /// c:Src/subst.c:4139-4140 runs the `(Q)` parse under `noerrs = 1`, so an
+    /// UNBALANCED quote is kept as a literal rather than deleted. A
+    /// hand-rolled "drop every quote character" walker returns `xy` here and
+    /// would turn the command word `a"b` into a key that matches nothing.
+    #[test]
+    fn dequote_q_keeps_an_unbalanced_quote_as_a_literal() {
+        let _g = crate::test_util::global_state_lock();
+        assert_eq!(dequote_q("x\"y"), "x\"y");
+        assert_eq!(dequote_q("x'y"), "x'y");
+    }
+
+    /// The zparseopts bridge array must be a FUNCTION LOCAL, not a global.
+    ///
+    /// `__compsys_argv` is written by 18 `run_*` helpers under
+    /// `src/compsys/ported/`, once per call, and unset again straight after —
+    /// so every call RE-CREATES it. `createparam` at `locallevel == 0` makes
+    /// that a global creation, and `check_warn_pm`
+    /// (`src/ported/params.rs:6669`, port of `Src/params.c:3158`) prints
+    /// `<caller>: array parameter __compsys_argv created globally in function
+    /// <caller>` for each one whenever `WARN_CREATE_GLOBAL` is on.
+    ///
+    /// It is on more often than the option's rarity suggests: `compinit`'s
+    /// `_comp_options` clears it (sh:171 `NO_warncreateglobal`), but a
+    /// completer is free to set it back for its own body, and the
+    /// zsh-completions house style does exactly that
+    /// (`_mc:36` — `setopt localoptions warncreateglobal typesetsilent`).
+    /// `mc <TAB>` then drew 29 rows of diagnostics instead of its match list,
+    /// and `mc -<TAB>` 40.
+    ///
+    /// Asserting the TYPE STRING rather than `pm.level` is deliberate: it is
+    /// the same `${(t)name}` text `_parameters` filters on, so this test also
+    /// pins the property that made the earlier leaks visible as bogus
+    /// completion matches.
+    #[test]
+    fn bridge_argv_is_declared_local_not_created_global() {
+        let _g = crate::test_util::global_state_lock();
+        crate::ported::utils::inc_locallevel();
+        let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            set_bridge_argv("__compsys_argv", &["-J".to_string(), "grp".to_string()]);
+            let ty = crate::ported::params::paramtab()
+                .read()
+                .ok()
+                .and_then(|t| {
+                    t.get("__compsys_argv")
+                        .map(|pm| crate::ported::modules::parameter::paramtypestr(pm))
+                })
+                .unwrap_or_default();
+            assert_eq!(
+                ty, "array-local",
+                "bridge argv must be `local -a`; `array` means every call \
+                 re-creates a global and WARN_CREATE_GLOBAL prints a line"
+            );
+            assert_eq!(
+                crate::ported::params::getaparam("__compsys_argv").unwrap_or_default(),
+                vec!["-J".to_string(), "grp".to_string()],
+                "declaring it local must not cost the value zparseopts reads"
+            );
+        }));
+        crate::ported::params::endparamscope();
+        let _ = crate::ported::params::unsetparam("__compsys_argv");
+        if let Err(p) = out {
+            std::panic::resume_unwind(p);
+        }
+    }
+
+    /// The type/attribute bits an upstream `local` line spells have to reach
+    /// `createparam`, and the names have to be GONE after `endparamscope`.
+    ///
+    /// This is the substrate the whole compsys scratch-parameter fix rests on:
+    /// 95 ports call `declare_locals` with the kind their shell source spells
+    /// (`0` for a bare `local`, PM_ARRAY for `local -a`, PM_HASHED for
+    /// `local -A`, PM_HIDE for `local -H`, PM_ARRAY|PM_UNIQUE for
+    /// `local -aU`). Two things can go wrong independently and this pins both:
+    ///
+    ///   * the bits are dropped, so `${(t)name}` reads `scalar-local` where zsh
+    ///     reads `array-local` — the port then works by luck, because the first
+    ///     `setaparam` retypes it, and `_parameters`' type filter still sees a
+    ///     different string than zsh does;
+    ///   * `pm->level` is not stamped, so `endparamscope` leaves the name
+    ///     behind and one TAB puts a completer's working variable in the user's
+    ///     interactive shell.
+    ///
+    /// Names are prefixed so this test cannot collide with a real parameter or
+    /// with another test in the same process.
+    #[test]
+    fn declare_locals_carries_the_shell_kind_and_unwinds() {
+        let _g = crate::test_util::global_state_lock();
+        crate::ported::utils::inc_locallevel();
+        let cases: [(&str, u32, &str); 4] = [
+            ("zzlk_scalar", 0, "scalar"),
+            ("zzlk_array", PM_ARRAY, "array"),
+            ("zzlk_assoc", PM_HASHED, "association"),
+            ("zzlk_uniq", PM_ARRAY | PM_UNIQUE, "unique"),
+        ];
+        let inner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for (name, kind, want) in cases {
+                declare_locals(&[name], kind);
+                let ty = crate::ported::params::paramtab()
+                    .read()
+                    .ok()
+                    .and_then(|t| {
+                        t.get(name)
+                            .map(|pm| crate::ported::modules::parameter::paramtypestr(pm))
+                    })
+                    .unwrap_or_default();
+                assert!(
+                    ty.contains(want) && ty.contains("local"),
+                    "declare_locals({name}, {kind:#x}) produced `{ty}`, \
+                     expected it to contain `{want}` and `local`"
+                );
+            }
+        }));
+        crate::ported::params::endparamscope();
+        let survivors: Vec<&str> = cases
+            .iter()
+            .map(|(n, _, _)| *n)
+            .filter(|n| {
+                crate::ported::params::paramtab()
+                    .read()
+                    .map(|t| t.get(*n).is_some())
+                    .unwrap_or(false)
+            })
+            .collect();
+        for (n, _, _) in cases {
+            let _ = crate::ported::params::unsetparam(n);
+        }
+        if let Err(p) = inner {
+            std::panic::resume_unwind(p);
+        }
+        assert!(
+            survivors.is_empty(),
+            "{survivors:?} outlived endparamscope, i.e. pm->level was never \
+             stamped and every port that declares a name this way still leaks it"
+        );
+    }
+
+    /// compinit sh:523 — the scan reads `$fpath`, not the `$FPATH` the
+    /// process happened to inherit.
+    ///
+    /// Regression: `builtin_compinit` scanned `ShellExecutor::fpath`,
+    /// which is env-seeded at startup and never resynced, so
+    /// `fpath=( … ); compinit` scanned the STARTUP list. With no `FPATH`
+    /// exported that list is empty, the worker returned zero completers,
+    /// and the empty result was written over the completion cache —
+    /// `$_comps` empty, every command resolved to `-default-`.
+    #[test]
+    fn compinit_scans_the_live_fpath_array_not_the_startup_env() {
+        use std::path::PathBuf;
+        let _g = crate::test_util::global_state_lock();
+        let env_seeded = vec![PathBuf::from("/from/FPATH/env")];
+
+        crate::ported::params::setaparam(
+            "fpath",
+            vec!["/live/one".to_string(), "/live/two".to_string()],
+        );
+        assert_eq!(
+            compinit_scan_dirs(&env_seeded),
+            vec![PathBuf::from("/live/one"), PathBuf::from("/live/two")],
+            "sh:523 scans $fpath"
+        );
+
+        // Unset / empty array — keep the env-derived list rather than
+        // scanning nothing.
+        crate::ported::params::setaparam("fpath", Vec::new());
+        assert_eq!(compinit_scan_dirs(&env_seeded), env_seeded);
+        crate::ported::params::unsetparam("fpath");
+        assert_eq!(compinit_scan_dirs(&env_seeded), env_seeded);
+    }
+
+    /// `mark_readonly` is the `-r` of `local -ar` (sh:52) and must not
+    /// escape the function scope: stamped at `locallevel == 0` the bit
+    /// would pin the caller's global read-only forever, and the next
+    /// completion's own assignment would fail with "read-only variable".
+    #[test]
+    fn mark_readonly_is_scoped_to_a_function() {
+        use crate::ported::modules::parameter::paramtypestr;
+        let _g = crate::test_util::global_state_lock();
+        // `mark_readonly` keys off `locallevel` (shared.rs:216), the
+        // process-wide `AtomicI32` port of `Src/params.c:54`. Nothing
+        // unwinds it when a test panics out of a `doshfunc`-shaped port
+        // (`_wanted_impl`'s inc/dec pair, `FnScope`, `LocalScope`), so the
+        // "no scope — no readonly bit" leg below only holds from a pinned
+        // 0, which is also the value a real shell starts at. Without this
+        // the assertion passed alone and failed inside a full run.
+        crate::ported::params::locallevel.store(0, std::sync::atomic::Ordering::Relaxed);
+        let type_of = |n: &str| {
+            crate::ported::params::paramtab()
+                .read()
+                .ok()
+                .and_then(|t| t.get(n).map(|pm| paramtypestr(pm)))
+                .unwrap_or_default()
+        };
+
+        crate::ported::params::setaparam("_ro_probe", vec!["a".to_string()]);
+        mark_readonly(&["_ro_probe"]);
+        assert_eq!(type_of("_ro_probe"), "array", "no scope — no readonly bit");
+
+        crate::ported::utils::inc_locallevel();
+        declare_locals(&["_ro_probe"], PM_ARRAY);
+        crate::ported::params::setaparam("_ro_probe", vec!["b".to_string()]);
+        mark_readonly(&["_ro_probe"]);
+        assert_eq!(type_of("_ro_probe"), "array-local-readonly");
+        crate::ported::params::endparamscope();
+        assert_eq!(
+            type_of("_ro_probe"),
+            "array",
+            "endparamscope must unwind the readonly shadow"
+        );
+        crate::ported::params::unsetparam("_ro_probe");
+    }
+
+    // glob_match coverage migrated from `compsys/base.rs` when the
+    // local glob_match helper there was removed in favor of this
+    // single shared implementation.
+
+    #[test]
+    fn test_glob_match_simple() {
+        assert!(glob_match("*.txt", "file.txt"));
+        assert!(glob_match("*.txt", ".txt"));
+        assert!(!glob_match("*.txt", "file.rs"));
+    }
+
+    #[test]
+    fn test_glob_match_question() {
+        assert!(glob_match("file?.txt", "file1.txt"));
+        assert!(glob_match("file?.txt", "fileX.txt"));
+        assert!(!glob_match("file?.txt", "file.txt"));
+        assert!(!glob_match("file?.txt", "file12.txt"));
+    }
+
+    #[test]
+    fn test_glob_match_star_middle() {
+        assert!(glob_match("foo*bar", "foobar"));
+        assert!(glob_match("foo*bar", "foo123bar"));
+        assert!(glob_match("foo*bar", "fooXYZbar"));
+        assert!(!glob_match("foo*bar", "foobaz"));
+    }
+
+    #[test]
+    fn test_glob_match_multiple_stars() {
+        assert!(glob_match("*foo*", "foo"));
+        assert!(glob_match("*foo*", "afoo"));
+        assert!(glob_match("*foo*", "foob"));
+        assert!(glob_match("*foo*", "afoob"));
+        assert!(!glob_match("*foo*", "bar"));
+    }
+
+    #[test]
+    fn test_glob_match_exact() {
+        assert!(glob_match("exact", "exact"));
+        assert!(!glob_match("exact", "exacty"));
+        assert!(!glob_match("exact", "xact"));
+    }
+}
+
+/// Call another compsys completer BY NAME, so `$fpath` arbitration still runs.
+///
+/// zshrs-original — C has no port tree to arbitrate against. Every upstream
+/// completer reaches its helpers as a bare command word (`_files "$@"`), which
+/// goes through the normal function lookup, so a user's own `_files` earlier in
+/// `$fpath` wins. A Rust port that calls its sibling port as a plain Rust fn
+/// skips that lookup entirely: `crate::ported::exec::dispatch_function_call` is
+/// the only path that consults `compsys::router::try_rust_dispatch` and its
+/// `has_fpath_override` gate, so the user's file is silently dead.
+///
+/// This is not hypothetical. `_command_names` had the same defect (fixed in
+/// b8e714f7be) and `_parameters` had it in the `-brace-parameter-` /
+/// `-subscript-` contexts, which is why `echo ${<TAB>` offered zshrs's own
+/// parameter list instead of the user's. On this host `_files` is overridden at
+/// `~/.zpwr/autoload/comp_utils/_files` (fpath position 18, ahead of the stock
+/// tree at 24) and ten ports call it directly.
+///
+/// `fallback` runs only when no shell function and no registered port claims
+/// the name — i.e. in unit tests with no executor installed. It is a DEGRADED
+/// stand-in for the `doshfunc` frame the dispatch path opens: no `FUNCSTACK`
+/// entry, no param scope, no `locallevel` bump. A caller whose sh semantics
+/// depend on the callee's scope depth — anything driving `comptags`, which is
+/// indexed by `locallevel` (`Src/Zle/computil.c:3782` "Array of tag-set
+/// infos. Index is the locallevel", `:3873` `level = locallevel -
+/// (args[0][2] ? 1 : 0)`) — must supply the missing piece inside its own
+/// `fallback` closure rather than assume this helper does it.
+///
+/// # Naming convention for ports
+///
+/// A port with a dispatching entry point splits in two, and the names are
+/// chosen so that the OBVIOUS call is the CORRECT one:
+///
+/// * `_NAME` — the dispatching wrapper, one line: `call_compfn("_NAME",
+///   args, || _NAME_impl(args))`. This is what every sibling port calls, and
+///   it matches the zsh function name character for character.
+/// * `_NAME_impl` — the raw body. Two callers, both of which must not
+///   re-enter dispatch: the wrapper's own `fallback` above, and the
+///   `compsys::router` arm for `"_NAME"`. **The router arm MUST name
+///   `_NAME_impl`.** Pointing it at `_NAME` makes dispatch call the wrapper,
+///   which calls dispatch, forever.
+///
+/// Anything else that names `_NAME_impl` is asserting it genuinely needs no
+/// `doshfunc` frame — sh `continue` expressed as recursion
+/// (`_next_label.rs`), or a callee whose `comptags` level the caller manages
+/// by hand (`_message.rs`, `_wanted.rs`). Those sites carry a comment saying
+/// why.
+pub fn call_compfn(name: &str, args: &[String], fallback: impl FnOnce() -> i32) -> i32 {
+    crate::ported::exec::dispatch_function_call(name, args).unwrap_or_else(fallback)
+}
+
+// =====================================================================
+// `scriptname` for the duration of a port call.
+// =====================================================================
+//
+// `doshfunc` sets `scriptname` to the function's own name on entry
+// (`Src/exec.c:5963` — `scriptname = dupstring(name);`) and restores the
+// caller's on exit (`Src/exec.c:6124` — `scriptname = funcsave->scriptname;`).
+// That is what every diagnostic reads: `zwarning` prints it ahead of the
+// builtin name (`Src/utils.c:147-155`), so an error raised by a builtin
+// inside `_tags` reads `_tags:comptags:36: ...`.
+//
+// The Rust ports reach that same builtin without a `doshfunc` frame. Ports
+// call each other as plain Rust calls — `_describe` invokes `_tags` directly
+// (`Base/Utility/_describe.rs`) — and only
+// `crate::ported::exec::dispatch_function_call` goes through `doshfunc`. So
+// `scriptname` kept whatever shell function was last entered and every
+// diagnostic named the wrong function:
+//
+//     zsh    _tags:comptags:36: can only be called from completion function
+//     zshrs  _describe:comptags: can only be called from completion function
+//
+// `FnScope::enter` is the `scriptname` half of that prologue/epilogue, applied
+// at the entry of each port so a port called either way reports identically.
+//
+// `FnScope` also carries the `lineno` half. In C the second field of the
+// diagnostic prefix is the GLOBAL `lineno`, printed by `zerrmsg`
+// (`Src/utils.c:301-305` — `if ((unset(SHINSTDIN) || locallevel) && lineno)
+// fprintf(file, "%lld: ", lineno);`), and it is maintained by the wordcode
+// line markers as each statement of the function body executes
+// (`Src/exec.c:1356` — `lineno = code - 1;`, `Src/exec.c:2057` —
+// `lineno = WC_PIPE_LINENO(pcode) - 1;`). A Rust port has no wordcode, so
+// nothing advances that counter and the field came out empty:
+//
+//     zsh    _describe:compdescribe:129: no parsed state
+//     zshrs  _describe:compdescribe: no parsed state
+//
+// `execlist` saves `lineno` on entry to a body and restores it on exit
+// (`Src/exec.c:1429` — `oldlineno = lineno;`, `Src/exec.c:1696` —
+// `lineno = oldlineno;`), which is what makes a nested call leave the
+// caller's line intact. `FnScope` reproduces that save/restore, and
+// [`set_sh_lineno`] is what a port calls to stand in for the line marker.
+//
+// Entry deliberately publishes 0 ("unknown"), not the caller's line: 0 is the
+// value `zerrmsg` treats as "no line to print", so a statement that has not
+// been annotated yet keeps today's behaviour (field absent) instead of
+// inheriting a number belonging to a different file. A wrong line number is
+// worse than a missing one — it points the reader at the wrong function.
+
+/// RAII guard publishing `scriptname` and `lineno` for the body of a Rust
+/// compsys port, mirroring `doshfunc`'s `scriptname` save/set/restore and
+/// `execlist`'s `lineno` save/restore.
+pub struct FnScope {
+    saved: Option<String>,
+    saved_lineno: u64,
+}
+
+impl FnScope {
+    /// `scriptname = dupstring(name)` (`Src/exec.c:5963`) plus
+    /// `oldlineno = lineno` (`Src/exec.c:1429`), remembering the caller's
+    /// values for [`Drop`].
+    pub fn enter(name: &str) -> Self {
+        let saved = crate::ported::utils::scriptname_get();
+        crate::ported::utils::set_scriptname(Some(name.to_string()));
+        let saved_lineno = crate::ported::lex::lineno();
+        // No wordcode line marker has run for this body yet, and the caller's
+        // line belongs to a different file — publish "unknown" so `zerrmsg`
+        // omits the field (`Src/utils.c:301` — `&& lineno`).
+        crate::ported::lex::set_lineno(0);
+        FnScope {
+            saved,
+            saved_lineno,
+        }
+    }
+}
+
+impl Drop for FnScope {
+    /// `scriptname = funcsave->scriptname` (`Src/exec.c:6124`) and
+    /// `lineno = oldlineno` (`Src/exec.c:1696`).
+    fn drop(&mut self) {
+        crate::ported::utils::set_scriptname(self.saved.take());
+        crate::ported::lex::set_lineno(self.saved_lineno);
+    }
+}
+
+/// Publish the upstream shell-source line of the statement a port is about to
+/// run, standing in for the wordcode line marker C executes ahead of every
+/// statement (`Src/exec.c:2057` — `lineno = WC_PIPE_LINENO(pcode) - 1;`).
+///
+/// Diagnostics only originate at builtin call sites, so a port only needs this
+/// immediately before invoking a builtin that can call `zwarnnam`; the value is
+/// then read by `zwarning`/`zerrmsg` (`src/ported/utils.rs:191`).
+/// [`FnScope`] restores the caller's line when the port returns.
+///
+/// `line` MUST be read off the upstream `Completion/**` file the port was
+/// translated from. Never estimate it — the `// sh:NN` comments in the ports
+/// predate later upstream edits and have drifted (`_describe`'s
+/// `compdescribe -I` was annotated `sh:118-121` but lives at line 122 of both
+/// zsh 5.9.2 and master).
+///
+/// `scripts/check_sh_lineno.py` diffs every `sh:NN` annotation against the
+/// upstream file and reports the ones whose cited line does not carry the
+/// quoted code; run it before trusting an annotation as a `line` argument.
+/// An annotation it reports as `unverified`, `suspect` or `out-of-range` has
+/// NOT been proven and must not be passed here.
+pub fn set_sh_lineno(line: u64) {
+    crate::ported::lex::set_lineno(line);
+}
+
+/// `while getopts OPTSTRING var; do case $var in … esac; done` — the whole
+/// loop, for a port whose upstream function parses its options that way.
+///
+/// Port of `bin_getopts` (c:Src/builtin.c:5656-5776), called repeatedly until
+/// it returns 1, starting from the `zoptind = 1` / `optcind = 0` that
+/// `doshfunc` gives every function entry. `on_opt(var, optarg)` receives what
+/// each call stores in `var` — `"o"` for `-o`, `"+o"` for `+o`, `"?"` for an
+/// invalid option or a missing argument (`":"` for the latter when the
+/// optstring opens with `:`) — so a caller matches the same strings its
+/// upstream `case` arms do and ignores the rest.
+///
+/// Three getopts behaviours a per-word match cannot express:
+///   * CLUSTERING — the characters of one word are options one at a time, so
+///     `-default-` is `-d -e -f -a -u -l -t -` (c:5704-5706);
+///   * RECOVERY — an invalid option is reported with `zwarn` (not
+///     `zwarnnam`, so the prefix is `fn:LINE:`) and the loop CARRIES ON
+///     (c:5715-5731);
+///   * `+` words are options too unless POSIX_BUILTINS is set (c:5696).
+///
+/// `$OPTARG` receives every value C stores in `zoptarg`. Returns OPTIND-1,
+/// the count `shift OPTIND-1` removes.
+pub fn getopts_loop(
+    args: &[String],
+    optstring: &str,
+    sh_line: u64,
+    mut on_opt: impl FnMut(&str, Option<&str>),
+) -> usize {
+    use crate::ported::params::setsparam;
+    let quiet = optstring.starts_with(':'); // c:5681
+    let optstr = &optstring[quiet as usize..]; // c:5682
+    let posix = crate::ported::zsh_h::isset(crate::ported::zsh_h::POSIXBUILTINS); // c:5667
+    let warn = |msg: String| {
+        set_sh_lineno(sh_line);
+        crate::ported::utils::zwarn(&msg);
+    };
+    let mut zoptind = 1usize; // c:5673
+    let mut optcind = 0usize; // c:5674
+    loop {
+        if args.len() < zoptind {
+            return zoptind - 1; // c:5676-5678
+        }
+        let mut str: Vec<char> = args[zoptind - 1].chars().collect();
+        if str.is_empty() {
+            return zoptind - 1; // c:5687-5688
+        }
+        if optcind >= str.len() {
+            // c:5689-5694
+            optcind = 0;
+            zoptind += 1;
+            if args.len() < zoptind {
+                return zoptind - 1;
+            }
+            str = args[zoptind - 1].chars().collect();
+        }
+        if optcind == 0 {
+            // c:5695-5703
+            if str.len() < 2 || (str[0] != '-' && (posix || str[0] != '+')) {
+                return zoptind - 1;
+            }
+            if str.len() == 2 && str[0] == '-' && str[1] == '-' {
+                zoptind += 1;
+                return zoptind - 1;
+            }
+            optcind = 1;
+        }
+        let opch = str[optcind]; // c:5704
+        optcind += 1; // c:5706
+        let sign = if str[0] == '+' { "+" } else { "-" }; // c:5707-5711
+        let optbuf = if str[0] == '+' { format!("+{}", opch) } else { opch.to_string() };
+        // c:5715 — check for legality
+        let pos = if opch == ':' { None } else { optstr.find(opch) };
+        let Some(pos) = pos else {
+            if posix {
+                optcind = 0;
+                zoptind += 1;
+            }
+            if quiet {
+                let _ = setsparam("OPTARG", &format!("{}{}", sign, opch)); // c:5725
+            } else {
+                warn(format!("bad option: {}{}", sign, opch)); // c:5727
+                let _ = setsparam("OPTARG", ""); // c:5729
+            }
+            on_opt("?", None); // c:5723
+            continue;
+        };
+        // c:5735 — check for required argument
+        if optstr.as_bytes().get(pos + opch.len_utf8()) == Some(&b':') {
+            let optarg: String = if optcind == str.len() {
+                if args.len() <= zoptind {
+                    // c:5737-5753
+                    if posix {
+                        optcind = 0;
+                        zoptind += 1;
+                    }
+                    if quiet {
+                        let _ = setsparam("OPTARG", &format!("{}{}", sign, opch));
+                        on_opt(":", None);
+                    } else {
+                        let _ = setsparam("OPTARG", "");
+                        warn(format!("argument expected after {}{} option", sign, opch));
+                        on_opt("?", None);
+                    }
+                    continue;
+                }
+                zoptind += 1; // c:5755
+                args[zoptind - 1].clone()
+            } else {
+                str[optcind..].iter().collect() // c:5757
+            };
+            optcind = 0; // c:5765
+            zoptind += 1; // c:5766
+            let _ = setsparam("OPTARG", &optarg); // c:5768
+            on_opt(&optbuf, Some(&optarg)); // c:5774
+        } else {
+            let _ = setsparam("OPTARG", ""); // c:5771
+            on_opt(&optbuf, None); // c:5774
+        }
+    }
+}
+
+/// `eval "$comp"` — the way every compsys dispatcher invokes the completer
+/// named by `$_comps` / `$_patcomps` (`_dispatch` sh:31/63/76/87,
+/// `_normal` sh:32).
+///
+/// Upstream never CALLS the completer by name; it `eval`s the registered
+/// value as shell text. Two things follow, and a port needs both:
+///
+///   * the value can carry arguments (`compdef '_files -/' mycmd` stores
+///     `_files -/`), which a by-name dispatch cannot express; and
+///   * `eval` pushes an `FS_EVAL` funcstack frame named `(eval)`
+///     (`Src/builtin.c:6164-6199`), so every completer invoked this way runs
+///     one frame deeper than its caller.
+///
+/// The frame is not cosmetic. Completion code reads `$#funcstack` to decide
+/// nesting depth — `_all_labels`/`_alternative` compare it against
+/// `_tags_level` — so a missing frame silently changes completion behaviour.
+/// A port calling `dispatch_function_call(&comp, &[])` pushes only the
+/// completer's own `FS_FUNC` frame; `$funcstack` then reads
+/// `_mytest _dispatch _normal …` where zsh reports
+/// `_mytest (eval) _dispatch _normal …`.
+///
+/// `line` is the upstream line the `eval` sits on; publishing it via
+/// [`set_sh_lineno`] is what makes `$functrace` read `_dispatch:63` instead
+/// of `_dispatch:0` (the caller's line is recorded at push time by `doshfunc`
+/// c:6013 / `EvalFuncstackFrame::push` c:6169).
+///
+/// The body mirrors `static int eval(char **argv)` (`Src/builtin.c:6151`)
+/// with `argv == { comp, NULL }`; the funcstack half is the shared canonical
+/// port [`crate::ported::exec::EvalFuncstackFrame`] (c:6164-6199), the same
+/// one the live `eval` builtin uses, so both entry points build an identical
+/// frame.
+pub fn eval_comp(comp: &str, line: u64) -> i32 {
+    set_sh_lineno(line);
+    let oscriptname = crate::ported::utils::scriptname_get(); // c:6154
+    let fstack = crate::ported::exec::EvalFuncstackFrame::push(); // c:6164-6199
+    if fstack.pushed() {
+        // c:6165 — `scriptname = "(eval)";` (inside the `!ineval` arm).
+        crate::ported::utils::set_scriptname(Some("(eval)".to_string()));
+    }
+    // c:6209 — `execode(prog, 1, 0, "eval");` APPENDS its context argument to
+    // `zsh_eval_context` for the duration of the body (Src/exec.c:1245-1266).
+    //
+    // That push is DELIBERATELY NOT made here. `docs/COMPLETION_DISPATCH.md`
+    // "Divergence C" records the decision that compsys Rust ports do not
+    // synthesize `$zsh_eval_context` frames, and
+    // tests/zsh_eval_context_frames.rs::compsys_ports_synthesize_no_eval_context_frames
+    // pins it by scanning this tree for that constructor call. (The scan is a
+    // plain substring match, so naming the call verbatim here — even in prose —
+    // trips it; hence the circumlocution.)
+    //
+    // A push was added here in 9e55378587 and broke that test. It is left out
+    // rather than re-added, and the test is left alone, because the decision is
+    // documented and the test is its enforcement — not because the case is
+    // clear-cut. It is not: Divergence C reasons that the Rust chain "never
+    // evals", whereas this function genuinely does parse and execute a string
+    // below, so a frame here would arguably be truthful rather than fabricated.
+    // Resolving that tension is a design call for the maintainer; silently
+    // overriding a pinned decision from inside a bug fix is not.
+    //
+    // The funcstack half above is separate and IS pushed: it is a real frame
+    // for a call that really happens, and no invariant forbids it.
+    //
+    // c:6203-6216 — `prog = parse_string(...); … execode(prog, …)`; a NULL
+    // prog (parse failure) is `lastval = 1` at c:6215.
+    let mut lastval = crate::ported::exec::execute_script(comp).unwrap_or(1);
+    // c:6211-6212 — `if (errflag && !lastval) lastval = errflag;`
+    {
+        let ef = crate::ported::utils::errflag.load(std::sync::atomic::Ordering::Relaxed);
+        if ef != 0 && lastval == 0 {
+            lastval = ef;
+        }
+    }
+    drop(fstack); // c:6218-6219 `if (fpushed) funcstack = funcstack->prev;`
+                  // c:6221 — `errflag &= ~ERRFLAG_ERROR;`
+                  //
+                  // `eval` swallows the error bit on the way out, UNCONDITIONALLY, and that
+                  // is load-bearing for completion: it is what lets an error deep inside a
+                  // completer TRUNCATE the work while KEEPING the matches already banked.
+                  // `_CC` ends in `_files -g "*(-.):t:source files" -g "*(-/):t:directories"`,
+                  // which brace-expands to four sdefs; the third is a genuine bad pattern
+                  // (`/` ends a segment at EVERY paren depth — c:Src/pattern.c:949-952 — so
+                  // the group is unterminated and c:Src/pattern.c:913-914 rejects it).
+                  // `zerr` raises ERRFLAG_ERROR (c:Src/utils.c:184); that aborts
+                  // `_path_files`, `_files` (so the FOURTH sdef, `*(-/)` = every directory,
+                  // never runs), `_arguments` and `_CC` — and then THIS clear runs at the
+                  // `eval "$comp"` in sh:Completion/Base/Core/_dispatch:63, so
+                  // `makecomplist`'s `(nmatches || nmessages) && !errflag`
+                  // (c:Src/Zle/compcore.c:1031) still sees errflag == 0 and keeps the one
+                  // match added before the error.  Without it the completion is discarded
+                  // and `CC <TAB>` produces nothing at all.
+                  //
+                  // Measured on an instrumented zsh 5.9.999.3 driving `CC <TAB>`:
+                  //   ZDBG SET   utils.c:184 zerr fmt=<bad pattern: %s> errflag=1
+                  //   ZDBG FUNC< _path_files errflag=1 ret=1
+                  //   ZDBG FUNC< _files      errflag=1 ret=1
+                  //   ZDBG FUNC< _arguments  errflag=1 ret=1
+                  //   ZDBG FUNC< _CC         errflag=1 ret=1
+                  //   ZDBG CLR   builtin.c:6213 before=1 stmt=<errflag &= ~ERRFLAG_ERROR;>
+                  //   ZDBG FUNC< _dispatch   errflag=0 ret=1
+                  //   ZDBG CHECK compcore.c:1031 nmatches=1 nmessages=0 errflag=0
+                  // Of the 87 errflag clear sites in the C source, that is the ONLY one in
+                  // the whole session that observes a set ERRFLAG_ERROR.
+    crate::ported::utils::errflag.fetch_and(
+        !crate::ported::zsh_h::ERRFLAG_ERROR,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    crate::ported::utils::set_scriptname(oscriptname); // c:6222
+    lastval // c:6225
+}
+
+/// Run an already-expanded action word list as a COMMAND, the way the shell
+/// does at `_arguments` sh:455 / sh:465 and `_all_labels` sh:35 / sh:39.
+///
+/// `cmd` is the command word (`$action[1]`), `argv` the rest of the words the
+/// shell would have passed, and `line` the upstream line the command sits on
+/// — it is published through [`set_sh_lineno`] so any diagnostic this raises
+/// carries the same `_arguments:465:` prefix zsh prints.
+///
+/// **Why a helper rather than a bare
+/// [`crate::ported::exec::dispatch_function_call`]:** that entry resolves
+/// SHELL FUNCTIONS and the native ports standing in for them, and nothing
+/// else — `vm_helper.rs:4706` ends in `functions_compiled.get(name).cloned()?`,
+/// so a builtin, an executable on `$PATH`, and a name that exists nowhere all
+/// come back `None`. Call sites turned that `None` into a plain non-zero
+/// status, which means a command word the shell would have DIAGNOSED
+/// disappeared without a byte of output. Measured on
+/// `~/.zinit/plugins/MenkeTechnologies---zsh-more-completions/more_src6/_tor-resolve`,
+/// whose rest spec is
+///
+/// ```text
+/// '*:hostname or IP and SOCKS host[:port]:'
+/// ```
+///
+/// — a MESSAGE carrying an unescaped `:`, so `parse_caarg` (c:1137-1138,
+/// `mult == 0`) takes everything after the first colon as the ACTION and
+/// `_arguments` runs `port]:` as a command. zsh reports
+/// `_arguments:465: command not found: port]:` and zshrs printed nothing at
+/// all, which is the "one-sided silence" shape that reads as a hang.
+///
+/// The three arms mirror what `execcmd` does with a command word: a shell
+/// function (or port) runs; a name that IS a builtin or IS on `$PATH` is real
+/// but has no execution route from here, so it keeps the pre-existing
+/// "action did not succeed" answer rather than having one invented for it;
+/// and only a name that resolves to nothing reaches
+/// `Src/exec.c:903`'s diagnostic.
+///
+/// `zwarn`, NOT `zerr`: c:903 runs in the FORKED child of `execcmd`, which
+/// `_exit(127)`s at c:908, so the parent shell's `errflag` is never raised.
+/// `zerr` here runs in the live shell and would set `ERRFLAG_ERROR`
+/// (`src/ported/utils.rs:236`), abandoning the rest of the completion.
+/// The same fork has a second consequence — the child already cleared
+/// `zleactive`, so the diagnostic must not repaint the editor — which
+/// the `SubshStateGuard` at the emission site carries; see the comment
+/// there.
+///
+/// This is the extraction of `_all_labels`' private `dispatch_action` tail,
+/// which had the same three arms; that port now calls this one, so the
+/// behaviour lives in a single place instead of being re-derived per caller.
+pub fn dispatch_action_command(cmd: &str, argv: &[String], line: u64) -> i32 {
+    // The line has to be published BEFORE anything can diagnose: `lineno` is
+    // what `zerrmsg` prints after the function name (`Src/utils.c:301-305`),
+    // and `FnScope` zeroed it on entry to the port's body.
+    set_sh_lineno(line);
+
+    // `compadd` is a BUILTIN, so `dispatch_function_call` finds no shell
+    // function for it and the action would add nothing. Route it to the real
+    // builtin in `src/ported/zle/complete`.
+    if cmd == "compadd" {
+        let ops = crate::ported::zsh_h::options {
+            ind: [0u8; crate::ported::zsh_h::MAX_OPS],
+            args: Vec::new(),
+            argscount: 0,
+            argsalloc: 0,
+        };
+        return crate::ported::zle::complete::bin_compadd("compadd", argv, &ops, 0);
+    }
+
+    if let Some(rc) = crate::ported::exec::dispatch_function_call(cmd, argv) {
+        return rc;
+    }
+
+    // Neither a shell function nor a registered port. zsh looks for a builtin
+    // and then for an executable on `$PATH`; only when both miss does it
+    // report the command as not found.
+    if crate::ported::builtin::createbuiltintable().contains_key(cmd)
+        || crate::ported::exec::findcmd(cmd, 0, 0).is_some()
+    {
+        return 1;
+    }
+
+    // c:Src/exec.c:903 — `zerr("command not found: %s", arg0);`
+    //
+    // The FORKED CHILD is not just about `errflag`. Before `execute()`
+    // ever reaches c:903 the child has run `entersubsh()`, whose last
+    // two scalar deltas are `opts[USEZLE] = 0; zleactive = 0;`
+    // (Src/exec.c:1247-1248). `zwarning` opens with
+    // `if (isatty(2)) zleentry(ZLE_CMD_TRASH);` (Src/utils.c:144-145)
+    // and `trashzle` is gated on `if (zleactive && !trashedzle)`
+    // (Src/Zle/zle_main.c:2071), so in C that hook does NOTHING here:
+    // no `zrefresh`, no `moveto(nlnct, 0)`, no `resetneeded = 1`. The
+    // diagnostic lands wherever ZLE left the cursor — appended to the
+    // command line's own row — and the editor display is not repainted.
+    //
+    // zshrs runs this in the live shell with no fork, so without the
+    // guard `zleactive` is still 1, `trashzle` fires, and its
+    // `moveto(nlnct, 0)` writes `\r` + `\n` before the text while
+    // `resetneeded` makes the following `zrefresh` repaint the prompt
+    // after it. Measured against zsh on `_alternative 'x:x: nosuchcmd'`:
+    //   zsh  : row 0 `$ true _alternative:63: command not found: …`
+    //   zshrs: row 0 `$ true`, row 1 the diagnostic, row 2 the prompt again
+    // — the same text, three rows instead of one.
+    //
+    // `SubshStateGuard` (exec.rs) is the ported stand-in for exactly
+    // those `entersubsh` deltas that are correct without a fork, and it
+    // restores them on drop.
+    let _subsh = crate::ported::exec::SubshStateGuard::enter(); // c:1247-1248
+    crate::ported::utils::zwarn(&format!("command not found: {}", cmd)); // c:903
+    127 // c:908 — `_exit((eno == EACCES || eno == ENOEXEC) ? 126 : 127)`
+}
+
+// =====================================================================
+// `$( <builtin> )` — capturing a builtin's stdout without a subshell.
+// =====================================================================
+
+/// !!! WARNING: RUST-ONLY HELPER !!!
+///
+/// The `$( … )` around a BUILTIN, for the ports whose upstream source
+/// reads a builtin's stdout: `_limits` sh:5 `$(limit)`, `_parameters`
+/// sh:34 `$( typeset -m … )`, `_correct_filename` sh:60
+/// `$(whence -wm …)`, `_user_math_func` sh:6 `$(functions -M)`.
+///
+/// C has no counterpart because C never needs one — a shell has no way
+/// to reach a builtin's stdout EXCEPT a command substitution, so
+/// upstream pays for a fork and a full parse to read a table the same
+/// process already holds. `exec::run_command_substitution` reproduces
+/// that faithfully, including the deep clone of all shell state that
+/// every real `$( … )` performs; on a completer that runs per keystroke
+/// the clone is the entire cost. This runs the builtin in-process with
+/// fd 1 pointed at a scratch file instead, which reaches the identical
+/// bytes.
+///
+/// It exists so there is ONE of these. Two hand-rolled copies had
+/// already appeared (`_parameters`, then `_correct_filename` explicitly
+/// copying it), and each got to decide independently whether to restore
+/// fd 1 on the failure path, whether to flush first, and whether to
+/// delete the scratch file.
+///
+/// A temp FILE, not a pipe: these listings are unbounded (`typeset -m`
+/// over `$PATH`/`$LS_COLORS`, `whence -m` over a large `$PATH`) and a
+/// pipe would deadlock the moment the output outgrew its 64K buffer
+/// with nobody draining the read end.
+///
+/// `discard_stderr` is the `2>/dev/null` some of those call sites write.
+///
+/// Returns what the builtin printed, or the empty string if the scratch
+/// file cannot be made or fd 1 cannot be redirected — in which case the
+/// builtin is NOT run, so a failure here adds nothing wrong, it only
+/// leaves the caller with no candidates.
+pub fn capture_builtin_stdout(discard_stderr: bool, run: impl FnOnce()) -> String {
+    let (fd, path) = match crate::ported::utils::gettempfile(None) {
+        Some(t) => t,
+        None => return String::new(),
+    };
+    // Flush FIRST: `println!` writes through a `LineWriter` over fd 1, and
+    // anything still buffered from before the redirect would otherwise land
+    // in the capture instead of on the terminal.
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let saved_out = unsafe { libc::dup(1) };
+    let saved_err = if discard_stderr {
+        unsafe { libc::dup(2) }
+    } else {
+        -1
+    };
+    let devnull = if discard_stderr {
+        unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY) }
+    } else {
+        -1
+    };
+    let redirected = saved_out >= 0 && unsafe { libc::dup2(fd, 1) } >= 0;
+    if redirected {
+        let err_redirected =
+            devnull >= 0 && saved_err >= 0 && unsafe { libc::dup2(devnull, 2) } >= 0;
+        run();
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        unsafe {
+            libc::dup2(saved_out, 1);
+        }
+        if err_redirected {
+            unsafe {
+                libc::dup2(saved_err, 2);
+            }
+        }
+    }
+    for f in [saved_out, saved_err, devnull, fd] {
+        if f >= 0 {
+            unsafe {
+                libc::close(f);
+            }
+        }
+    }
+    let text = if redirected {
+        std::fs::read_to_string(&path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let _ = std::fs::remove_file(&path);
+    text
+}
+
+#[cfg(test)]
+mod capture_builtin_stdout_tests {
+    use super::*;
+
+    /// RUST-ONLY test scaffold: write straight to the fd. A ported builtin
+    /// reaches fd 1 through `println!`, but libtest replaces the `print!`
+    /// macros' sink (`std::io::set_output_capture`), so a `println!` here
+    /// would never reach the redirect and the test would measure libtest
+    /// rather than this function.
+    fn write_fd(fd: i32, s: &str) {
+        unsafe {
+            libc::write(fd, s.as_ptr() as *const libc::c_void, s.len());
+        }
+    }
+
+    /// The captured text is what the builtin printed, and fd 1 is the
+    /// caller's again afterwards.
+    #[test]
+    fn captures_stdout_and_restores_fd1() {
+        let _g = crate::test_util::global_state_lock();
+
+        let text = capture_builtin_stdout(false, || {
+            write_fd(1, "one\ntwo\n");
+        });
+
+        assert_eq!(text, "one\ntwo\n");
+        // fd 1 still writes somewhere valid — a leaked redirect shows up
+        // as an EBADF here, and as vanished output for the rest of the
+        // process.
+        assert!(
+            unsafe { libc::fcntl(1, libc::F_GETFD) } >= 0,
+            "fd 1 was not restored"
+        );
+    }
+
+    /// `2>/dev/null` on the call site must keep stderr OUT of the capture
+    /// and must not leave fd 2 pointing at `/dev/null` afterwards.
+    #[test]
+    fn discard_stderr_leaves_fd2_usable() {
+        let _g = crate::test_util::global_state_lock();
+        let text = capture_builtin_stdout(true, || {
+            write_fd(1, "out\n");
+            write_fd(2, "this must not be captured\n");
+        });
+        assert_eq!(text, "out\n");
+        assert!(
+            unsafe { libc::fcntl(2, libc::F_GETFD) } >= 0,
+            "fd 2 was not restored"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lineno_scope_tests {
+    use super::*;
+    use crate::ported::lex::{lineno, set_lineno};
+
+    /// `zerrmsg` prints the line only when it is non-zero
+    /// (`Src/utils.c:301` — `&& lineno`), so a port body must start at 0:
+    /// an un-annotated statement has to report NO line rather than inherit
+    /// the caller's, which belongs to a different file.
+    #[test]
+    fn getopts_loop_clusters_and_recovers_like_bin_getopts() {
+        let _g = crate::test_util::global_state_lock();
+        let run = |args: &[&str], optstring: &str| {
+            let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+            let mut seen: Vec<String> = Vec::new();
+            let n = getopts_loop(&args, optstring, 7, |opt, optarg| {
+                seen.push(format!("{}={}", opt, optarg.unwrap_or("")));
+            });
+            (n, seen)
+        };
+        // A nested `_alternative` action gets `$expl[@]`: `-J` and every
+        // letter of `-default-` are invalid options, reported and skipped,
+        // and the first spec word ends the options (OPTIND-1 == 2).
+        let (n, seen) = run(&["-J", "-default-", "t:d:(a b)"], "O:C:");
+        assert_eq!(n, 2);
+        assert_eq!(seen.len(), 9, "{:?}", seen);
+        assert!(seen.iter().all(|s| s == "?="));
+        // Attached and separated arguments; `--` is consumed.
+        let (n, seen) = run(&["-Oargs", "-C", "ctx", "--", "-"], "O:C:");
+        assert_eq!(n, 4);
+        assert_eq!(seen, ["O=args", "C=ctx"]);
+        // `+x` is an option outside POSIX_BUILTINS and stores `+x`; a
+        // missing argument is `?` and ends the walk.
+        let (n, seen) = run(&["+x", "-t"], "t:x");
+        assert_eq!(n, 2);
+        assert_eq!(seen, ["+x=", "?="]);
+        // `-ot-` clusters: `o`, then `t` swallows the rest of the word.
+        let (n, seen) = run(&["-ot-", "rest"], "oOt:12JVx");
+        assert_eq!(n, 1);
+        assert_eq!(seen, ["o=", "t=-"]);
+    }
+
+    #[test]
+    fn fn_scope_zeroes_lineno_for_the_port_body() {
+        let _g = crate::test_util::global_state_lock();
+        set_lineno(218); // caller mid-body, e.g. _main_complete sh:218
+        {
+            let _s = FnScope::enter("_describe");
+            assert_eq!(lineno(), 0, "port body must start with no known line");
+        }
+    }
+
+    /// `execlist` restores the caller's line when a body finishes
+    /// (`Src/exec.c:1429` / `Src/exec.c:1696`), which is what keeps a
+    /// nested call from renumbering its caller's diagnostics.
+    #[test]
+    fn fn_scope_restores_the_callers_lineno_on_exit() {
+        let _g = crate::test_util::global_state_lock();
+        set_lineno(218);
+        {
+            let _s = FnScope::enter("_describe");
+            set_sh_lineno(129);
+            assert_eq!(lineno(), 129);
+        }
+        assert_eq!(lineno(), 218, "caller's line must survive the port call");
+    }
+
+    /// Nested ports each restore their own caller, so `_describe` calling
+    /// `_tags` leaves `_describe`'s line intact for the statement after it.
+    #[test]
+    fn nested_fn_scopes_unwind_to_the_right_line() {
+        let _g = crate::test_util::global_state_lock();
+        set_lineno(0);
+        let outer = FnScope::enter("_describe");
+        set_sh_lineno(122);
+        {
+            let _inner = FnScope::enter("_tags");
+            assert_eq!(lineno(), 0);
+            set_sh_lineno(36); // _tags sh:36 — comptags "-i$prev" …
+            assert_eq!(lineno(), 36);
+        }
+        assert_eq!(lineno(), 122, "_describe's line must survive _tags");
+        drop(outer);
+        assert_eq!(lineno(), 0);
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_framing_tests {
+    use std::sync::atomic::Ordering;
+
+    /// The `command not found` diagnostic must NOT trash the line editor.
+    ///
+    /// `Src/exec.c:903` is reached only inside the fork `execcmd` makes for
+    /// an external command, and that child has already run `entersubsh`,
+    /// whose last two scalar deltas are `opts[USEZLE] = 0; zleactive = 0;`
+    /// (`Src/exec.c:1247-1248`). `zwarning` opens with
+    /// `if (isatty(2)) zleentry(ZLE_CMD_TRASH);` (`Src/utils.c:144-145`)
+    /// and `trashzle` runs its body only `if (zleactive && !trashedzle)`
+    /// (`Src/Zle/zle_main.c:2071`) — so with `zleactive` cleared the hook
+    /// is a no-op and the diagnostic lands on the command line's own row
+    /// with no repaint after it.
+    ///
+    /// The two flags asserted here are the ones `trashzle` sets on its way
+    /// through: `trashedzle = 1` (c:2079) and `resetneeded = 1` (c:2091),
+    /// the second of which is what makes the NEXT `zrefresh` repaint the
+    /// prompt below the diagnostic. Either being raised is the three-row
+    /// display zshrs used to produce where zsh produces one.
+    ///
+    /// `fd 2` is pointed at a pty for the duration: `isatty(2)` is false
+    /// under `cargo test`, and with it false `zwarning` never reaches the
+    /// hook at all — the case would pass without measuring anything.
+    #[test]
+    fn the_not_found_diagnostic_does_not_trash_the_line_editor() {
+        use crate::ported::builtins::sched::zleactive;
+        use crate::ported::init::zle_load_state;
+        use crate::ported::zle::zle_refresh::{RESETNEEDED, TRASHEDZLE};
+
+        let _g = crate::test_util::global_state_lock();
+
+        let mut master: libc::c_int = 0;
+        let mut slave: libc::c_int = 0;
+        let rc = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut::<libc::termios>(),
+                std::ptr::null_mut::<libc::winsize>(),
+            )
+        };
+        assert_eq!(rc, 0, "openpty failed; the probe needs a terminal on fd 2");
+        let saved_stderr = unsafe { libc::dup(2) };
+        assert!(saved_stderr >= 0, "dup(2) failed");
+        assert!(
+            unsafe { libc::dup2(slave, 2) } >= 0,
+            "dup2 onto fd 2 failed"
+        );
+        assert_eq!(
+            unsafe { libc::isatty(2) },
+            1,
+            "fd 2 must be a terminal or Src/utils.c:144 skips the hook"
+        );
+
+        let saved = (
+            zleactive.load(Ordering::Relaxed),
+            zle_load_state.load(Ordering::SeqCst),
+            TRASHEDZLE.load(Ordering::Relaxed),
+            RESETNEEDED.load(Ordering::Relaxed),
+        );
+        // `zle_load_state == 1` is "the module is loaded", the state in
+        // which `zleentry` forwards to `zle_main_entry` (Src/init.c:1777)
+        // rather than to the no-ZLE fallback. An interactive shell running
+        // a completer is always in it.
+        zleactive.store(1, Ordering::Relaxed);
+        zle_load_state.store(1, Ordering::SeqCst);
+        TRASHEDZLE.store(0, Ordering::Relaxed);
+        RESETNEEDED.store(0, Ordering::Relaxed);
+        crate::ported::utils::errflag.store(0, Ordering::Relaxed);
+
+        let status = super::dispatch_action_command("nosuchcmd_zz_framing_probe", &[], 63);
+
+        let trashed = TRASHEDZLE.load(Ordering::Relaxed);
+        let reset = RESETNEEDED.load(Ordering::Relaxed);
+        let still_active = zleactive.load(Ordering::Relaxed);
+
+        zleactive.store(saved.0, Ordering::Relaxed);
+        zle_load_state.store(saved.1, Ordering::SeqCst);
+        TRASHEDZLE.store(saved.2, Ordering::Relaxed);
+        RESETNEEDED.store(saved.3, Ordering::Relaxed);
+        crate::ported::utils::errflag.store(0, Ordering::Relaxed);
+        unsafe {
+            libc::dup2(saved_stderr, 2);
+            libc::close(saved_stderr);
+            libc::close(slave);
+            libc::close(master);
+        }
+
+        assert_eq!(status, 127, "c:908 — a name that resolves nowhere is 127");
+        assert_eq!(
+            trashed, 0,
+            "trashzle ran: the diagnostic moved the cursor off the command \
+             line's row (Src/Zle/zle_main.c:2071 is false in C's forked child)"
+        );
+        assert_eq!(
+            reset, 0,
+            "resetneeded was raised: the next zrefresh repaints the prompt \
+             BELOW the diagnostic, which zsh never does here"
+        );
+        assert_eq!(
+            still_active, 1,
+            "the entersubsh stand-in must restore zleactive when it drops"
+        );
+    }
+}
+
+#[cfg(test)]
+mod zstyle_bool_tests {
+    use super::{empty_ops, zstyle_T, zstyle_t};
+
+    const CTX: &str = ":completion:zstyle-bool-probe:zstyle-bool-probe:";
+
+    fn set_style(value: &str) {
+        crate::ported::modules::zutil::bin_zstyle(
+            "zstyle",
+            &[CTX.to_string(), "boolprobe".to_string(), value.to_string()],
+            &empty_ops(),
+            0,
+        );
+    }
+
+    fn del_style() {
+        crate::ported::modules::zutil::bin_zstyle(
+            "zstyle",
+            &["-d".to_string(), CTX.to_string(), "boolprobe".to_string()],
+            &empty_ops(),
+            0,
+        );
+    }
+
+    /// `Src/Modules/zutil.c:701-724` — the `-t`/`-T` arm reads the style's
+    /// FIRST VALUE. `testforstyle` (c:465), which backs `zstyle -q` (c:749-756),
+    /// answers only "is this style defined" and returns the same thing for
+    /// `boolprobe yes` and `boolprobe 0`. Every compsys port that tested a
+    /// boolean style through it therefore took the TRUE branch for a style the
+    /// user had explicitly turned OFF.
+    #[test]
+    fn value_decides_the_exit_not_mere_definition() {
+        let _g = crate::test_util::global_state_lock();
+        del_style();
+
+        // c:724 — `return (args[0][1] == 't' ? (vals ? 1 : 2) : 0);`
+        assert_eq!(zstyle_t(CTX, "boolprobe"), 2, "-t, no pattern matched → 2");
+        assert_eq!(zstyle_T(CTX, "boolprobe"), 0, "-T, no pattern matched → 0");
+
+        // c:719-722 — the four boolean-true spellings.
+        for v in ["true", "yes", "on", "1"] {
+            del_style();
+            set_style(v);
+            assert_eq!(zstyle_t(CTX, "boolprobe"), 0, "-t on `{v}` must be 0");
+            assert_eq!(zstyle_T(CTX, "boolprobe"), 0, "-T on `{v}` must be 0");
+        }
+
+        // c:719-722 — anything else is FALSE for both letters. This is the
+        // whole defect class: `testforstyle` answered 0 ("defined") for each
+        // of these, so the ports ran the true branch.
+        // An ARBITRARY non-boolean value is FALSE for both letters too —
+        // `-T` is "true unless it is set to something that is not true", NOT
+        // "true unless it is set to one of the four false-y words". Five
+        // private `zstyle_t_default_true` copies had spelled it
+        // `!matches!(first, "no"|"false"|"off"|"0")`, which answers TRUE here;
+        // `_describe`'s copy of the same-named helper answered FALSE, and the
+        // disagreement between two bodies under one name is how it surfaced.
+        for v in ["maybe", "2", "yes-ish", "-1"] {
+            del_style();
+            set_style(v);
+            assert_eq!(
+                zstyle_t(CTX, "boolprobe"),
+                1,
+                "-t on `{v}` must be 1 — only true/yes/on/1 are true"
+            );
+            assert_eq!(
+                zstyle_T(CTX, "boolprobe"),
+                1,
+                "-T on `{v}` must be 1 — a set-but-not-true value is FALSE"
+            );
+        }
+
+        // Set with NO values is a distinct case from unset, and both are
+        // `-T` true (c:724 `vals ? 1 : 2` for -t; the -T arm returns 0).
+        del_style();
+        crate::ported::modules::zutil::bin_zstyle(
+            "zstyle",
+            &[CTX.to_string(), "boolprobe".to_string()],
+            &empty_ops(),
+            0,
+        );
+        assert_eq!(zstyle_T(CTX, "boolprobe"), 0, "-T on a valueless style → 0");
+
+        for v in ["false", "no", "off", "0"] {
+            del_style();
+            set_style(v);
+            assert_eq!(
+                zstyle_t(CTX, "boolprobe"),
+                1,
+                "-t on `{v}` must be 1, not 0 — the style is OFF"
+            );
+            assert_eq!(
+                zstyle_T(CTX, "boolprobe"),
+                1,
+                "-T on `{v}` must be 1, not 0 — the style is OFF"
+            );
+            // The defect itself, pinned: the primitive the ports used
+            // answers the SAME thing here as it does for `yes`. Every
+            // converted site spelled its test `testforstyle(…) == 0`, so
+            // every one of them ran the true branch for a style the user
+            // had switched off.
+            assert_eq!(
+                crate::ported::modules::zutil::testforstyle(CTX, "boolprobe"),
+                0,
+                "`testforstyle` reports `{v}` as TRUE — it is zstyle -q's \
+                 primitive (zutil.c:465/749-756) and never reads the value"
+            );
+        }
+
+        del_style();
+    }
+}
+
+/// Keys of `$functions` whose name starts with `prefix` — the scan behind
+/// every upstream `${(k)functions[(I)<prefix>*]}` / `${(k)functions:#^<prefix>*}`.
+///
+/// The upstream spelling matters: those subscripts go through the
+/// `zsh/parameter` module's own scan, and that scan is the NOT-DISABLED half
+/// of `shfunctab` (c:Src/Modules/parameter.c:482):
+///
+/// ```c
+/// if (dis ? (hn->flags & DISABLED) : !(hn->flags & DISABLED)) {
+/// ```
+///
+/// `$functions` is the `dis == 0` caller (`scanpmfunctions`, c:530-534);
+/// `$dis_functions` is the other one (c:537-541). A port that walks
+/// `shfunctab` itself without that test offers names `disable -f` has taken
+/// out of `$functions`, which is the whole reason this lives in one place:
+/// three call sites want this scan (`_zcalc_line`, `_email_addresses`,
+/// `_vcs_info_hooks`) and each one that hand-rolled it was one more chance
+/// to drop the filter.
+///
+/// Returns the FULL names in `shfunctab` order — the prefix strip differs
+/// per call site (`##zsh_math_func_` is literal, `#*-` cuts at the first
+/// dash) so it stays with the caller, and no sort is applied because the
+/// upstream subscripts do not sort either.
+pub fn shfunc_names_with_prefix(prefix: &str) -> Vec<String> {
+    let Ok(tab) = crate::ported::hashtable::shfunctab_lock().read() else {
+        return Vec::new();
+    };
+    tab.iter()
+        // c:Src/Modules/parameter.c:482 — `$functions` is the NOT-DISABLED half.
+        .filter(|(_, f)| (f.node.flags & crate::ported::zsh_h::DISABLED) == 0)
+        .filter(|(k, _)| k.starts_with(prefix))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
+/// `$name[key]` for an ASSOCIATIVE parameter, including the `zsh/parameter`
+/// magic hashes (`aliases`, `galiases`, `dis_aliases`, `dis_galiases`,
+/// `userdirs`, `nameddirs`, `commands`, …).
+///
+/// `getaparam` is the wrong accessor for these and returns `None`, never an
+/// empty result that would be visible as such: C's `getaparam` bails unless
+/// `PM_TYPE(v->pm->node.flags) == PM_ARRAY` (c:Src/params.c:3108), and every
+/// magic hash is `PM_HASHED`. The port mirrors that at
+/// `src/ported/params.rs:6334`, so a hand-rolled
+/// `getaparam(name)?.chunks(2)` helper silently reads EVERY such hash as
+/// absent — the completer then takes its "no such key" branch always.
+/// `gethkparam`/`gethparam` (c:Src/params.c:3117/3131) are the hash
+/// accessors and dispatch through the module's own scan.
+///
+/// The flat key/value fallback stays for assocs a port staged with
+/// `setaparam`, which do arrive as PM_ARRAY.
+pub fn assoc_get(name: &str, key: &str) -> Option<String> {
+    let keys = crate::ported::params::gethkparam(name).unwrap_or_default();
+    if !keys.is_empty() {
+        let vals = crate::ported::params::gethparam(name).unwrap_or_default();
+        return keys
+            .iter()
+            .position(|k| k == key)
+            .and_then(|i| vals.get(i).cloned());
+    }
+    crate::ported::params::getaparam(name)
+        .unwrap_or_default()
+        .chunks(2)
+        .find(|kv| kv.first().map(|k| k == key).unwrap_or(false))
+        .and_then(|kv| kv.get(1).cloned())
+}
+
+/// `${(Q)s}` — remove one level of shell quoting from `s`.
+///
+/// Faithful port of the scalar `(Q)` arm of `paramsubst`'s quote block,
+/// c:Src/subst.c:4136-4153: `parse_subst_string` to re-lex the word,
+/// `remnulargs` to drop the null markers that leaves behind, `untokenize`
+/// to turn the tokens back into text.
+///
+/// Every port that needs `(Q)` calls THIS. Hand-rolled "drop every quote
+/// character" walkers get the common case right and the rest wrong: they
+/// delete an unbalanced `'`/`"` that the C path keeps as a literal, and
+/// they do not decode `$'...'`.
+pub fn dequote_q(s: &str) -> String {
+    use std::sync::atomic::Ordering;
+    // c:4137 `int one = noerrs, oef = errflag, haserr;`
+    let one = *crate::ported::utils::noerrs_lock().lock().unwrap();
+    let oef = crate::ported::utils::errflag.load(Ordering::Relaxed);
+    // c:4139-4140 `if (!quoteerr) noerrs = 1;`. Without this the re-lex
+    // REPORTS a malformed word — `zshrs: 1: unmatched "` on the terminal
+    // mid-completion — where zsh swallows it. `(X)` is the flag that sets
+    // `quoteerr` and asks for the diagnostic, and no caller here passes it.
+    *crate::ported::utils::noerrs_lock().lock().unwrap() = 1;
+    // c:4141 `haserr = parse_subst_string(val);`
+    let parsed = crate::ported::lex::parse_subst_string(s);
+    // c:4142 `noerrs = one;`
+    *crate::ported::utils::noerrs_lock().lock().unwrap() = one;
+    // c:4143-4146 — "Retain any user interrupt error status", and drop
+    // everything the parse raised. Leaving a parse error set here would
+    // abort the completer that called us, several frames up. The
+    // `else if (haserr || errflag)` arm at c:4147 belongs to `quoteerr`
+    // and is unreachable with `noerrs` on.
+    let int_bit =
+        crate::ported::utils::errflag.load(Ordering::Relaxed) & crate::ported::zsh_h::ERRFLAG_INT;
+    crate::ported::utils::errflag.store(oef | int_bit, Ordering::Relaxed);
+    match parsed {
+        Ok(mut r) => {
+            crate::ported::glob::remnulargs(&mut r); // c:4151
+            crate::ported::lex::untokenize(&r) // c:4152
+        }
+        // C parses IN PLACE and keeps whatever the failed parse left in
+        // `val`; the port's `parse_subst_string` hands back an Err instead,
+        // so the untouched input is what survives.
+        Err(_) => s.to_string(),
+    }
+}
+
+/// `${#<assoc>[(I)<prefix>*]}` — how many keys of the associative parameter
+/// `name` begin with `prefix`. Same accessor story as [`assoc_get`].
+pub fn assoc_key_count_with_prefix(name: &str, prefix: &str) -> usize {
+    let keys = crate::ported::params::gethkparam(name).unwrap_or_default();
+    if !keys.is_empty() {
+        return keys.iter().filter(|k| k.starts_with(prefix)).count();
+    }
+    crate::ported::params::getaparam(name)
+        .unwrap_or_default()
+        .chunks(2)
+        .filter_map(|kv| kv.first())
+        .filter(|k| k.starts_with(prefix))
+        .count()
+}
+
+#[cfg(test)]
+mod assoc_accessor_tests {
+    use super::{assoc_get, assoc_key_count_with_prefix};
+    use crate::ported::params::{getaparam, sethparam, unsetparam};
+
+    /// A PM_HASHED parameter is invisible to `getaparam` — c:Src/params.c:3108
+    /// only yields a value for `PM_TYPE(...) == PM_ARRAY`, and the port
+    /// mirrors that (`src/ported/params.rs:6334`). Every completer that read
+    /// an associative parameter with `getaparam(name)?.chunks(2)` therefore
+    /// saw EVERY key as absent and took its "no such key" branch always
+    /// (`_expand_alias` expanded nothing, `_tilde_files` reported
+    /// "unknown user" for every `~name/`). The accessors must be
+    /// `gethkparam`/`gethparam` (c:3117/3131).
+    #[test]
+    fn reads_a_pm_hashed_parameter_that_getaparam_cannot_see() {
+        let _g = crate::test_util::global_state_lock();
+        const NAME: &str = "zzq_shared_assoc_probe";
+        sethparam(
+            NAME,
+            vec![
+                "alpha".to_string(),
+                "one".to_string(),
+                "alpine".to_string(),
+                "two".to_string(),
+                "beta".to_string(),
+                "three".to_string(),
+            ],
+        );
+
+        assert!(
+            getaparam(NAME).is_none(),
+            "premise broken: getaparam now sees a PM_HASHED param, so this \
+             test no longer guards anything"
+        );
+        assert_eq!(assoc_get(NAME, "alpha"), Some("one".to_string()));
+        assert_eq!(assoc_get(NAME, "beta"), Some("three".to_string()));
+        assert_eq!(assoc_get(NAME, "gamma"), None);
+        // `${#assoc[(I)al*]}` — two keys start with `al`.
+        assert_eq!(assoc_key_count_with_prefix(NAME, "al"), 2);
+        assert_eq!(assoc_key_count_with_prefix(NAME, "b"), 1);
+        assert_eq!(assoc_key_count_with_prefix(NAME, "zz"), 0);
+
+        unsetparam(NAME);
+    }
+}
+
+/// `(( $+builtins[<name>] ))` — is there an ENABLED builtin by this name?
+///
+/// Not the same question as "is the name in `builtintab`". C's
+/// `getpmbuiltin` is `getbuiltin(ht, name, 0)`
+/// (c:Src/Modules/parameter.c:799), which flags the Param `PM_UNSET` unless
+/// the node exists AND passes `!(bn->node.flags & DISABLED)`
+/// (c:Src/Modules/parameter.c:784-792) — that is what makes
+/// `$+builtins[nosuchthing]` and `$+builtins[<disabled>]` evaluate to 0.
+///
+/// The port's `createbuiltintable()` is a static superset built once from
+/// the flat `BUILTINS` slice plus every module's bintab and the zshrs-only
+/// builtins (`src/ported/builtin.rs:147-180`), so `contains_key` answers
+/// yes for names `$builtins` reports as unset: the module-loaded gate that
+/// `getbuiltin` applies is the reason `zsh -f` and `zshrs -f` both print 0
+/// for `$+builtins[chmod]`, `[stat]`, `[zpty]`, `[zselect]` while the raw
+/// table holds all four.
+pub fn plus_builtins(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    match crate::ported::modules::parameter::getpmbuiltin(std::ptr::null_mut(), name) {
+        Some(pm) => (pm.node.flags as u32 & crate::ported::zsh_h::PM_UNSET) == 0,
+        None => false,
+    }
+}
+
+/// `(( $+commands[name] ))` — is `name` a hashed command?
+///
+/// c:Src/Modules/parameter.c:213 `getpmcommand` is the getfn behind the
+/// `commands` special hash, which is NOT paramtab-hashed storage, so
+/// `getaparam("commands")` cannot answer this. `getpmcommand` always returns a
+/// param — on a miss one carrying `PM_UNSET` (c:239) — so existence is the
+/// flag, which is what `$+` reads. The subscript fetch also loads the
+/// `zsh/parameter` autoload stub, hence `mark_module_param_used`.
+pub fn plus_commands(name: &str) -> bool {
+    crate::vm_helper::mark_module_param_used("commands");
+    crate::ported::modules::parameter::getpmcommand(std::ptr::null_mut(), name)
+        .map(|pm| (pm.node.flags & crate::ported::zsh_h::PM_UNSET as i32) == 0)
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod plus_builtins_tests {
+    use super::plus_builtins;
+    use crate::ported::builtin::{createbuiltintable, BUILTINS_DISABLED};
+
+    /// `$+builtins[X]` is 0 for a DISABLED builtin (c:Src/Modules/parameter.c:784-792
+    /// gates on `!(bn->node.flags & DISABLED)`), while `createbuiltintable()` is
+    /// an immutable superset that still holds the node — the disabled bit lives
+    /// in the parallel `BUILTINS_DISABLED` set (`src/ported/builtin.rs:18595-18602`).
+    /// Any port that answers sh's `(( $+builtins[...] ))` from the raw table
+    /// therefore says yes where the shell says no.
+    #[test]
+    fn disabled_builtin_is_unset_even_though_the_raw_table_holds_it() {
+        let _g = crate::test_util::global_state_lock();
+        const NAME: &str = "print";
+        assert!(plus_builtins(NAME), "premise: `print` starts enabled");
+
+        let re_enable = {
+            let mut set = BUILTINS_DISABLED.lock().unwrap();
+            set.insert(NAME.to_string())
+        };
+        let while_disabled = plus_builtins(NAME);
+        let raw_table_still_has_it = createbuiltintable().contains_key(NAME);
+        if re_enable {
+            BUILTINS_DISABLED.lock().unwrap().remove(NAME);
+        }
+
+        assert!(
+            raw_table_still_has_it,
+            "premise: the static table keeps the node when a builtin is disabled"
+        );
+        assert!(
+            !while_disabled,
+            "`disable print` must make `$+builtins[print]` 0 (c:parameter.c:784-792)"
+        );
+        assert!(plus_builtins(NAME), "`print` restored after the probe");
+    }
+
+    /// The empty name is not a builtin — sh:12 reaches this with `$words[1]`
+    /// already checked non-empty (sh:10), but `_shadow` sh:56 does not.
+    #[test]
+    fn empty_name_is_not_a_builtin() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(!plus_builtins(""));
+    }
+}
+
+/// `(( $+parameters[<name>] ))` — does a SET parameter by this name exist?
+///
+/// `paramtab` keeps the node of an unset parameter, so `get(name).is_some()`
+/// is not this question: `getpmparameter` flags its Param PM_UNSET unless the
+/// real node exists AND passes `!(rpm->node.flags & PM_UNSET)`
+/// (c:Src/Modules/parameter.c:114-115), and the scan behind
+/// `${(k)parameters[(I)…]}` skips the same nodes outright
+/// (`scanpmparameters`, c:138-139: `if (((Param)hn)->node.flags & PM_UNSET)
+/// continue;`). `unset RANDOM` does not remove `RANDOM` from the table, it
+/// flags it — `$+parameters[RANDOM]` then reads 0 on both shells (measured),
+/// while the raw node is still there.
+pub fn plus_parameters(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    crate::ported::params::paramtab()
+        .read()
+        .map(|t| match t.get(name) {
+            // c:114-115
+            Some(pm) => (pm.node.flags as u32 & crate::ported::zsh_h::PM_UNSET) == 0,
+            None => false,
+        })
+        .unwrap_or(false)
+}
+
+/// `${#parameters[(I)<prefix>*]}` — how many SET parameters begin with
+/// `prefix`. Same PM_UNSET skip as [`plus_parameters`], from the scan side
+/// (c:Src/Modules/parameter.c:138-139).
+pub fn parameter_count_with_prefix(prefix: &str) -> usize {
+    crate::ported::params::paramtab()
+        .read()
+        .map(|t| {
+            t.iter()
+                .filter(|(k, pm)| {
+                    k.starts_with(prefix)
+                        // c:138-139
+                        && (pm.node.flags as u32 & crate::ported::zsh_h::PM_UNSET) == 0
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod plus_parameters_tests {
+    use super::{parameter_count_with_prefix, plus_parameters};
+    use crate::ported::params::{paramtab, setsparam, unsetparam};
+
+    /// An unset parameter KEEPS its `paramtab` node — `unset RANDOM` flags it
+    /// rather than removing it — so `paramtab().get(name).is_some()` answers
+    /// yes where `$+parameters[name]` answers 0
+    /// (c:Src/Modules/parameter.c:114-115), and the `(I)` scan skips the same
+    /// node (c:138-139). Measured on both shells after `unset RANDOM`:
+    /// `$+parameters[RANDOM]` = 0 and `${#parameters[(I)RANDOM*]}` = 0.
+    #[test]
+    fn unset_parameter_is_absent_from_both_the_test_and_the_count() {
+        let _g = crate::test_util::global_state_lock();
+        const NAME: &str = "ZZQ_SHARED_PARAM_PROBE";
+        setsparam(NAME, "value");
+        assert!(plus_parameters(NAME), "premise: the name starts set");
+        assert_eq!(parameter_count_with_prefix(NAME), 1);
+
+        unsetparam(NAME);
+        let node_still_there = paramtab()
+            .read()
+            .map(|t| t.get(NAME).is_some())
+            .unwrap_or(false);
+        assert!(
+            !plus_parameters(NAME),
+            "`$+parameters[{}]` must be 0 once unset (c:parameter.c:114-115); \
+             node still in paramtab: {}",
+            NAME,
+            node_still_there
+        );
+        assert_eq!(
+            parameter_count_with_prefix(NAME),
+            0,
+            "the `(I)` scan skips PM_UNSET nodes (c:parameter.c:138-139)"
+        );
+    }
+
+    #[test]
+    fn empty_name_is_not_a_parameter() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(!plus_parameters(""));
+    }
+}
+
+/// `(( $+functions[<name>] ))` — is there a FUNCTION by this name?
+///
+/// The plain-shell half is `getpmfunction` (c:Src/Modules/parameter.c:444)
+/// → `getfunction(ht, name, 0)` (c:388): the node has to be in `shfunctab`
+/// AND not `DISABLED`, or the Param comes back flagged `PM_UNSET`
+/// (c:399-438). An `autoload -Uz` stub counts — `PM_UNDEFINED` still yields
+/// the `builtin autoload -X…` string, not `PM_UNSET` (c:401-407) — which is
+/// what makes `$+functions[_files]` read 1 after `compinit`.
+///
+/// The second half is zshrs-only, and it exists because C has nothing to
+/// arbitrate: a name the compsys router serves natively
+/// (`compsys::router::try_rust_dispatch`, or a `zmodload -R` plugin
+/// override) RUNS when it is called, yet leaves no `shfunctab` node behind.
+/// Answering this question from `shfunctab` alone therefore contradicts the
+/// shell's own dispatch. Measured with `fpath=(…5.9.2/share/zsh/functions)`
+/// and no `compinit`, where `_shadow` has a port but no definition file:
+///
+/// ```text
+///   _shadow x                      → rc 0   (the port ran)
+///   _call_function rc _shadow foo  → rc 1   ("no such function")
+/// ```
+///
+/// Both arms are needed, in this order: `shfunctab` first so a user's own
+/// body or an `autoload` stub answers for itself, then the router — which
+/// already steps aside for an `$fpath` file or a defined shfunc
+/// (`has_fpath_override` / `has_shfunc_override`, `src/compsys/router.rs:53`
+/// and `:62`), and returns `None` outright when the backend is not `rust`.
+/// So this never claims a name the shell would not actually run.
+pub fn plus_functions(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    // c:Src/Modules/parameter.c:444 → c:399-438
+    let in_shfunctab =
+        match crate::ported::modules::parameter::getpmfunction(std::ptr::null_mut(), name) {
+            Some(pm) => (pm.node.flags as u32 & crate::ported::zsh_h::PM_UNSET) == 0,
+            None => false,
+        };
+    if in_shfunctab {
+        return true;
+    }
+    // zshrs-only: a natively-routed completer has no shfunctab node.
+    crate::compsys::router::try_rust_dispatch(name).is_some()
+        || crate::extensions::plugin_host::compfn_override(name).is_some()
+}
+
+#[cfg(test)]
+mod plus_functions_tests {
+    use super::plus_functions;
+
+    /// A name the compsys router serves has no `shfunctab` node, so the
+    /// plain `getshfunc` test reports it absent while calling it runs the
+    /// port. `_shadow` is the cleanest witness: it landed in
+    /// `Completion/Base/Utility/_shadow` AFTER zsh 5.9, so the reference
+    /// tree the parity harness pins
+    /// (`/opt/homebrew/Cellar/zsh/5.9.2/share/zsh/functions`) has no file
+    /// for it and nothing can autoload a stub, while the port is live.
+    #[test]
+    fn a_routed_port_with_no_definition_file_counts_as_a_function() {
+        let _g = crate::test_util::global_state_lock();
+        let routed = crate::compsys::router::try_rust_dispatch("_shadow").is_some();
+        let in_table = crate::ported::utils::getshfunc("_shadow").is_some();
+        if !routed {
+            // backend != rust in this build's config — nothing to assert.
+            return;
+        }
+        assert!(
+            plus_functions("_shadow"),
+            "router serves `_shadow` (shfunctab node: {in_table}) so \
+             `$+functions[_shadow]` must not read 0"
+        );
+    }
+
+    /// Neither arm claims a name that does not exist at all.
+    #[test]
+    fn unknown_name_is_not_a_function() {
+        let _g = crate::test_util::global_state_lock();
+        assert!(!plus_functions("_zzq_no_such_completer_xyz"));
+        assert!(!plus_functions(""));
+    }
+}
+
+/// `[[ "$funcstack[2]" = _prefix ]]` — was this completer invoked BY
+/// `_prefix`?
+///
+/// `_prefix` moves the whole `$SUFFIX` out of the way before it re-runs the
+/// completer list — `ISUFFIX="$SUFFIX"` then `SUFFIX=''`
+/// (`Completion/Base/Completer/_prefix` sh:18-23) — so a completer that
+/// rebuilds the word as `$IPREFIX$PREFIX$SUFFIX$ISUFFIX` under `_prefix`
+/// gets the suffix back that `_prefix` just removed. Every completer that
+/// reads the word therefore special-cases this one caller
+/// (`_expand` sh:22, `_expand_alias` sh:9, `_user_expand` sh:18).
+///
+/// `funcstack[1]` is the CALLEE — the completer asking the question — so the
+/// caller is index 1 of the innermost-first list `funcstackgetfn` builds
+/// (`c:Src/Modules/parameter.c:627`).
+pub fn caller_is_prefix() -> bool {
+    crate::ported::modules::parameter::funcstackgetfn(std::ptr::null_mut())
+        .get(1)
+        .map(|n| n == "_prefix")
+        .unwrap_or(false)
+}
+
+// =====================================================================
+// `_expand` / `_user_expand` emit helpers
+// =====================================================================
+//
+// `_user_expand` sh:87-145 is `_expand` sh:184-243 with the `${opre}`/`${pre}`
+// keep-prefix rewrite and the `-fW $pref` taken out — upstream duplicated the
+// block rather than factoring it. The two ports share these three pieces so
+// they cannot drift the way two copies of `caller_is_prefix` would have.
+
+/// `_expand` sh:185-189 / sh:198-202 / sh:225-229, `_user_expand`
+/// sh:88-92 / sh:101-105 / sh:127-131 — the same `_description` call, with
+/// `-V` (keep insertion order) unless the `sort` style asked for a menu.
+pub fn expansion_description_args(sort: &str, tag: &str, descr: &str, word: &str) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    if sort != "menu" {
+        args.push("-V".to_string());
+    }
+    args.push(tag.to_string());
+    args.push("expl".to_string());
+    args.push(descr.to_string());
+    args.push(format!("o:{}", word));
+    args
+}
+
+/// `_expand` sh:218-220 — `compadd "$expl[@]" -fW "$pref" -UQ -qS <suf> -a <array>`.
+///
+/// `_user_expand` sh:120-122 is the same call WITHOUT `-fW "$pref"`: it never
+/// computes a `$pref`, because a user expansion is an arbitrary string and not
+/// necessarily a path that `-W` could stat against. `pref: None` is that call.
+pub fn expansion_partition_argv(
+    expl: &[String],
+    pref: Option<&str>,
+    suf: &str,
+    array: &str,
+) -> Vec<String> {
+    let mut argv: Vec<String> = expl.to_vec();
+    if let Some(pref) = pref {
+        argv.push("-fW".to_string());
+        argv.push(pref.to_string());
+    }
+    argv.extend([
+        "-UQ".to_string(),
+        "-qS".to_string(),
+        suf.to_string(),
+        "-a".to_string(),
+        array.to_string(),
+    ]);
+    argv
+}
+
+/// `${(r:n:)s}` — pad on the right with spaces to `n` characters, or cut
+/// to the first `n` when it is already longer. `_expand` sh:232,
+/// `_user_expand` sh:134.
+pub fn right_pad_or_truncate(s: &str, n: usize) -> String {
+    let len = s.chars().count();
+    if len >= n {
+        s.chars().take(n).collect()
+    } else {
+        format!("{}{}", s, " ".repeat(n - len))
+    }
+}
