@@ -87,10 +87,11 @@ impl EditorState {
 
     fn position_for(&self, size: TerminalSize, prompt: &str, content_width: u16) -> CursorPosition {
         let row = self.anchor.row.min(size.rows.saturating_sub(1));
+        let prompt_width = crate::prompt::width(&crate::prompt::parse(prompt)) as u16;
         let column = self
             .anchor
             .column
-            .saturating_add(UnicodeWidthStr::width(prompt) as u16)
+            .saturating_add(prompt_width)
             .saturating_add(content_width)
             .min(size.columns.saturating_sub(1));
         CursorPosition { row, column }

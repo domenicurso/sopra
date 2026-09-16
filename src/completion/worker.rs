@@ -108,21 +108,31 @@ fn completion_from_match(
         .start
         .saturating_add(item.replace_start)
         .min(request.replace.end);
+    let kind = kind_for_group(item.group.as_deref());
     let mut completion = Completion::with_range(
         item.completion.clone(),
         item.completion,
         item.description,
-        kind_for_group(item.group.as_deref()),
+        kind,
         start..request.replace.end,
         CompletionSource::Zshrs,
     );
     completion.group = item.group;
+    if completion.location.is_none()
+        && matches!(kind, CompletionKind::Command | CompletionKind::Builtin)
+    {
+        completion.location = crate::syntax::catalog()
+            .entries()
+            .iter()
+            .find(|entry| entry.name() == completion.display)
+            .and_then(|entry| entry.location().map(ToOwned::to_owned));
+    }
     Some(completion)
 }
 
 fn kind_for_group(group: Option<&str>) -> CompletionKind {
-    match group.unwrap_or_default() {
-        "commands" | "command" | "command_names" => CompletionKind::Command,
+    match group.unwrap_or_default().to_ascii_lowercase().as_str() {
+        "commands" | "command" | "command_names" | "command names" => CompletionKind::Command,
         "aliases" | "alias" => CompletionKind::Alias,
         "functions" | "function" => CompletionKind::Function,
         "builtins" | "builtin" => CompletionKind::Builtin,

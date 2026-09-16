@@ -45,10 +45,13 @@ impl ParsedPath {
     }
 
     pub(super) fn render(&self, segments: &[String], name: &str, directory: bool) -> String {
-        let mut path = format!("{}{}", self.option_prefix, self.quote.unwrap_or_default());
+        let mut path = self.option_prefix.clone();
+        if let Some(quote) = self.quote {
+            path.push(quote);
+        }
         path.push_str(&self.display_prefix);
         if !segments.is_empty() {
-            if !path.ends_with('/') {
+            if !path.is_empty() && !path.ends_with(['/', '=']) {
                 path.push('/');
             }
             path.push_str(
@@ -64,16 +67,18 @@ impl ParsedPath {
         if directory {
             path.push('/');
         }
-        if self.close_quote {
-            path.push(self.quote.unwrap_or_default());
+        if self.close_quote
+            && let Some(quote) = self.quote
+        {
+            path.push(quote);
         }
         path
     }
 }
 
 fn path_root<'a>(path: &'a str, cwd: &Path) -> Option<(PathBuf, String, &'a str)> {
-    if path.starts_with('/') {
-        return Some((PathBuf::from("/"), "/".to_string(), &path[1..]));
+    if let Some(remainder) = path.strip_prefix('/') {
+        return Some((PathBuf::from("/"), "/".to_string(), remainder));
     }
     if path == "~" || path.starts_with("~/") {
         let home = PathBuf::from(std::env::var_os("HOME")?);
@@ -83,8 +88,8 @@ fn path_root<'a>(path: &'a str, cwd: &Path) -> Option<(PathBuf, String, &'a str)
             path.strip_prefix("~/").unwrap_or(""),
         ));
     }
-    if path.starts_with("./") {
-        return Some((cwd.to_path_buf(), "./".to_string(), &path[2..]));
+    if let Some(remainder) = path.strip_prefix("./") {
+        return Some((cwd.to_path_buf(), "./".to_string(), remainder));
     }
     Some((cwd.to_path_buf(), String::new(), path))
 }

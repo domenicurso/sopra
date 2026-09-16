@@ -1,22 +1,20 @@
 use std::time::Instant;
 
-use ratatui::{
-    layout::Rect,
-    style::{Color, Modifier, Style},
-};
+use ratatui::layout::Rect;
 
 use crate::{completion::CompletionItem, editor::EditorState, input::TerminalSize};
 
 use super::overlay::{OverlayElement, overlay_width};
 use super::{
     Element, MAX_OVERLAY_ITEMS, Scene,
-    elements::{CommandElement, CursorElement, PromptElement, display_width},
+    elements::{CommandElement, CursorElement, PromptElement},
 };
 
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
     let items = editor.visible_items().to_vec();
-    let layout = EditorLayout::new(editor, size, &items);
-    let elements = editor_elements(editor, &layout, now, items);
+    let prompt = crate::prompt::parse(editor.prompt());
+    let layout = EditorLayout::new(editor, size, &items, crate::prompt::width(&prompt));
+    let elements = editor_elements(editor, &layout, now, items, prompt);
     let cursor_cells = (0..editor.cursor_cell_width())
         .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
         .filter(|(column, _)| *column < size.columns)
@@ -39,12 +37,17 @@ struct EditorLayout {
 }
 
 impl EditorLayout {
-    fn new(editor: &EditorState, size: TerminalSize, items: &[CompletionItem]) -> Self {
+    fn new(
+        editor: &EditorState,
+        size: TerminalSize,
+        items: &[CompletionItem],
+        prompt_width: usize,
+    ) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let row = editor.anchor().row.min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
         let line_column = column
-            .saturating_add(display_width(editor.prompt()) as u16)
+            .saturating_add(prompt_width as u16)
             .min(size.columns.saturating_sub(1));
         let cursor_column = line_column
             .saturating_add(editor.cursor_display_width())
@@ -85,15 +88,13 @@ fn editor_elements(
     layout: &EditorLayout,
     now: Instant,
     items: Vec<CompletionItem>,
+    prompt: Vec<crate::prompt::PromptSpan>,
 ) -> Vec<Box<dyn Element>> {
     let mut elements: Vec<Box<dyn Element>> = vec![
         Box::new(PromptElement {
             column: layout.column,
             row: layout.row,
-            text: editor.prompt().to_string(),
-            style: Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
+            spans: prompt,
         }),
         Box::new(CommandElement {
             column: layout.line_column,

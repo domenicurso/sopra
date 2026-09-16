@@ -3,6 +3,7 @@ mod completion;
 mod editor;
 mod input;
 mod palette;
+mod prompt;
 mod render;
 mod scene;
 mod syntax;

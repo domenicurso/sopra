@@ -13,13 +13,16 @@ use super::{
 pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
     let area = Rect::new(0, 0, size.columns, size.rows);
     let elements: Vec<Box<dyn Element>> = vec![
-        Box::new(PromptElement {
-            column: 0,
-            row: 0,
-            text: TRANSIENT_PROMPT.to_string(),
-            style: Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::DIM),
+        Box::new({
+            let mut prompt = PromptElement::styled(
+                TRANSIENT_PROMPT,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM),
+            );
+            prompt.column = 0;
+            prompt.row = 0;
+            prompt
         }),
         Box::new(CommandElement {
             column: 2,

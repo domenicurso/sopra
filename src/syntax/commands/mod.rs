@@ -1,4 +1,6 @@
-use std::{collections::BTreeMap, env, fs, path::Path, sync::OnceLock};
+mod catalog;
+
+use std::{path::Path, sync::OnceLock};
 
 const BUILTINS: &[&str] = &[
     "alias",
@@ -100,69 +102,19 @@ pub(crate) fn command_available(command: &str, cwd: &Path) -> bool {
         } else {
             cwd.join(path)
         };
-        return is_executable(&path);
+        return catalog::is_executable(&path);
     }
     catalog().entries.iter().any(|entry| entry.name == command)
 }
 
 impl CommandCatalog {
     fn build() -> Self {
-        let mut commands = BTreeMap::new();
-        for builtin in BUILTINS {
-            commands.insert(
-                (*builtin).to_string(),
-                CommandEntry {
-                    name: (*builtin).to_string(),
-                    detail: "builtin",
-                    location: None,
-                },
-            );
-        }
-        if let Some(path) = env::var_os("PATH") {
-            for directory in env::split_paths(&path) {
-                add_path_commands(&mut commands, &directory);
-            }
-        }
-        let entries = commands.into_iter().map(|(_, entry)| entry).collect();
-        Self { entries }
+        catalog::build()
     }
 
     pub(crate) fn entries(&self) -> &[CommandEntry] {
         &self.entries
     }
-}
-
-fn add_path_commands(commands: &mut BTreeMap<String, CommandEntry>, directory: &Path) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !is_executable(&path) {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        commands.entry(name.to_string()).or_insert(CommandEntry {
-            name: name.to_string(),
-            detail: "path",
-            location: Some(path),
-        });
-    }
-}
-
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 #[cfg(test)]

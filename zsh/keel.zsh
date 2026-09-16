@@ -52,6 +52,8 @@ _keel_edit() {
     emulate -L zsh
     local raw prompt
     local -x FPATH="${(j.:.)fpath}"
+    local -x KEEL_ALIASES="${(j:\n:)${(k)aliases}}"
+    local -x KEEL_FUNCTIONS="${(j:\n:)${(k)functions}}"
     prompt=$(print -P -- "$KEEL_PROMPT")
     raw=$("$KEEL_BIN" \
         --buffer "$BUFFER" \

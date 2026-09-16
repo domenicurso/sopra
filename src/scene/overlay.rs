@@ -28,7 +28,6 @@ impl Element for OverlayElement {
         let inner = self.inner_area();
         canvas.border(self.area, border);
         self.paint_connector(canvas, border);
-        paint_title(canvas, self.area);
         self.paint_items(canvas, inner);
         paint_footer(canvas, self.area);
     }
@@ -83,28 +82,18 @@ fn viewport_start(total: usize, selected: usize, visible: usize) -> usize {
         .min(total.saturating_sub(visible))
 }
 
-fn paint_title(canvas: &mut Canvas, area: Rect) {
-    canvas.text(TextRun {
-        position: (area.left().saturating_add(2), area.top()),
-        text: " Keel ",
-        style: Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-        max_width: area.width.saturating_sub(4),
-    });
-}
-
 fn paint_footer(canvas: &mut Canvas, area: Rect) {
+    let width = UnicodeWidthStr::width(OVERLAY_FOOTER) as u16;
     canvas.text(TextRun {
         position: (
-            area.left().saturating_add(2),
+            area.right().saturating_sub(1).saturating_sub(width),
             area.bottom().saturating_sub(1),
         ),
         text: OVERLAY_FOOTER,
         style: Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::DIM),
-        max_width: area.width.saturating_sub(4),
+        max_width: width,
     });
 }
 

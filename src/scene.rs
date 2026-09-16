@@ -17,7 +17,7 @@ use crate::{editor::EditorState, input::TerminalSize};
 use canvas::Canvas;
 
 const MAX_OVERLAY_ITEMS: usize = 12;
-const MAX_OVERLAY_WIDTH: u16 = 56;
+const MAX_OVERLAY_WIDTH: u16 = 48;
 const OVERLAY_FOOTER: &str = "↑↓ · Tab · Esc";
 pub(crate) const TRANSIENT_PROMPT: &str = "❯ ";
 

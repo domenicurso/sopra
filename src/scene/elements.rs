@@ -6,23 +6,46 @@ use super::{
     Element,
     canvas::{Canvas, TextRun},
 };
-use crate::syntax::{self, SyntaxSpan};
+use crate::{
+    prompt::{self, PromptSpan},
+    syntax::{self, SyntaxSpan},
+};
 
 pub(super) struct PromptElement {
     pub(super) column: u16,
     pub(super) row: u16,
-    pub(super) text: String,
-    pub(super) style: Style,
+    pub(super) spans: Vec<PromptSpan>,
 }
 
 impl Element for PromptElement {
     fn paint(&self, canvas: &mut Canvas) {
-        canvas.text(TextRun {
-            position: (self.column, self.row),
-            text: &self.text,
-            style: self.style,
-            max_width: canvas.buffer.area.width.saturating_sub(self.column),
-        });
+        let mut offset = 0_u16;
+        for span in &self.spans {
+            canvas.text(TextRun {
+                position: (self.column.saturating_add(offset), self.row),
+                text: &span.text,
+                style: span.style,
+                max_width: canvas
+                    .buffer
+                    .area
+                    .width
+                    .saturating_sub(self.column + offset),
+            });
+            offset = offset.saturating_add(prompt::width(std::slice::from_ref(span)) as u16);
+        }
+    }
+}
+
+impl PromptElement {
+    pub(super) fn styled(text: &str, style: Style) -> Self {
+        Self {
+            column: 0,
+            row: 0,
+            spans: vec![PromptSpan {
+                text: text.to_string(),
+                style,
+            }],
+        }
     }
 }
 
@@ -74,8 +97,4 @@ impl Element for CursorElement {
             );
         }
     }
-}
-
-pub(super) fn display_width(text: &str) -> usize {
-    UnicodeWidthStr::width(text)
 }

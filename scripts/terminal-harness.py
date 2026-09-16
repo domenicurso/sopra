@@ -132,7 +132,7 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     start = len(output)
     send(session[0], b"cd ")
     wait_for_plain(session, output, b"Cargo.toml", 3)
-    if b"Keel" not in plain(output[start:]):
+    if b"\xe2\x86\x91\xe2\x86\x93" not in plain(output[start:]):
         fail("completion overlay was not rendered", *session)
     send(session[0], b"\t")
     read_for(session[0], output, 0.10)

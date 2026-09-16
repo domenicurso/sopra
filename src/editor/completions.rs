@@ -1,4 +1,6 @@
-use crate::completion::{CompletionEngine, CompletionItem, CompletionResponseSource, ranking};
+use crate::completion::{
+    CompletionEngine, CompletionItem, CompletionKind, CompletionResponseSource, ranking,
+};
 
 use super::EditorState;
 
@@ -85,7 +87,15 @@ impl EditorState {
 
 fn merge_items(local: &[CompletionItem], zshrs: &[CompletionItem]) -> Vec<CompletionItem> {
     let mut merged = local.to_vec();
+    let rust_filesystem = local.iter().any(|item| {
+        item.source == crate::completion::CompletionSource::Filesystem
+            && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
+    });
     for item in zshrs {
+        if rust_filesystem && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
+        {
+            continue;
+        }
         let duplicate = merged.iter_mut().find(|existing| {
             existing.display == item.display
                 && existing.insert == item.insert

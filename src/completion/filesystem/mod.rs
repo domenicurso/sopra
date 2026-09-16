@@ -81,7 +81,7 @@ impl FilesystemEngine {
                     });
                 }
             }
-            next.sort_by(|left, right| right.score.cmp(&left.score));
+            next.sort_by_key(|branch| std::cmp::Reverse(branch.score));
             next.truncate(BEAM_WIDTH);
             branches = next;
             if branches.is_empty() {
@@ -137,7 +137,7 @@ fn leaf_item(
             .score
             .into()
     };
-    let suffix = entry.directory.then_some("/").unwrap_or_default();
+    let suffix = if entry.directory { "/" } else { "" };
     let display = format!("{}{suffix}", entry.name);
     let insert = path.render(&branch.segments, &entry.name, entry.directory);
     let mut item = CompletionItem::with_range(
@@ -169,5 +169,11 @@ mod tests {
         assert_eq!(path.display_prefix, "./");
         assert_eq!(path.segments, ["src"]);
         assert_eq!(path.leaf, "ed");
+    }
+
+    #[test]
+    fn relative_paths_do_not_gain_a_leading_separator() {
+        let path = ParsedPath::parse("src/ma", std::path::Path::new("/tmp")).expect("path");
+        assert_eq!(path.render(&path.segments, "main.rs", false), "src/main.rs");
     }
 }
