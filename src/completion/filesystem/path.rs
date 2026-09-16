@@ -51,7 +51,10 @@ impl ParsedPath {
         }
         path.push_str(&self.display_prefix);
         if !segments.is_empty() {
-            if !path.is_empty() && !path.ends_with(['/', '=']) {
+            if !path.is_empty()
+                && !path.ends_with(['/', '='])
+                && (self.quote.is_none() || !self.display_prefix.is_empty())
+            {
                 path.push('/');
             }
             path.push_str(

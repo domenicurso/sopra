@@ -176,4 +176,19 @@ mod tests {
         let path = ParsedPath::parse("src/ma", std::path::Path::new("/tmp")).expect("path");
         assert_eq!(path.render(&path.segments, "main.rs", false), "src/main.rs");
     }
+
+    #[test]
+    fn quoted_and_escaped_paths_keep_their_shell_shape() {
+        let quoted = ParsedPath::parse("--file='src/ma'", std::path::Path::new("/tmp"))
+            .expect("quoted path");
+        assert_eq!(quoted.leaf, "ma");
+        assert_eq!(
+            quoted.render(&quoted.segments, "main file", false),
+            "--file='src/main file'"
+        );
+
+        let escaped =
+            ParsedPath::parse("src/ma\\ x", std::path::Path::new("/tmp")).expect("escaped path");
+        assert_eq!(escaped.leaf, "ma x");
+    }
 }

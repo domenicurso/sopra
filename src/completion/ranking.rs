@@ -7,9 +7,9 @@ pub(crate) fn broad_context(line: &str, cursor_chars: usize) -> (String, usize) 
     let (start, end) = token_range(line, cursor);
     let token = &line[start..cursor];
     let context_token = context_token(token);
-    let provider_line = format!("{}{}{}", &line[..start], context_token, &line[end..]);
-    let provider_cursor = line[..start].chars().count() + context_token.chars().count();
-    (provider_line, provider_cursor)
+    let context_line = format!("{}{}{}", &line[..start], context_token, &line[end..]);
+    let context_cursor = line[..start].chars().count() + context_token.chars().count();
+    (context_line, context_cursor)
 }
 
 fn context_token(token: &str) -> &str {

@@ -11,8 +11,8 @@ impl EditorState {
             return;
         }
         let cursor_chars = self.buffer[..self.cursor].chars().count();
-        let (provider_line, provider_cursor) = ranking::broad_context(&self.buffer, cursor_chars);
-        let key = format!("{provider_line}\0{provider_cursor}\0{}", self.cwd.display());
+        let (context_line, context_cursor) = ranking::broad_context(&self.buffer, cursor_chars);
+        let key = format!("{context_line}\0{context_cursor}\0{}", self.cwd.display());
         if key != self.completion_key {
             self.completion_key = key;
             self.completion_source.clear();
@@ -125,13 +125,13 @@ mod tests {
             "git",
             CompletionKind::Generic,
         )];
-        let provider = [CompletionItem::new(
+        let zshrs = [CompletionItem::new(
             "git",
             "/usr/bin/git",
             "git",
             CompletionKind::Generic,
         )];
-        let merged = merge_items(&local, &provider);
+        let merged = merge_items(&local, &zshrs);
         assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
     }
 }
