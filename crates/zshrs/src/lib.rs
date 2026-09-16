@@ -118,26 +118,14 @@ pub mod autoload_prewarm;
 /// (logo, builtin totals, daemon and shell counts). Ported from ztmux.
 #[path = "extensions/banner.rs"]
 pub mod banner;
-/// `bundled_docs` submodule — zsh's man/info pages, shipped in-binary.
-#[cfg(not(feature = "completion-only"))]
-#[path = "extensions/bundled_docs.rs"]
-pub mod bundled_docs;
-#[cfg(not(feature = "completion-only"))]
-#[path = "extensions/bundled_functions.rs"]
-pub mod bundled_functions;
-#[cfg(feature = "completion-only")]
+/// Completion-facing documentation and helper functions.
 #[path = "extensions/completion_docs.rs"]
 pub mod bundled_docs;
-#[cfg(feature = "completion-only")]
 #[path = "extensions/completion_functions.rs"]
 pub mod bundled_functions;
 /// `bash_complete` submodule.
 #[path = "extensions/bash_complete.rs"]
 pub mod bash_complete;
-/// `canonical_apply` submodule.
-#[path = "extensions/canonical_apply.rs"]
-#[cfg(feature = "daemon")]
-pub mod canonical_apply;
 /// Shared-handle accessors for the completion match accumulators (Rust-original
 /// glue restoring C's `matches = mgroup->lmatches` pointer alias; see the module
 /// doc). Deliberately outside `src/ported/` — not a C-fn port.
@@ -174,9 +162,6 @@ pub mod thread_shell_state;
 /// `opts_cache` submodule — fast-path `isset()` option-state cache.
 #[path = "extensions/opts_cache.rs"]
 pub mod opts_cache;
-/// `overlay_snapshot` submodule.
-#[path = "extensions/overlay_snapshot.rs"]
-pub mod overlay_snapshot;
 /// `pat_cache` submodule — global compiled-pattern cache (Rust-only opt).
 #[path = "extensions/pat_cache.rs"]
 pub mod pat_cache;
@@ -264,9 +249,6 @@ pub mod dap;
 /// `dash_mode` submodule — strict-dash emulation flag (Rust-only).
 #[path = "extensions/dash_mode.rs"]
 pub mod dash_mode;
-/// `dumpers` submodule.
-#[path = "extensions/dumpers.rs"]
-pub mod dumpers;
 /// `ext_builtins` submodule.
 #[path = "extensions/ext_builtins.rs"]
 pub mod ext_builtins;
@@ -276,10 +258,6 @@ pub mod fds;
 /// `fish_features` submodule.
 #[path = "extensions/fish_features.rs"]
 pub mod fish_features;
-/// `fmt` submodule — zsh source formatter (CLI `--fmt` + LSP
-/// `textDocument/formatting`).
-#[path = "extensions/fmt.rs"]
-pub mod fmt;
 /// `ftime` submodule — TEMPORARY per-function timing scaffold (Rust-only).
 #[path = "extensions/ftime.rs"]
 pub mod ftime;
@@ -298,12 +276,6 @@ pub mod funcdef_capture;
 /// time).
 #[path = "extensions/global_rc.rs"]
 pub mod global_rc;
-/// `lsp` submodule.
-#[path = "extensions/lsp.rs"]
-pub mod lsp;
-/// `lsp_symbols` submodule.
-#[path = "extensions/lsp_symbols.rs"]
-pub mod lsp_symbols;
 /// `native_cmds` submodule — builtins contributed by the linking binary
 /// (the fat `zshrs-native` build registers `git` / `arb` / `stryke` here).
 #[path = "extensions/native_cmds.rs"]
@@ -400,9 +372,6 @@ pub mod plugin_cache;
 /// `plugin_host` submodule — native (Rust) plugin loader (`zmodload -R`).
 #[path = "extensions/plugin_host.rs"]
 pub mod plugin_host;
-/// `recorder_ext` submodule.
-#[path = "extensions/recorder.rs"]
-pub mod recorder_ext;
 /// `rust_ffi` submodule — inline `rust { ... }` FFI desugaring.
 pub mod rust_ffi;
 // Plugin-Framework-Agnostic State-Modification Recorder. Entire module
@@ -420,9 +389,6 @@ pub mod autopair;
 /// (port of the reader.rs autosuggestion state machine).
 #[path = "extensions/autosuggest.rs"]
 pub mod autosuggest;
-/// `gen_docs` submodule.
-#[path = "extensions/gen_docs.rs"]
-pub mod gen_docs;
 /// `history_search` submodule — native up-arrow prefix/substring/token history
 /// search (port of fish reader/history_search.rs).
 #[path = "extensions/history_search.rs"]
@@ -467,21 +433,6 @@ pub mod zle_fx;
 /// (Rust-only adapter for C's live GSU setters).
 #[path = "extensions/zle_param_sync.rs"]
 pub mod zle_param_sync;
-/// `zsh_builtin_docs` submodule.
-#[path = "extensions/zsh_builtin_docs.rs"]
-pub mod zsh_builtin_docs;
-/// `zsh_ext_builtin_docs` submodule.
-#[path = "extensions/zsh_ext_builtin_docs.rs"]
-pub mod zsh_ext_builtin_docs;
-/// `zsh_keyword_docs` submodule.
-#[path = "extensions/zsh_keyword_docs.rs"]
-pub mod zsh_keyword_docs;
-/// `zsh_option_docs` submodule.
-#[path = "extensions/zsh_option_docs.rs"]
-pub mod zsh_option_docs;
-/// `zsh_special_var_docs` submodule.
-#[path = "extensions/zsh_special_var_docs.rs"]
-pub mod zsh_special_var_docs;
 /// `ztest` submodule — shell-level unit test framework
 /// (port of `../strykelang` test framework).
 #[path = "extensions/ztest.rs"]

@@ -33,8 +33,6 @@ pub use crate::autoload_cache;
 pub use crate::banner;
 pub use crate::bash_arrays;
 pub use crate::bash_prompt;
-#[cfg(feature = "daemon")]
-pub use crate::canonical_apply;
 pub use crate::compile_zsh;
 pub use crate::completion;
 pub use crate::config;
@@ -50,8 +48,6 @@ pub use crate::global_rc;
 pub use crate::heredoc_ast;
 pub use crate::history;
 pub use crate::log;
-pub use crate::lsp;
-pub use crate::overlay_snapshot;
 pub use crate::p10k;
 pub use crate::pkg;
 pub use crate::plugin_cache;

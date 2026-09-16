@@ -7,14 +7,18 @@ use unicode_width::UnicodeWidthStr;
 use crate::completion::CompletionItem;
 
 use super::{
-    Element, MAX_OVERLAY_WIDTH, OVERLAY_FOOTER,
+    Element, MAX_OVERLAY_WIDTH,
     canvas::{Canvas, TextRun},
+    overlay_items::item_detail,
 };
 
 pub(super) struct OverlayElement {
     pub(super) area: Rect,
     pub(super) items: Vec<CompletionItem>,
     pub(super) selected: usize,
+    pub(super) viewport_start: usize,
+    pub(super) query: String,
+    pub(super) footer: String,
     pub(super) connector_column: u16,
     pub(super) connector: &'static str,
 }
@@ -24,21 +28,23 @@ impl Element for OverlayElement {
         if self.area.width < 8 || self.area.height < 3 {
             return;
         }
-        let border = Style::default().fg(Color::Cyan);
+        let border = Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::DIM);
         let inner = self.inner_area();
         canvas.border(self.area, border);
         self.paint_connector(canvas, border);
         self.paint_items(canvas, inner);
-        paint_footer(canvas, self.area);
+        paint_footer(canvas, self.area, &self.footer);
     }
 }
 
 impl OverlayElement {
     fn inner_area(&self) -> Rect {
         Rect::new(
-            self.area.left().saturating_add(1),
+            self.area.left().saturating_add(2),
             self.area.top().saturating_add(1),
-            self.area.width.saturating_sub(2),
+            self.area.width.saturating_sub(4),
             self.area.height.saturating_sub(2),
         )
     }
@@ -59,7 +65,12 @@ impl OverlayElement {
 
     fn paint_items(&self, canvas: &mut Canvas, inner: Rect) {
         let visible = inner.height.max(1) as usize;
-        let start = viewport_start(self.items.len(), self.selected, visible);
+        let start = viewport_start(
+            self.items.len(),
+            self.selected,
+            self.viewport_start,
+            visible,
+        );
         for (offset, item) in self.items[start..].iter().take(visible).enumerate() {
             let row = inner.top().saturating_add(offset as u16);
             super::overlay_items::paint_item(
@@ -68,66 +79,65 @@ impl OverlayElement {
                 row,
                 item,
                 start + offset == self.selected,
+                &self.query,
             );
         }
         if self.items.len() > visible {
-            super::overlay_items::paint_scrollbar(canvas, inner, start, visible, self.items.len());
+            super::overlay_items::paint_scrollbar(
+                canvas,
+                Rect::new(
+                    self.area.right().saturating_sub(1),
+                    inner.top(),
+                    1,
+                    inner.height,
+                ),
+                start,
+                visible,
+                self.items.len(),
+            );
         }
     }
 }
 
-fn viewport_start(total: usize, selected: usize, visible: usize) -> usize {
-    selected
-        .saturating_sub(visible.saturating_sub(1))
-        .min(total.saturating_sub(visible))
+fn viewport_start(total: usize, selected: usize, requested: usize, visible: usize) -> usize {
+    let maximum = total.saturating_sub(visible);
+    requested
+        .max(selected.saturating_add(1).saturating_sub(visible))
+        .min(maximum)
 }
 
-fn paint_footer(canvas: &mut Canvas, area: Rect) {
-    let width = UnicodeWidthStr::width(OVERLAY_FOOTER) as u16;
+fn paint_footer(canvas: &mut Canvas, area: Rect, footer: &str) {
+    let width = UnicodeWidthStr::width(footer) as u16;
     canvas.text(TextRun {
         position: (
             area.right().saturating_sub(1).saturating_sub(width),
             area.bottom().saturating_sub(1),
         ),
-        text: OVERLAY_FOOTER,
+        text: footer,
         style: Style::default()
-            .fg(Color::DarkGray)
+            .fg(Color::White)
             .add_modifier(Modifier::DIM),
         max_width: width,
     });
 }
 
-pub(super) fn overlay_width(items: &[CompletionItem], terminal_width: u16) -> u16 {
+pub(super) fn overlay_width(items: &[CompletionItem], footer: &str, terminal_width: u16) -> u16 {
     if terminal_width <= 2 {
         return terminal_width.max(1);
     }
     let content_width = items
         .iter()
         .map(|item| {
+            let detail = item_detail(item);
             UnicodeWidthStr::width(item.display.as_str())
-                + if item.description.is_none() && item.location.is_none() {
-                    0
-                } else {
-                    UnicodeWidthStr::width(item_detail(item).as_str()) + 2
-                }
-                + 3
+                + UnicodeWidthStr::width(detail.as_str())
+                + if detail.is_empty() { 0 } else { 2 }
         })
-        .chain(std::iter::once(UnicodeWidthStr::width(OVERLAY_FOOTER)))
+        .chain(std::iter::once(UnicodeWidthStr::width(footer)))
         .max()
         .unwrap_or(1)
         .saturating_add(4) as u16;
     content_width
         .min(MAX_OVERLAY_WIDTH)
         .min(terminal_width.saturating_sub(2))
-}
-
-fn item_detail(item: &CompletionItem) -> String {
-    item.description
-        .clone()
-        .or_else(|| {
-            item.location
-                .as_ref()
-                .map(|path| path.display().to_string())
-        })
-        .unwrap_or_default()
 }

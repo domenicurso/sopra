@@ -1,3 +1,0 @@
-#compdef debmany
-
-_deb_packages avail

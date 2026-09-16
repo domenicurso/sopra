@@ -2,6 +2,10 @@ mod labels;
 
 pub(super) use labels::compact_labels;
 
+pub(super) fn resolved_path_prefix(items: &[&CompletionItem], query_path: &str) -> usize {
+    labels::resolved_path_prefix(items, query_path)
+}
+
 use neo_frizbee::{Config, Matcher};
 
 use super::CompletionItem;
@@ -78,14 +82,14 @@ fn component_sequence_suffix_start(
         .then_some(start)
 }
 
-fn path_value_offset(value: &str) -> usize {
+pub(super) fn path_value_offset(value: &str) -> usize {
     value
         .find('=')
         .filter(|_| value.starts_with('-'))
         .map_or(0, |equals| equals + 1)
 }
 
-fn path_components(path: &str) -> Vec<(&str, usize)> {
+pub(super) fn path_components(path: &str) -> Vec<(&str, usize)> {
     let mut components = Vec::new();
     let mut start = 0;
     for (separator, _) in path.match_indices('/') {

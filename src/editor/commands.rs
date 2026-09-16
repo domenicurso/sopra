@@ -91,6 +91,7 @@ impl EditorState {
 
     pub(super) fn reset_selection(&mut self) {
         self.selected = 0;
+        self.suggestion_scroll = 0;
     }
 
     pub(super) fn result(&self, reason: ExitReason) -> RunResult {

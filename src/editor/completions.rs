@@ -19,6 +19,7 @@ impl EditorState {
             self.zshrs_source.clear();
             self.suggestions.clear();
             self.selected = 0;
+            self.suggestion_scroll = 0;
         }
         if let Some(completion) = self.completion.as_mut() {
             completion.request(&self.buffer, cursor_chars, &self.cwd);
@@ -73,8 +74,12 @@ impl EditorState {
         self.suggestions = ranking::rank(&self.completion_source, &query);
         if self.suggestions.is_empty() {
             self.selected = 0;
+            self.suggestion_scroll = 0;
         } else {
             self.selected = self.selected.min(self.suggestions.len() - 1);
+            self.suggestion_scroll = self
+                .suggestion_scroll
+                .min(self.suggestions.len().saturating_sub(1));
         }
     }
 

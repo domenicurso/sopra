@@ -8,6 +8,7 @@ import pty
 import re
 import select
 import signal
+import subprocess
 import struct
 import termios
 import time
@@ -132,7 +133,7 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     start = len(output)
     send(session[0], b"cd ")
     wait_for_plain(session, output, b"Cargo.toml", 3)
-    if b"\xe2\x86\x91\xe2\x86\x93" not in plain(output[start:]):
+    if b"; 0.0ms" not in plain(output[start:]):
         fail("completion overlay was not rendered", *session)
     send(session[0], b"\t")
     read_for(session[0], output, 0.10)
@@ -185,6 +186,11 @@ def wait_for_exit(session: tuple[int, int], output: bytearray) -> None:
         read_for(master, output, 0.05)
     fail("shell did not exit after the round trip", pid, master)
 def main() -> int:
+    subprocess.run(
+        [str(ROOT / "scripts" / "build-keel.sh")],
+        cwd=ROOT,
+        check=True,
+    )
     session, output = start_session()
     try:
         origins = check_initial(session, output)

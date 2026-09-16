@@ -6,14 +6,17 @@ use crate::{completion::CompletionItem, editor::EditorState, input::TerminalSize
 
 use super::overlay::{OverlayElement, overlay_width};
 use super::{
-    Element, MAX_OVERLAY_ITEMS, Scene,
+    Element, Scene,
     elements::{CommandElement, CursorElement, PromptElement},
+    overlay_layout,
 };
 
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
     let items = editor.visible_items().to_vec();
     let prompt = crate::prompt::parse(editor.prompt());
-    let layout = EditorLayout::new(editor, size, &items, crate::prompt::width(&prompt));
+    let mut layout = EditorLayout::new(editor, size, crate::prompt::width(&prompt));
+    layout.footer = editor.completion_footer();
+    layout.overlay_width = overlay_width(&items, &layout.footer, size.columns);
     let elements = editor_elements(editor, &layout, now, items, prompt);
     let cursor_cells = (0..editor.cursor_cell_width())
         .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
@@ -34,15 +37,11 @@ struct EditorLayout {
     overlay_width: u16,
     overlay_above: bool,
     completion_token_width: u16,
+    footer: String,
 }
 
 impl EditorLayout {
-    fn new(
-        editor: &EditorState,
-        size: TerminalSize,
-        items: &[CompletionItem],
-        prompt_width: usize,
-    ) -> Self {
+    fn new(editor: &EditorState, size: TerminalSize, prompt_width: usize) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let row = editor.anchor().row.min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
@@ -53,20 +52,11 @@ impl EditorLayout {
             .saturating_add(editor.cursor_display_width())
             .min(size.columns.saturating_sub(1));
         let completion_token_width = editor.completion_token_width();
-        let overlay_visible = editor.overlay_visible() && !items.is_empty();
-        let overlay_height = if overlay_visible {
-            (items.len().clamp(1, MAX_OVERLAY_ITEMS) as u16).saturating_add(2)
-        } else {
-            0
-        };
-        let overlay_width = overlay_width(items, size.columns);
-        let below_row = row.saturating_add(2);
-        let below_fits = !overlay_visible || below_row.saturating_add(overlay_height) <= size.rows;
-        let overlay_row = if below_fits {
-            below_row
-        } else {
-            row.saturating_sub(overlay_height.saturating_add(1))
-        };
+        let placement = overlay_layout::for_editor(editor, size, row);
+        let overlay_visible = placement.is_some();
+        let overlay_row = placement.as_ref().map_or(0, |value| value.row);
+        let overlay_height = placement.as_ref().map_or(0, |value| value.height);
+        let overlay_width = 0;
         Self {
             area,
             row,
@@ -77,8 +67,9 @@ impl EditorLayout {
             overlay_row,
             overlay_height,
             overlay_width,
-            overlay_above: overlay_visible && !below_fits,
+            overlay_above: placement.is_some_and(|value| value.above),
             completion_token_width,
+            footer: String::new(),
         }
     }
 }
@@ -113,6 +104,9 @@ fn editor_elements(
             ),
             items,
             selected: editor.selected_index(),
+            viewport_start: editor.suggestion_viewport_start(),
+            query: editor.query().to_string(),
+            footer: layout.footer.clone(),
             connector_column: layout.connector_column(),
             connector: if layout.overlay_above { "┬" } else { "┴" },
         }));

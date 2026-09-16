@@ -1,3 +1,0 @@
-#compdef which-pkg-broke
-
-_deb_packages avail

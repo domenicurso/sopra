@@ -27,8 +27,12 @@ impl ParsedPath {
             raw.pop();
         }
         let (base, display_prefix, remainder) = path_root(&raw, cwd)?;
+        let trailing_separator = remainder.ends_with('/');
         let mut components = remainder.split('/').map(unescape).collect::<Vec<_>>();
-        let leaf = if remainder.ends_with('/') {
+        let leaf = if trailing_separator {
+            while components.last().is_some_and(String::is_empty) {
+                components.pop();
+            }
             String::new()
         } else {
             components.pop().unwrap_or_default()

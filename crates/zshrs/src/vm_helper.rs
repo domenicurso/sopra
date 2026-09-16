@@ -9577,6 +9577,9 @@ pub(crate) fn normalize_fpath_after_assignment() {
 }
 
 pub(crate) fn is_host_zsh_function_tree(p: &Path) -> bool {
+    if cfg!(feature = "completion-only") {
+        return false;
+    }
     if p.file_name() != Some(OsStr::new("functions")) {
         return false;
     }

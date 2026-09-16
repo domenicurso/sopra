@@ -1,4 +1,5 @@
 mod cache;
+mod metadata;
 mod path;
 
 use std::{ops::Range, path::PathBuf};
@@ -7,6 +8,7 @@ use neo_frizbee::{Config, Matcher};
 
 use super::{CompletionItem, CompletionKind, CompletionSource, Request};
 use cache::{DirectoryCache, Entry};
+use metadata::file_age;
 use path::{ParsedPath, hidden};
 
 const BEAM_WIDTH: usize = 24;
@@ -137,13 +139,13 @@ fn leaf_item(
             .score
             .into()
     };
-    let suffix = if entry.directory { "/" } else { "" };
-    let display = format!("{}{suffix}", entry.name);
     let insert = path.render(&branch.segments, &entry.name, entry.directory);
+    let display = insert.clone();
+    let description = entry.modified.and_then(file_age);
     let mut item = CompletionItem::with_range(
         display,
         insert,
-        None,
+        description,
         if entry.directory {
             CompletionKind::Directory
         } else {
@@ -158,37 +160,4 @@ fn leaf_item(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::path::ParsedPath;
-
-    #[test]
-    fn parsed_paths_keep_shell_prefixes() {
-        let path =
-            ParsedPath::parse("--file=./src/ed", std::path::Path::new("/tmp")).expect("path");
-        assert_eq!(path.option_prefix, "--file=");
-        assert_eq!(path.display_prefix, "./");
-        assert_eq!(path.segments, ["src"]);
-        assert_eq!(path.leaf, "ed");
-    }
-
-    #[test]
-    fn relative_paths_do_not_gain_a_leading_separator() {
-        let path = ParsedPath::parse("src/ma", std::path::Path::new("/tmp")).expect("path");
-        assert_eq!(path.render(&path.segments, "main.rs", false), "src/main.rs");
-    }
-
-    #[test]
-    fn quoted_and_escaped_paths_keep_their_shell_shape() {
-        let quoted = ParsedPath::parse("--file='src/ma'", std::path::Path::new("/tmp"))
-            .expect("quoted path");
-        assert_eq!(quoted.leaf, "ma");
-        assert_eq!(
-            quoted.render(&quoted.segments, "main file", false),
-            "--file='src/main file'"
-        );
-
-        let escaped =
-            ParsedPath::parse("src/ma\\ x", std::path::Path::new("/tmp")).expect("escaped path");
-        assert_eq!(escaped.leaf, "ma x");
-    }
-}
+mod tests;

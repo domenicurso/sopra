@@ -56,6 +56,7 @@ pub(crate) struct EditorState {
     prompt: String,
     anchor: CursorPosition,
     selected: usize,
+    suggestion_scroll: usize,
     overlay_visible: bool,
     completion_source: Vec<CompletionItem>,
     zshrs_source: Vec<CompletionItem>,
@@ -81,6 +82,7 @@ impl EditorState {
             prompt: config.prompt,
             anchor: config.anchor,
             selected: 0,
+            suggestion_scroll: 0,
             overlay_visible: true,
             completion_source: Vec::new(),
             zshrs_source: Vec::new(),
@@ -157,6 +159,7 @@ impl EditorState {
         self.buffer.clear();
         self.cursor = 0;
         self.selected = 0;
+        self.suggestion_scroll = 0;
         self.completion_source.clear();
         self.zshrs_source.clear();
         self.suggestions.clear();

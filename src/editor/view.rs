@@ -28,6 +28,10 @@ impl EditorState {
         self.selected
     }
 
+    pub(crate) const fn suggestion_viewport_start(&self) -> usize {
+        self.suggestion_scroll
+    }
+
     pub(crate) fn overlay_visible(&self) -> bool {
         self.overlay_visible
     }
@@ -38,11 +42,16 @@ impl EditorState {
     }
 
     pub(crate) fn completion_token_width(&self) -> u16 {
-        UnicodeWidthStr::width(self.query()).min(u16::MAX as usize) as u16
+        crate::completion::ranking::completion_token_width(&self.suggestions, self.query())
+            .min(u16::MAX as usize) as u16
     }
 
     pub(crate) fn visible_items(&self) -> &[CompletionItem] {
         &self.suggestions
+    }
+
+    pub(crate) fn completion_footer(&self) -> String {
+        format!("{}/{}; 0.0ms", self.selected + 1, self.suggestions.len())
     }
 
     pub(crate) fn syntax(&self) -> &[crate::syntax::SyntaxSpan] {

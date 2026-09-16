@@ -3,6 +3,8 @@ mod editor_scene;
 mod elements;
 mod overlay;
 mod overlay_items;
+mod overlay_layout;
+mod overlay_scrollbar;
 mod transient;
 
 #[cfg(test)]
@@ -16,9 +18,8 @@ use crate::{editor::EditorState, input::TerminalSize};
 
 use canvas::Canvas;
 
-const MAX_OVERLAY_ITEMS: usize = 12;
+pub(crate) const MAX_OVERLAY_ITEMS: usize = 12;
 const MAX_OVERLAY_WIDTH: u16 = 48;
-const OVERLAY_FOOTER: &str = "↑↓ · Tab · Esc";
 pub(crate) const TRANSIENT_PROMPT: &str = "❯ ";
 
 pub(crate) struct Frame {

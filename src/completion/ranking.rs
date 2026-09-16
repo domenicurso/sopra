@@ -1,4 +1,5 @@
 use neo_frizbee::{Config, Matcher};
+use unicode_width::UnicodeWidthStr;
 
 use super::{CompletionItem, CompletionKind, path};
 
@@ -77,6 +78,32 @@ pub(crate) fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem>
         .collect::<Vec<_>>();
     path::compact_labels(&mut ranked, query);
     ranked
+}
+
+pub(crate) fn completion_token_width(items: &[CompletionItem], query: &str) -> usize {
+    let path = &query[path::path_value_offset(query)..];
+    if !path.contains('/') {
+        return path.rsplit('/').next().map_or(0, UnicodeWidthStr::width);
+    }
+    let components = path::path_components(path);
+    if components.is_empty() {
+        return 0;
+    }
+    let references = items
+        .iter()
+        .filter(|item| item.kind != super::CompletionKind::Generic)
+        .collect::<Vec<_>>();
+    if references.is_empty() {
+        return UnicodeWidthStr::width(path);
+    }
+    let resolved = path::resolved_path_prefix(&references, path);
+    if path.ends_with('/') && resolved == components.len() {
+        return 0;
+    }
+    let first_unresolved = resolved.min(components.len().saturating_sub(1));
+    let start = components[first_unresolved].1;
+    let end = path.len().saturating_sub(usize::from(path.ends_with('/')));
+    UnicodeWidthStr::width(&path[start..end]) + usize::from(path.ends_with('/'))
 }
 
 fn match_generic(item: &CompletionItem, query: &str, config: &Config) -> Option<(u32, Vec<usize>)> {

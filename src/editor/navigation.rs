@@ -1,6 +1,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::EditorState;
+use crate::scene::MAX_OVERLAY_ITEMS;
 
 impl EditorState {
     pub(super) fn delete(&mut self) {
@@ -75,7 +76,19 @@ impl EditorState {
         } else {
             (self.selected + 1) % count.max(1)
         };
+        self.update_suggestion_scroll();
         true
+    }
+
+    fn update_suggestion_scroll(&mut self) {
+        let visible = self.suggestions.len().clamp(1, MAX_OVERLAY_ITEMS);
+        let max_start = self.suggestions.len().saturating_sub(visible);
+        if self.selected >= self.suggestion_scroll + visible.saturating_sub(1) {
+            let desired = self.selected.saturating_sub(visible.saturating_sub(2));
+            self.suggestion_scroll = self.suggestion_scroll.max(desired).min(max_start);
+        } else if self.selected <= self.suggestion_scroll {
+            self.suggestion_scroll = self.suggestion_scroll.min(self.selected.saturating_sub(1));
+        }
     }
 
     pub(super) fn current_token_range(&self) -> (usize, usize) {

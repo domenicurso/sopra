@@ -3,6 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver},
+    time::SystemTime,
 };
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -12,6 +13,7 @@ pub(super) struct Entry {
     pub(super) name: String,
     pub(super) path: PathBuf,
     pub(super) directory: bool,
+    pub(super) modified: Option<SystemTime>,
 }
 
 pub(super) struct DirectoryCache {
@@ -50,11 +52,12 @@ impl DirectoryCache {
             .filter_map(Result::ok)
             .filter_map(|entry| {
                 let name = entry.file_name().into_string().ok()?;
-                let directory = fs::metadata(entry.path()).ok()?.is_dir();
+                let metadata = entry.metadata().ok()?;
                 Some(Entry {
                     name,
                     path: entry.path(),
-                    directory,
+                    directory: metadata.is_dir(),
+                    modified: metadata.modified().ok(),
                 })
             })
             .collect::<Vec<_>>();

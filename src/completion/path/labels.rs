@@ -74,7 +74,7 @@ fn compact_item(item: &mut CompletionItem, removed: usize) {
         .collect();
 }
 
-fn resolved_path_prefix(items: &[&CompletionItem], query_path: &str) -> usize {
+pub(super) fn resolved_path_prefix(items: &[&CompletionItem], query_path: &str) -> usize {
     let query_components = path_components(query_path);
     let mut resolved = 0;
     for (query_index, (query_component, _)) in query_components.iter().enumerate() {
