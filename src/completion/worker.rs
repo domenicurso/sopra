@@ -25,7 +25,12 @@ pub(super) fn run(requests: Receiver<Request>, responses: Sender<CompletionRespo
         while let Ok(next) = requests.try_recv() {
             request = next;
         }
-        let (items, incomplete) = complete(&request);
+        let (mut items, mut incomplete) = complete(&request);
+        let retry_deadline = Instant::now() + Duration::from_secs(2);
+        while items.is_empty() && incomplete && Instant::now() < retry_deadline {
+            std::thread::sleep(Duration::from_millis(25));
+            (items, incomplete) = complete(&request);
+        }
         if !send_response(&responses, &request, items, incomplete) {
             return;
         }
@@ -108,7 +113,12 @@ fn completion_from_match(
         .start
         .saturating_add(item.replace_start)
         .min(request.replace.end);
-    let kind = kind_for_group(item.group.as_deref());
+    let kind = kind_for_match(
+        item.group.as_deref(),
+        &item.completion,
+        &request.context_line,
+        item.is_file,
+    );
     let mut completion = Completion::with_range(
         item.completion.clone(),
         item.completion,
@@ -148,53 +158,37 @@ fn kind_for_group(group: Option<&str>) -> CompletionKind {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{
-        path::PathBuf,
-        time::{Duration, Instant},
-    };
-
-    use super::{CompletionKind, Request, complete, kind_for_group};
-
-    #[test]
-    fn zsh_groups_become_structured_kinds() {
-        assert_eq!(kind_for_group(Some("options")), CompletionKind::Option);
-        assert_eq!(
-            kind_for_group(Some("directories")),
-            CompletionKind::Directory
-        );
-        assert_eq!(kind_for_group(Some("unknown")), CompletionKind::Generic);
+fn kind_for_match(
+    group: Option<&str>,
+    completion: &str,
+    context_line: &str,
+    is_file: bool,
+) -> CompletionKind {
+    let grouped = kind_for_group(group);
+    if grouped != CompletionKind::Generic {
+        return grouped;
     }
-
-    #[test]
-    fn zshrs_completes_a_command_option_without_a_shell_process() {
-        zsh::compsys::in_editor::bootstrap();
-        let warm_deadline = Instant::now() + Duration::from_secs(2);
-        while !zsh::compsys::in_editor::is_ready() && Instant::now() < warm_deadline {
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        let request = Request {
-            line: "git --vrsn".to_string(),
-            cursor: 10,
-            context_line: "git --".to_string(),
-            context_cursor: 6,
-            replace: 4..10,
-            cwd: PathBuf::from("."),
-            generation: 1,
-            context_key: String::new(),
-        };
-        let (mut items, mut incomplete) = complete(&request);
-        let retry_deadline = Instant::now() + Duration::from_secs(2);
-        while items.is_empty() && incomplete && Instant::now() < retry_deadline {
-            std::thread::sleep(Duration::from_millis(25));
-            (items, incomplete) = complete(&request);
-        }
-        eprintln!(
-            "zshrs option completion: {} items, incomplete={incomplete}, first={:?}",
-            items.len(),
-            items.first().map(|item| &item.display)
-        );
-        assert!(items.iter().any(|item| item.display == "--version"));
+    if is_file {
+        return CompletionKind::File;
+    }
+    let default_group = group.is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "default" | "-default-"
+        )
+    });
+    if !default_group {
+        return CompletionKind::Generic;
+    }
+    if completion.starts_with('-') {
+        return CompletionKind::Option;
+    }
+    if crate::syntax::command_position(context_line, context_line.len()) {
+        CompletionKind::Command
+    } else {
+        CompletionKind::Positional
     }
 }
+
+#[cfg(test)]
+mod tests;

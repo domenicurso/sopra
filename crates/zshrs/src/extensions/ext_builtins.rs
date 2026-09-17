@@ -2747,23 +2747,9 @@ impl ShellExecutor {
             }
         }
 
-        // Install the `compdef` function stub SYNCHRONOUSLY (before the
-        // native scan is shipped to the worker pool, which returns
-        // immediately). zsh's `compinit` defines `compdef` as a shell
-        // function; zshrs does the scan in Rust and never installed it,
-        // so `${+functions[compdef]}` stayed 0 and zinit's compdef-replay
-        // aborted with "compinit function hasn't been loaded" while direct
-        // `compdef` calls hit command-not-found. Only install our stub when
-        // no real compdef function already exists (don't clobber a user or
-        // --zsh fpath definition); the marker body routes to the fast
-        // native impl in the BUILTIN_COMPDEF handler.
-        if !self.function_exists("compdef") {
-            crate::ported::modules::parameter::setfunction(
-                "compdef",
-                NATIVE_COMPDEF_MARKER.to_string(),
-                0,
-            );
-        }
+        // The direct in-editor bootstrap uses the same helper before scanning;
+        // keep the regular builtin path on that shared ownership boundary.
+        crate::compsys::ported::compinit::ensure_compdef_function(self);
 
         // ZSH COMPAT MODE: Use traditional zsh algorithm (fpath scan, .zcompdump, no SQLite)
         if self.zsh_compat {

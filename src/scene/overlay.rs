@@ -7,7 +7,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::completion::CompletionItem;
 
 use super::{
-    Element, MAX_OVERLAY_WIDTH,
+    Element,
     canvas::{Canvas, TextRun},
     overlay_items::item_detail,
 };
@@ -125,7 +125,7 @@ pub(super) fn overlay_width(items: &[CompletionItem], footer: &str, terminal_wid
     if terminal_width <= 2 {
         return terminal_width.max(1);
     }
-    let content_width = items
+    let desired_width = items
         .iter()
         .map(|item| {
             let detail = item_detail(item);
@@ -136,8 +136,24 @@ pub(super) fn overlay_width(items: &[CompletionItem], footer: &str, terminal_wid
         .chain(std::iter::once(UnicodeWidthStr::width(footer)))
         .max()
         .unwrap_or(1)
-        .saturating_add(4) as u16;
-    content_width
-        .min(MAX_OVERLAY_WIDTH)
-        .min(terminal_width.saturating_sub(2))
+        .saturating_add(4);
+    desired_width.min(usize::from(terminal_width.saturating_sub(2))) as u16
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overlay_width;
+    use crate::completion::{CompletionItem, CompletionKind};
+
+    #[test]
+    fn width_follows_content_until_the_terminal_edge() {
+        let items = vec![CompletionItem::new(
+            "a-very-long-command-name",
+            "a description that needs room",
+            "a-very-long-command-name",
+            CompletionKind::Generic,
+        )];
+        assert_eq!(overlay_width(&items, "", 120), 59);
+        assert_eq!(overlay_width(&items, "", 32), 30);
+    }
 }

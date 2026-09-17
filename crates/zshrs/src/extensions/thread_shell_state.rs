@@ -78,6 +78,14 @@ pub fn is_shell_thread() -> bool {
     IS_SHELL.with(|s| *s)
 }
 
+/// True for threads whose shell-visible execution context belongs to the
+/// active shell runtime. The persistent in-editor completion thread has its
+/// own executor, so its context must be visible to completion functions even
+/// though it is not the process's interactive `main` thread.
+pub fn publishes_eval_context() -> bool {
+    is_shell_thread() || std::thread::current().name() == Some("zshrs-compsys-editor")
+}
+
 /// A `Mutex` whose contents are the shell thread's on the shell thread and
 /// this thread's own everywhere else.
 ///

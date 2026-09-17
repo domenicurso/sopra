@@ -30,7 +30,6 @@ pub(super) fn complete(query: &str, replace: Range<usize>) -> Vec<CompletionItem
             item.location = entry.location().map(ToOwned::to_owned);
             item
         })
-        .take(512)
         .collect()
 }
 

@@ -19,7 +19,6 @@ use crate::{editor::EditorState, input::TerminalSize};
 use canvas::Canvas;
 
 pub(crate) const MAX_OVERLAY_ITEMS: usize = 12;
-const MAX_OVERLAY_WIDTH: u16 = 48;
 pub(crate) const TRANSIENT_PROMPT: &str = "❯ ";
 
 pub(crate) struct Frame {

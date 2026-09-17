@@ -8827,7 +8827,7 @@ impl EvalContextFrame {
         // hook's context. The worker still tracks its own stack (the
         // `ThreadMutex` above); only the shell-visible parameters stay the
         // shell thread's.
-        if !crate::thread_shell_state::is_shell_thread() {
+        if !crate::thread_shell_state::publishes_eval_context() {
             return;
         }
         let joined = stack.join(":");

@@ -132,6 +132,10 @@ pub struct CompsysMatch {
     /// Byte offset in `line` where the match-replacement region
     /// starts.
     pub replace_start: usize,
+    /// True when the completer requested Zsh's file-match mode (`compadd -f`).
+    /// This preserves the semantic boundary even when the completer leaves the
+    /// match in Zsh's default group.
+    pub is_file: bool,
 }
 
 /// A complete response from compsys dispatch.
@@ -168,7 +172,7 @@ pub struct CompsysResponse {
 ///   * `dat.group` (`-J`/`-V`) — group label, which the LSP maps to a
 ///     completion-item kind.
 pub fn try_capture_compadd(dat: &crate::ported::zle::comp_h::Cadata, words: &[String]) -> bool {
-    use crate::ported::zle::comp_h::{CAF_ARRAYS, CAF_KEYS};
+    use crate::ported::zle::comp_h::{CAF_ARRAYS, CAF_KEYS, CMF_FILE};
 
     let mut guard = match COMPADD_CAPTURE_BUFFER.lock() {
         Ok(g) => g,
@@ -220,30 +224,13 @@ pub fn try_capture_compadd(dat: &crate::ported::zle::comp_h::Cadata, words: &[St
         .and_then(crate::ported::params::getaparam)
         .unwrap_or_default();
 
-    if let Some(path) = std::env::var_os("ZSHRS_CAPDBG") {
-        use std::io::Write as _;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
-            let _ = writeln!(
-                f,
-                "capture disp={:?} exp={:?} group={:?} matches={:?} descs={:?}",
-                dat.disp,
-                dat.exp,
-                dat.group,
-                matches.iter().take(4).collect::<Vec<_>>(),
-                descs.iter().take(4).collect::<Vec<_>>(),
-            );
-        }
-    }
     for (idx, m) in matches.iter().enumerate() {
         buf.push(CompsysMatch {
             completion: m.clone(),
             description: descs.get(idx).cloned().or_else(|| dat.exp.clone()),
             group: dat.group.clone(),
             replace_start: 0,
+            is_file: (dat.flags & CMF_FILE) != 0,
         });
     }
     true
@@ -361,11 +348,20 @@ fn bootstrap_shell() {
     }
 
     crate::ported::exec::install_session_executor(executor);
+    crate::compsys::ported::compinit::ensure_compdef_function(executor);
     let fpath = crate::compsys::ported::compinit::get_system_fpath();
     let init = crate::compsys::ported::compinit::compinit(&fpath);
     crate::compsys::ported::compinit::register_autoload_stubs(
         crate::compsys::ported::compinit::autoload_stub_names(&init),
     );
+    executor.set_assoc("_comps".to_string(), init.comps.into_iter().collect());
+    executor.set_assoc("_services".to_string(), init.services.into_iter().collect());
+    executor.set_assoc("_patcomps".to_string(), init.patcomps.into_iter().collect());
+    executor.set_assoc(
+        "_postpatcomps".to_string(),
+        init.postpatcomps.into_iter().collect(),
+    );
+    executor.set_assoc("_compautos".to_string(), init.compautos.into_iter().collect());
     tracing::info!(
         target: "zshrs::compsys::in_editor",
         dirs_scanned = init.dirs_scanned,
@@ -567,6 +563,7 @@ fn dispatch_on_shell_thread(job: &Job) -> CompsysResponse {
         allow_exec: job.allow_exec,
     };
     let started = Instant::now();
+    let compdef_revision = crate::compsys::ported::compinit::compdef_revision();
 
     // Snapshot ZLE line + cursor state so we restore exactly what
     // was there before. `complete_at` runs on the shell thread where
@@ -770,7 +767,10 @@ fn dispatch_on_shell_thread(job: &Job) -> CompsysResponse {
         }
     }
 
-    let is_incomplete = started.elapsed() >= req.deadline.saturating_duration_since(started);
+    let timed_out = started.elapsed() >= req.deadline.saturating_duration_since(started);
+    let registration_changed = crate::compsys::ported::compinit::compdef_revision()
+        != compdef_revision;
+    let is_incomplete = timed_out || (matches.is_empty() && registration_changed);
 
     tracing::debug!(
         target: "zshrs::compsys::in_editor",

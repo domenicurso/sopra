@@ -12,7 +12,6 @@ use metadata::file_age;
 use path::{ParsedPath, hidden};
 
 const BEAM_WIDTH: usize = 24;
-const MAX_RESULTS: usize = 256;
 
 pub(super) struct FilesystemEngine {
     cache: DirectoryCache,
@@ -48,7 +47,6 @@ impl FilesystemEngine {
                 .total_cmp(&left.score)
                 .then_with(|| left.display.cmp(&right.display))
         });
-        results.truncate(MAX_RESULTS);
         results
     }
 

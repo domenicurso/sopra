@@ -73,7 +73,6 @@ pub(crate) fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem>
     ranked.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
     let mut ranked = ranked
         .into_iter()
-        .take(256)
         .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
     path::compact_labels(&mut ranked, query);
@@ -148,6 +147,21 @@ mod tests {
         let ranked = rank(&items, "gs");
         assert_eq!(ranked[0].display, "git status");
         assert!(!ranked[0].match_indices.is_empty());
+    }
+
+    #[test]
+    fn ranking_keeps_large_completion_sets() {
+        let items = (0..300)
+            .map(|index| {
+                CompletionItem::new(
+                    format!("entry-{index}"),
+                    "",
+                    format!("entry-{index}"),
+                    CompletionKind::Generic,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rank(&items, "").len(), 300);
     }
 
     #[test]

@@ -582,7 +582,10 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::Instant;
 
 // =====================================================================
@@ -852,6 +855,22 @@ where
         added += 1;
     }
     added
+}
+
+/// Install the native `compdef` function that the Rust scan replaces.
+///
+/// The ordinary `compinit` builtin calls this while it is running, but the
+/// in-editor path invokes the same scanner directly so it can stay persistent
+/// and avoid executing a shell bootstrap script for every request.
+pub fn ensure_compdef_function(executor: &crate::vm_helper::ShellExecutor) {
+    if executor.function_exists("compdef") {
+        return;
+    }
+    crate::ported::modules::parameter::setfunction(
+        "compdef",
+        crate::ext_builtins::NATIVE_COMPDEF_MARKER.to_string(),
+        0,
+    );
 }
 
 /// Autoload-stub names contributed by a completed scan — every file
@@ -2443,6 +2462,15 @@ struct CompdefRemovals {
 
 static COMPDEF_STATE: Mutex<Option<CompdefState>> = Mutex::new(None);
 
+/// Increments when a `compdef` call publishes a new registration. The
+/// persistent completion path uses this to recognize completers that install
+/// their real function on the first query and produce matches on the second.
+static COMPDEF_REVISION: AtomicU64 = AtomicU64::new(0);
+
+pub fn compdef_revision() -> u64 {
+    COMPDEF_REVISION.load(Ordering::Acquire)
+}
+
 /// Depth of the enclosing `compdef_batch` calls. See that function.
 static PUBLISH_DEPTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -2625,6 +2653,14 @@ fn parse_compdef_flags(args: &[String]) -> Result<(CompdefFlags, usize), String>
 /// Returns the upstream-compatible exit code: 0 on success, 1 on
 /// usage error.
 pub fn compdef(args: &[String]) -> i32 {
+    let result = compdef_impl(args);
+    if result == 0 {
+        COMPDEF_REVISION.fetch_add(1, Ordering::Release);
+    }
+    result
+}
+
+fn compdef_impl(args: &[String]) -> i32 {
     // sh:262
     if args.is_empty() {
         eprintln!("compdef: I need arguments");
