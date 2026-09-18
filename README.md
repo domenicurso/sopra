@@ -1,5 +1,4 @@
 <div align="center">
-  
   <h1>Sopra</h1>
   <p><code>/ˈsoʊ.prə/</code></p>
   <p>A Rust-owned Zsh line editor for the future</p>
