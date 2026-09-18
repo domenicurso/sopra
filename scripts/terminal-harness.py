@@ -33,7 +33,7 @@ def check_initial(session: tuple[int, int], output: bytearray) -> int:
     if b"\x1b[38;2;0;0;0m" not in output or b"\x1b[48;2;0;" not in output:
         fail("cursor did not use the terminal palette response", *session)
     rendered = plain(output)
-    if b" in ~/" not in rendered or b"\xe2\x9d\xaf" not in rendered or b"keel-demo" in rendered or b"ready" in rendered:
+    if b" in ~/" not in rendered or b"$" not in rendered or b"sopra-demo" in rendered or b"ready" in rendered:
         fail("product scene was not rendered", *session)
     return output.count(b"\x1b[s")
 def exercise_command_completion(session: tuple[int, int], output: bytearray, origins: int) -> int:
@@ -75,7 +75,7 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     send(session[0], b"\x03")
     origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
     interrupted = plain(output[start:])
-    if b"\xe2\x9d\xaf" not in interrupted or b"Cargo.lock" not in interrupted:
+    if b"$" not in interrupted or b"Cargo.lock" not in interrupted:
         fail("Ctrl-C did not keep the completed transient command", *session)
     return origins
 
@@ -89,12 +89,12 @@ def exercise_nested_help(session: tuple[int, int], output: bytearray, origins: i
     return origins
 def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
-    for byte in b"print -r -- keel-transient\r":
+    for byte in b"print -r -- sopra-transient\r":
         send(session[0], bytes([byte]))
         read_for(session[0], output, 0.01)
-    wait_for(session, output, b"keel-transient", 3)
+    wait_for(session, output, b"sopra-transient", 3)
     accepted = plain(output[start:])
-    if b"\xe2\x9d\xaf" not in accepted or b"print -r --" not in accepted:
+    if b"$" not in accepted or b"print -r --" not in accepted:
         fail("accepted line did not render the transient prompt", *session)
     if b"\x1b[32mp" not in output[start:]:
         fail("accepted line did not keep syntax highlighting", *session)
@@ -145,7 +145,7 @@ def wait_for_exit(session: tuple[int, int], output: bytearray) -> None:
     fail("shell did not exit after the round trip", pid, master)
 def main() -> int:
     subprocess.run(
-        [str(ROOT / "scripts" / "build-keel.sh")],
+        [str(ROOT / "scripts" / "build.sh")],
         cwd=ROOT,
         check=True,
     )

@@ -70,7 +70,8 @@ fn cache_path(request: &HelpRequest) -> Option<PathBuf> {
     modified.as_nanos().hash(&mut hasher);
     Some(
         std::env::temp_dir()
-            .join("keel-command-help")
+            .join("sopra")
+            .join("command-help")
             .join(format!("{:016x}.txt", hasher.finish())),
     )
 }

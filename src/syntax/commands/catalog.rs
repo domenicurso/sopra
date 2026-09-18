@@ -21,15 +21,15 @@ pub(super) fn build() -> CommandCatalog {
             add_path_commands(&mut commands, &directory);
         }
     }
-    add_named_commands(&mut commands, "KEEL_ALIASES", "alias");
-    add_named_commands(&mut commands, "KEEL_FUNCTIONS", "function");
+    add_named_commands(&mut commands, "SOPRA_ALIASES", "alias");
+    add_named_commands(&mut commands, "SOPRA_FUNCTIONS", "function");
     CommandCatalog {
         entries: commands.into_values().collect(),
     }
 }
 
 fn add_exported_commands(commands: &mut BTreeMap<String, CommandEntry>) -> bool {
-    let Some(raw) = env::var_os("KEEL_COMMANDS") else {
+    let Some(raw) = env::var_os("SOPRA_COMMANDS") else {
         return false;
     };
     add_exported_commands_from(&raw.to_string_lossy(), commands)

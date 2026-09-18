@@ -1,13 +1,15 @@
 [package]
-name = "keel"
+name = "sopra"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A Rust-owned line editor for stock Zsh"
-default-run = "keel"
+repository = "https://github.com/domenicurso/sopra"
+readme = "README.md"
+default-run = "sopra"
 
 [[bin]]
-name = "keel"
+name = "sopra"
 path = "src/main.rs"
 
 [dependencies]

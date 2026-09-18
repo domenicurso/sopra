@@ -107,23 +107,18 @@ mod tests {
     fn compacting_keeps_replacements_and_shifts_highlights() {
         let mut items = vec![
             CompletionItem::new(
-                "./crates/keel-core",
+                "./crates/core",
                 "",
-                "./crates/keel-core",
+                "./crates/core",
                 CompletionKind::Directory,
             ),
-            CompletionItem::new(
-                "./crates/keel-ui",
-                "",
-                "./crates/keel-ui",
-                CompletionKind::Directory,
-            ),
+            CompletionItem::new("./crates/ui", "", "./crates/ui", CompletionKind::Directory),
         ];
         items[0].match_indices = vec![2, 10];
         items[1].match_indices = vec![2, 10];
-        compact_labels(&mut items, "./crates/k");
-        assert_eq!(items[0].display, "keel-core");
-        assert_eq!(items[0].insert, "./crates/keel-core");
+        compact_labels(&mut items, "./crates/c");
+        assert_eq!(items[0].display, "core");
+        assert_eq!(items[0].insert, "./crates/core");
         assert_eq!(items[0].match_indices, vec![1]);
     }
 }

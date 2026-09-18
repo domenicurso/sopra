@@ -168,10 +168,7 @@ mod tests {
                 .any(|entry| entry.name() == "echo")
         );
         assert!(command_available("sh", Path::new(".")));
-        assert!(!command_available(
-            "keel-command-that-does-not-exist",
-            Path::new(".")
-        ));
+        assert!(!command_available("missing-command", Path::new(".")));
     }
 
     #[test]

@@ -5,7 +5,7 @@ fn editor(buffer: &str) -> EditorState {
     EditorState::new(EditorConfig {
         buffer: buffer.to_string(),
         cursor_chars: buffer.chars().count(),
-        prompt: "❯ ".to_string(),
+        prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size: TerminalSize::new(80, 24),
         cwd: std::path::PathBuf::from("."),

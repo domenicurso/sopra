@@ -32,7 +32,7 @@ impl Worker {
         let (requests, request_rx) = mpsc::channel();
         let (responses, response_rx) = mpsc::channel();
         std::thread::Builder::new()
-            .name("keel-command-help".to_string())
+            .name("command-help".to_string())
             .spawn(move || worker::run(request_rx, responses))
             .ok()?;
         Some(Self {

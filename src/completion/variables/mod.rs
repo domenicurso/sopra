@@ -130,7 +130,7 @@ fn names() -> BTreeSet<String> {
         .filter_map(|(name, _)| name.into_string().ok())
         .filter(|name| valid_name(name))
         .collect::<BTreeSet<_>>();
-    if let Ok(raw) = std::env::var("KEEL_VARIABLES") {
+    if let Ok(raw) = std::env::var("SOPRA_VARIABLES") {
         names.extend(
             raw.lines()
                 .filter(|name| valid_name(name))
@@ -141,7 +141,7 @@ fn names() -> BTreeSet<String> {
 }
 
 fn arrays() -> BTreeSet<String> {
-    std::env::var("KEEL_ARRAYS")
+    std::env::var("SOPRA_ARRAYS")
         .unwrap_or_default()
         .lines()
         .filter(|name| valid_name(name))

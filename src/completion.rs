@@ -51,7 +51,7 @@ impl CompletionEngine {
         let (response_tx, response_rx) = mpsc::channel();
         let worker_response_tx = response_tx.clone();
         thread::Builder::new()
-            .name("keel-zshrs-completion".to_string())
+            .name("completion-zsh".to_string())
             .spawn(move || worker::run(request_rx, worker_response_tx))
             .ok()?;
         let help_worker = help::Worker::spawn()?;

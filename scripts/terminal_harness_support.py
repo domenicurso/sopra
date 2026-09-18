@@ -16,7 +16,7 @@ from typing import Callable, NoReturn
 
 CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 ROOT = Path(__file__).resolve().parent.parent
-START = ROOT / "scripts" / "start-keel.sh"
+START = ROOT / "scripts" / "start.sh"
 ROWS, COLUMNS = 40, 100
 
 

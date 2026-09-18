@@ -1,5 +1,5 @@
-PROMPT='%n in %~ ❯ '
+PROMPT='%n in %~ $ '
 RPROMPT=''
 autoload -Uz compinit
 compinit -u -d /dev/null
-source "$KEEL_REPO_ROOT/zsh/keel.zsh"
+source "$SOPRA_REPO_ROOT/zsh/editor.zsh"

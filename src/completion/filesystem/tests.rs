@@ -36,7 +36,7 @@ fn quoted_and_escaped_paths_keep_their_shell_shape() {
 #[test]
 fn beam_search_keeps_multiple_fuzzy_directory_branches() {
     let root = std::env::temp_dir().join(format!(
-        "keel-fs-beam-{}-{}",
+        "fs-beam-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -76,7 +76,7 @@ fn beam_search_keeps_multiple_fuzzy_directory_branches() {
 #[test]
 fn fuzzy_root_paths_keep_the_full_shell_path() {
     let root = std::env::temp_dir().join(format!(
-        "keel-fs-root-{}-{}",
+        "fs-root-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

@@ -13,7 +13,7 @@ fn editor(buffer: &str, size: TerminalSize) -> EditorState {
     EditorState::new(EditorConfig {
         buffer: buffer.to_string(),
         cursor_chars: buffer.chars().count(),
-        prompt: "❯ ".to_string(),
+        prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),
@@ -79,7 +79,7 @@ fn transient_scene_keeps_the_command_and_its_style() {
     let editor = editor("print -r -- hi", size);
     let frame = Scene::for_transient(&editor, size).render();
     let live = Scene::for_editor(&editor, size, Instant::now()).render();
-    assert_eq!(frame.buffer[(0, 0)].symbol(), "❯");
+    assert_eq!(frame.buffer[(0, 0)].symbol(), "$");
     assert_eq!(frame.buffer[(2, 0)].symbol(), "p");
     assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
     assert_eq!(frame.buffer[(2, 0)].fg, live.buffer[(2, 0)].fg);
@@ -103,7 +103,7 @@ fn transient_scene_does_not_keep_cursor_pair_highlighting() {
     let editor = EditorState::new(EditorConfig {
         buffer: "echo \"hi\"".to_string(),
         cursor_chars: 6,
-        prompt: "❯ ".to_string(),
+        prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),
@@ -125,7 +125,7 @@ fn cursor_repaint_covers_a_wide_grapheme() {
     let editor = EditorState::new(EditorConfig {
         buffer: "💡".to_string(),
         cursor_chars: 0,
-        prompt: "❯ ".to_string(),
+        prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),
@@ -141,7 +141,7 @@ fn cursor_repaints_the_character_under_it() {
     let editor = EditorState::new(EditorConfig {
         buffer: "echo".to_string(),
         cursor_chars: 1,
-        prompt: "❯ ".to_string(),
+        prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),

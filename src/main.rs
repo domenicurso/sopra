@@ -25,7 +25,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut buffer = String::new();
         let mut cursor = 0;
-        let mut prompt = "keel ❯ ".to_string();
+        let mut prompt = "$ ".to_string();
         let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
 
@@ -57,14 +57,14 @@ impl Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse().map_err(|message| format!("keel: {message}"))?;
+    let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
     // Start the completion runtime while the terminal is being configured so command-name
     // prefetching can warm argument completions before the user reaches the spacebar.
     zsh::compsys::in_editor::bootstrap();
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
     // ZLE has already positioned the terminal on the active line. The renderer saves that
-    // position and treats it as row zero, so Keel does not need terminal cursor queries.
+    // position and treats it as row zero, so Sopra does not need terminal cursor queries.
     let anchor = CursorPosition { row: 0, column: 0 };
     let mut editor = EditorState::new(EditorConfig {
         buffer: args.buffer,
@@ -120,7 +120,7 @@ fn write_result(result: &RunResult) -> std::io::Result<()> {
 
 fn print_usage() {
     println!(
-        "keel\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  keel [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH]"
+        "sopra\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  sopra [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH]"
     );
 }
 

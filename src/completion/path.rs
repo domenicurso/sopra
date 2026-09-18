@@ -114,12 +114,12 @@ mod tests {
     #[test]
     fn path_matching_scores_each_unresolved_segment() {
         let item = CompletionItem::new(
-            "./crates/keel-core/src/",
+            "./crates/core/src/",
             "",
-            "./crates/keel-core/src/",
+            "./crates/core/src/",
             CompletionKind::Directory,
         );
-        let (score, indices) = match_item(&item, "./cr/kc", &Config::default()).expect("match");
+        let (score, indices) = match_item(&item, "./cr/c", &Config::default()).expect("match");
         assert!(score > 0);
         assert!(indices.contains(&0));
         assert!(indices.contains(&2));
