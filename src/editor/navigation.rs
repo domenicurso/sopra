@@ -1,7 +1,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::EditorState;
-use crate::scene::MAX_OVERLAY_ITEMS;
+use crate::{completion::ranking, scene::MAX_OVERLAY_ITEMS};
 
 impl EditorState {
     pub(super) fn delete(&mut self) {
@@ -92,22 +92,7 @@ impl EditorState {
     }
 
     pub(super) fn current_token_range(&self) -> (usize, usize) {
-        let before = &self.buffer[..self.cursor];
-        let start = before
-            .char_indices()
-            .rev()
-            .find_map(|(index, character)| {
-                character
-                    .is_whitespace()
-                    .then_some(index + character.len_utf8())
-            })
-            .unwrap_or(0);
-        let after = &self.buffer[self.cursor..];
-        let end = after
-            .char_indices()
-            .find_map(|(index, character)| character.is_whitespace().then_some(self.cursor + index))
-            .unwrap_or(self.buffer.len());
-        (start, end)
+        ranking::token_range(&self.buffer, self.cursor)
     }
 }
 

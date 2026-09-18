@@ -44,6 +44,49 @@ fn escape_keeps_the_edited_buffer() {
 }
 
 #[test]
+fn whitespace_only_input_keeps_the_completion_menu_empty() {
+    let state = editor("   ");
+    assert!(state.visible_items().is_empty());
+}
+
+#[test]
+fn paired_quotes_and_brackets_are_inserted_and_skipped() {
+    let mut state = editor("");
+    state.handle_key(Key::Character('"'));
+    assert_eq!(state.buffer(), "\"\"");
+    state.handle_key(Key::Character('"'));
+    assert_eq!(state.buffer(), "\"\"");
+    let mut brackets = editor("");
+    brackets.handle_key(Key::Character('('));
+    assert_eq!(brackets.buffer(), "()");
+    brackets.handle_key(Key::Character(')'));
+    assert_eq!(brackets.buffer(), "()");
+}
+
+#[test]
+fn comments_do_not_receive_auto_pairs() {
+    let mut state = editor("# ");
+    state.handle_key(Key::Character('('));
+    assert_eq!(state.buffer(), "# (");
+}
+
+#[test]
+fn structured_completion_can_leave_the_cursor_inside_a_pair() {
+    let mut state = editor("export ar");
+    let item = crate::completion::CompletionItem::new(
+        "arr",
+        "shell array",
+        "arr",
+        crate::completion::CompletionKind::Array,
+    )
+    .with_suffix("=()", 4);
+    state.set_completion_source_for_test(vec![item]);
+    state.handle_key(Key::Tab);
+    assert_eq!(state.buffer(), "export arr=()");
+    assert_eq!(state.result(ExitReason::Accepted).cursor, 11);
+}
+
+#[test]
 fn eof_deletes_a_character_and_delegates_on_an_empty_line() {
     let mut state = editor("git st");
     state.handle_key(Key::Home);

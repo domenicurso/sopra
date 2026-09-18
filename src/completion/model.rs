@@ -44,6 +44,8 @@ pub(crate) enum CompletionKind {
     Subcommand,
     Value,
     Positional,
+    Variable,
+    Array,
     File,
     Directory,
     Host,
@@ -54,6 +56,7 @@ pub(crate) enum CompletionKind {
 pub(crate) enum CompletionSource {
     Zshrs,
     CommandIndex,
+    ShellContext,
     Filesystem,
 }
 
@@ -66,6 +69,8 @@ pub(crate) struct Completion {
     pub(crate) group: Option<String>,
     pub(crate) location: Option<PathBuf>,
     pub(crate) replace: Range<usize>,
+    pub(crate) suffix: String,
+    pub(crate) cursor_offset: Option<usize>,
     pub(crate) score: f32,
     pub(crate) source: CompletionSource,
     pub(crate) match_indices: Vec<usize>,
@@ -87,6 +92,8 @@ impl Completion {
             group: None,
             location: None,
             replace: 0..0,
+            suffix: String::new(),
+            cursor_offset: None,
             score: 0.0,
             source: CompletionSource::Zshrs,
             match_indices: Vec::new(),
@@ -109,10 +116,18 @@ impl Completion {
             group: None,
             location: None,
             replace,
+            suffix: String::new(),
+            cursor_offset: None,
             score: 0.0,
             source,
             match_indices: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_suffix(mut self, suffix: impl Into<String>, cursor_offset: usize) -> Self {
+        self.suffix = suffix.into();
+        self.cursor_offset = Some(cursor_offset);
+        self
     }
 }
 

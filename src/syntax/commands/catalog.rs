@@ -14,7 +14,9 @@ pub(super) fn build() -> CommandCatalog {
             },
         );
     }
-    if let Some(path) = env::var_os("PATH") {
+    if !add_exported_commands(&mut commands)
+        && let Some(path) = env::var_os("PATH")
+    {
         for directory in env::split_paths(&path) {
             add_path_commands(&mut commands, &directory);
         }
@@ -24,6 +26,34 @@ pub(super) fn build() -> CommandCatalog {
     CommandCatalog {
         entries: commands.into_values().collect(),
     }
+}
+
+fn add_exported_commands(commands: &mut BTreeMap<String, CommandEntry>) -> bool {
+    let Some(raw) = env::var_os("KEEL_COMMANDS") else {
+        return false;
+    };
+    add_exported_commands_from(&raw.to_string_lossy(), commands)
+}
+
+fn add_exported_commands_from(raw: &str, commands: &mut BTreeMap<String, CommandEntry>) -> bool {
+    let mut added = false;
+    for line in raw.lines() {
+        let Some((name, location)) = line.split_once('\t') else {
+            continue;
+        };
+        if name.is_empty() || location.is_empty() {
+            continue;
+        }
+        commands.entry(name.to_string()).or_insert_with(|| {
+            added = true;
+            CommandEntry {
+                name: name.to_string(),
+                detail: "path",
+                location: Some(location.into()),
+            }
+        });
+    }
+    added
 }
 
 fn add_path_commands(commands: &mut BTreeMap<String, CommandEntry>, directory: &Path) {
@@ -80,4 +110,33 @@ pub(super) fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 pub(super) fn is_executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::add_exported_commands_from;
+    use crate::syntax::commands::CommandEntry;
+
+    #[test]
+    fn exported_commands_keep_existing_precedence_and_locations() {
+        let mut commands = BTreeMap::from([(
+            "echo".to_string(),
+            CommandEntry {
+                name: "echo".to_string(),
+                detail: "builtin",
+                location: None,
+            },
+        )]);
+        assert!(add_exported_commands_from(
+            "echo\t/bin/echo\nrg\t/bin/rg\nmalformed",
+            &mut commands,
+        ));
+        assert_eq!(commands["echo"].location(), None);
+        assert_eq!(
+            commands["rg"].location().and_then(|path| path.to_str()),
+            Some("/bin/rg")
+        );
+    }
 }

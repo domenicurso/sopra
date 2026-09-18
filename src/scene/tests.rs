@@ -67,6 +67,13 @@ fn overlay_cells_keep_the_terminal_background() {
 }
 
 #[test]
+fn normal_prompt_text_uses_the_prompt_color() {
+    let size = TerminalSize::new(80, 24);
+    let frame = Scene::for_editor(&editor("", size), size, Instant::now()).render();
+    assert_eq!(frame.buffer[(0, 0)].fg, Color::LightBlue);
+}
+
+#[test]
 fn transient_scene_keeps_the_command_and_its_style() {
     let size = TerminalSize::new(80, 24);
     let editor = editor("print -r -- hi", size);
@@ -78,6 +85,38 @@ fn transient_scene_keeps_the_command_and_its_style() {
     assert_eq!(frame.buffer[(2, 0)].fg, live.buffer[(2, 0)].fg);
     assert_eq!(frame.buffer[(2, 0)].modifier, live.buffer[(2, 0)].modifier);
     assert_eq!(frame.buffer[(30, 0)], ratatui::buffer::Cell::EMPTY);
+}
+
+#[test]
+fn transient_scene_keeps_partial_syntax_highlighting() {
+    let size = TerminalSize::new(80, 24);
+    let editor = editor("echo \"", size);
+    let frame = Scene::for_transient(&editor, size).render();
+    assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
+    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightRed);
+    assert!(frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
+}
+
+#[test]
+fn transient_scene_does_not_keep_cursor_pair_highlighting() {
+    let size = TerminalSize::new(80, 24);
+    let editor = EditorState::new(EditorConfig {
+        buffer: "echo \"hi\"".to_string(),
+        cursor_chars: 6,
+        prompt: "❯ ".to_string(),
+        anchor: CursorPosition { row: 0, column: 0 },
+        size,
+        cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
+    });
+    let frame = Scene::for_transient(&editor, size).render();
+    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightMagenta);
+    assert!(!frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
+    assert!(
+        !frame.buffer[(10, 0)]
+            .modifier
+            .contains(Modifier::UNDERLINED)
+    );
 }
 
 #[test]
@@ -94,4 +133,20 @@ fn cursor_repaint_covers_a_wide_grapheme() {
     });
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.repaint_cells, vec![(2, 0), (3, 0)]);
+}
+
+#[test]
+fn cursor_repaints_the_character_under_it() {
+    let size = TerminalSize::new(80, 24);
+    let editor = EditorState::new(EditorConfig {
+        buffer: "echo".to_string(),
+        cursor_chars: 1,
+        prompt: "❯ ".to_string(),
+        anchor: CursorPosition { row: 0, column: 0 },
+        size,
+        cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
+    });
+    let frame = Scene::for_editor(&editor, size, Instant::now()).render();
+    assert_eq!(frame.buffer[(3, 0)].symbol(), "c");
 }

@@ -31,7 +31,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
             column: 2,
             row: 0,
             buffer: editor.buffer().to_string(),
-            spans: editor.syntax().to_vec(),
+            spans: editor.transient_syntax(),
         }),
     ];
     Scene::new(

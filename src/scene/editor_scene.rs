@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 
 use crate::{
     completion::CompletionItem,
@@ -17,7 +18,7 @@ use super::{
 
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
     let items = editor.visible_items().to_vec();
-    let prompt = crate::prompt::parse(editor.prompt());
+    let prompt = colored_prompt(editor.prompt());
     let mut layout = EditorLayout::new(editor, size, crate::prompt::width(&prompt));
     layout.footer = editor.completion_footer();
     layout.footer_hint = editor.completion_hint().to_string();
@@ -131,10 +132,23 @@ fn editor_elements(
     elements.push(Box::new(CursorElement {
         column: layout.cursor_column,
         row: layout.row,
+        symbol: editor.cursor_symbol(),
         width: editor.cursor_cell_width(),
         style: editor.cursor_style(now),
     }));
     elements
+}
+
+fn colored_prompt(prompt: &str) -> Vec<crate::prompt::PromptSpan> {
+    crate::prompt::parse(prompt)
+        .into_iter()
+        .map(|mut span| {
+            if span.style.fg.is_none() {
+                span.style.fg = Some(Color::LightBlue);
+            }
+            span
+        })
+        .collect()
 }
 
 impl EditorLayout {

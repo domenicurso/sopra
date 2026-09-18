@@ -1,71 +1,70 @@
 mod commands;
+mod context;
+mod delimiters;
+mod highlight;
+mod lex;
+mod scan;
+#[cfg(test)]
+mod tests;
 
 use std::path::Path;
 
-use brush_parser::{Token, tokenize_str};
 use ratatui::style::{Color, Modifier, Style};
 
+pub(crate) use commands::catalog;
 use commands::command_available;
 
-pub(crate) use commands::catalog;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SyntaxKind {
+pub(crate) enum SyntaxKind {
     RealCommand,
     FakeCommand,
     Flag,
     Operator,
     Argument,
+    String,
+    Number,
+    Variable,
+    Comment,
+    Quote,
+    MatchedQuote,
+    Error,
+    Escape,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SyntaxSpan {
-    start: usize,
-    end: usize,
-    kind: SyntaxKind,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) kind: SyntaxKind,
 }
 
 impl SyntaxSpan {
     pub(crate) fn style(self) -> Style {
-        match self.kind {
-            SyntaxKind::RealCommand => Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-            SyntaxKind::FakeCommand => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            SyntaxKind::Flag => Style::default().fg(Color::Yellow),
-            SyntaxKind::Operator => Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-            SyntaxKind::Argument => Style::default().fg(Color::Reset),
-        }
+        let (color, modifier) = match self.kind {
+            SyntaxKind::RealCommand => (Color::Green, Modifier::BOLD),
+            SyntaxKind::FakeCommand => (Color::Red, Modifier::BOLD),
+            SyntaxKind::Flag => (Color::Yellow, Modifier::empty()),
+            SyntaxKind::Operator => (Color::Cyan, Modifier::BOLD),
+            SyntaxKind::Argument => (Color::Reset, Modifier::empty()),
+            SyntaxKind::String => (Color::LightMagenta, Modifier::empty()),
+            SyntaxKind::Number => (Color::LightBlue, Modifier::empty()),
+            SyntaxKind::Variable => (Color::LightCyan, Modifier::empty()),
+            SyntaxKind::Comment => (Color::DarkGray, Modifier::DIM),
+            SyntaxKind::Quote => (Color::LightMagenta, Modifier::empty()),
+            SyntaxKind::MatchedQuote => (Color::LightYellow, Modifier::UNDERLINED),
+            SyntaxKind::Error => (Color::LightRed, Modifier::UNDERLINED),
+            SyntaxKind::Escape => (Color::Cyan, Modifier::empty()),
+        };
+        Style::default().fg(color).add_modifier(modifier)
     }
 }
 
-pub(crate) fn highlight(line: &str, cwd: &Path) -> Vec<SyntaxSpan> {
-    let Ok(tokens) = tokenize_str(line) else {
-        return Vec::new();
-    };
-    let mut state = ShellState::new();
-    tokens
-        .into_iter()
-        .map(|token| {
-            let location = token.location();
-            let start = char_to_byte(line, location.start.index);
-            let end = char_to_byte(line, location.end.index);
-            let kind = match &token {
-                Token::Operator(operator, _) => {
-                    consume_operator(operator, &mut state);
-                    SyntaxKind::Operator
-                }
-                Token::Word(word, _) => {
-                    let kind = word_kind(word, &state, cwd);
-                    consume_word(word, &mut state);
-                    kind
-                }
-            };
-            SyntaxSpan { start, end, kind }
-        })
-        .collect()
+pub(crate) fn highlight_at(line: &str, cwd: &Path, cursor: usize) -> Vec<SyntaxSpan> {
+    highlight::highlight(line, cwd, Some(cursor))
+}
+
+pub(crate) fn highlight_without_cursor(line: &str, cwd: &Path) -> Vec<SyntaxSpan> {
+    highlight::highlight(line, cwd, None)
 }
 
 pub(crate) fn style_at(spans: &[SyntaxSpan], byte: usize) -> Style {
@@ -77,107 +76,17 @@ pub(crate) fn style_at(spans: &[SyntaxSpan], byte: usize) -> Style {
 }
 
 pub(crate) fn command_position(line: &str, cursor: usize) -> bool {
-    let prefix = &line[..cursor.min(line.len())];
-    let Ok(tokens) = tokenize_str(prefix) else {
-        return false;
-    };
-    let cursor_chars = prefix.chars().count();
-    let mut state = ShellState::new();
-    for token in tokens {
-        let location = token.location();
-        if matches!(&token, Token::Word(..))
-            && location.start.index <= cursor_chars
-            && cursor_chars <= location.end.index
-        {
-            return state.command_expected && !is_assignment(token.to_str());
-        }
-        match &token {
-            Token::Operator(operator, _) => consume_operator(operator, &mut state),
-            Token::Word(word, _) => consume_word(word, &mut state),
-        }
-    }
-    state.command_expected
+    context::command_position(line, cursor)
 }
 
-struct ShellState {
-    command_expected: bool,
-    redirect_expected: bool,
+pub(crate) fn quote_context(line: &str, cursor: usize) -> Option<char> {
+    context::quote_context(line, cursor)
 }
 
-impl ShellState {
-    const fn new() -> Self {
-        Self {
-            command_expected: true,
-            redirect_expected: false,
-        }
-    }
+pub(crate) fn comment_context(line: &str, cursor: usize) -> bool {
+    context::comment_context(line, cursor)
 }
 
-fn word_kind(word: &str, state: &ShellState, cwd: &Path) -> SyntaxKind {
-    if state.redirect_expected {
-        return SyntaxKind::Argument;
-    }
-    if state.command_expected && !is_assignment(word) {
-        return if command_available(word, cwd) {
-            SyntaxKind::RealCommand
-        } else {
-            SyntaxKind::FakeCommand
-        };
-    }
-    if !state.command_expected && word.starts_with('-') {
-        SyntaxKind::Flag
-    } else {
-        SyntaxKind::Argument
-    }
+pub(crate) fn command_available_for_highlight(word: &str, cwd: &Path) -> bool {
+    command_available(word, cwd)
 }
-
-fn consume_word(word: &str, state: &mut ShellState) {
-    if state.redirect_expected {
-        state.redirect_expected = false;
-    } else if state.command_expected && !is_assignment(word) {
-        state.command_expected = false;
-    }
-}
-
-fn consume_operator(operator: &str, state: &mut ShellState) {
-    state.redirect_expected = is_redirection(operator);
-    if is_command_boundary(operator) {
-        state.command_expected = true;
-    } else if !state.redirect_expected {
-        state.command_expected = false;
-    }
-}
-
-fn is_command_boundary(operator: &str) -> bool {
-    matches!(
-        operator,
-        "|" | "||" | "&&" | ";" | ";&" | ";;" | ";;&" | "&" | "\n"
-    )
-}
-
-fn is_redirection(operator: &str) -> bool {
-    operator
-        .chars()
-        .any(|character| matches!(character, '<' | '>'))
-}
-
-fn is_assignment(word: &str) -> bool {
-    let Some((name, _)) = word.split_once('=') else {
-        return false;
-    };
-    !name.is_empty()
-        && name.chars().enumerate().all(|(index, character)| {
-            character == '_'
-                || character.is_ascii_alphanumeric() && index > 0
-                || character.is_ascii_alphabetic()
-        })
-}
-
-fn char_to_byte(text: &str, index: usize) -> usize {
-    text.char_indices()
-        .nth(index)
-        .map_or(text.len(), |(byte, _)| byte)
-}
-
-#[cfg(test)]
-mod tests;

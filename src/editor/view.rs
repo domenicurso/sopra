@@ -67,6 +67,10 @@ impl EditorState {
         &self.syntax
     }
 
+    pub(crate) fn transient_syntax(&self) -> Vec<crate::syntax::SyntaxSpan> {
+        crate::syntax::highlight_without_cursor(&self.buffer, &self.cwd)
+    }
+
     pub(crate) fn cursor_display_width(&self) -> u16 {
         UnicodeWidthStr::width(&self.buffer[..self.cursor]) as u16
     }
@@ -77,6 +81,16 @@ impl EditorState {
             .next()
             .map(|grapheme| UnicodeWidthStr::width(grapheme).max(1) as u16)
             .unwrap_or(1)
+    }
+
+    pub(crate) fn cursor_symbol(&self) -> String {
+        self.buffer[self.cursor..]
+            .graphemes(true)
+            .next()
+            .filter(|grapheme| {
+                !grapheme.chars().any(char::is_control) && UnicodeWidthStr::width(*grapheme) > 0
+            })
+            .map_or_else(|| " ".to_string(), ToString::to_string)
     }
 
     pub(crate) fn animation_elapsed(&self, now: Instant) -> Duration {

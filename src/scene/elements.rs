@@ -82,19 +82,18 @@ impl Element for CommandElement {
 pub(super) struct CursorElement {
     pub(super) column: u16,
     pub(super) row: u16,
+    pub(super) symbol: String,
     pub(super) width: u16,
     pub(super) style: Style,
 }
 
 impl Element for CursorElement {
     fn paint(&self, canvas: &mut Canvas) {
-        for offset in 0..self.width.max(1) {
-            canvas.put(
-                self.column.saturating_add(offset),
-                self.row,
-                " ",
-                self.style,
-            );
-        }
+        canvas.text(TextRun {
+            position: (self.column, self.row),
+            text: &self.symbol,
+            style: self.style,
+            max_width: self.width.max(1),
+        });
     }
 }

@@ -45,6 +45,9 @@ impl CompletionEngine {
             generation: self.generation,
             context_key: context_key.clone(),
         };
+        if candidate.display == query {
+            self.schedule_help(&request);
+        }
         self.pending_context = Some(context_key);
         let _ = self.requests.send(request);
         true

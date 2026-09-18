@@ -1,12 +1,14 @@
-use crate::completion::{
-    CompletionEngine, CompletionItem, CompletionKind, CompletionResponseSource, ranking,
-};
+use crate::completion::{CompletionEngine, CompletionResponseSource, ranking};
 
-use super::EditorState;
+use super::{EditorState, completion_merge};
 
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
-        self.syntax = crate::syntax::highlight(&self.buffer, &self.cwd);
+        self.syntax = crate::syntax::highlight_at(&self.buffer, &self.cwd, self.cursor);
+        if self.buffer.trim().is_empty() {
+            self.clear_completion_state();
+            return;
+        }
         if self.completion.is_none() {
             return;
         }
@@ -54,7 +56,7 @@ impl EditorState {
             let (start, end) = ranking::token_range(&self.buffer, self.cursor);
             let replace = start..end;
             let items = crate::completion::rebind(&response.items, replace);
-            self.zshrs_source = merge_response_metadata(&self.zshrs_source, items);
+            self.zshrs_source = completion_merge::response_metadata(&self.zshrs_source, items);
         } else {
             if response.line != self.buffer
                 || response.cursor != cursor_chars
@@ -75,7 +77,8 @@ impl EditorState {
     }
 
     fn merge_completion_sources(&mut self) {
-        self.completion_source = merge_items(&self.completion_source, &self.zshrs_source);
+        self.completion_source =
+            completion_merge::items(&self.completion_source, &self.zshrs_source);
         self.refresh_suggestions();
     }
 
@@ -93,108 +96,21 @@ impl EditorState {
         }
     }
 
+    fn clear_completion_state(&mut self) {
+        self.completion_source.clear();
+        self.zshrs_source.clear();
+        self.suggestions.clear();
+        self.selected = 0;
+        self.suggestion_scroll = 0;
+        self.completion_elapsed = std::time::Duration::ZERO;
+    }
+
     #[cfg(test)]
-    pub(crate) fn set_completion_source_for_test(&mut self, items: Vec<CompletionItem>) {
+    pub(crate) fn set_completion_source_for_test(
+        &mut self,
+        items: Vec<crate::completion::CompletionItem>,
+    ) {
         self.completion_source = items;
         self.refresh_suggestions();
-    }
-}
-
-fn merge_items(local: &[CompletionItem], zshrs: &[CompletionItem]) -> Vec<CompletionItem> {
-    let local = local
-        .iter()
-        .filter(|item| item.source != crate::completion::CompletionSource::Zshrs)
-        .cloned()
-        .collect::<Vec<_>>();
-    let rust_filesystem = local.iter().any(|item| {
-        item.source == crate::completion::CompletionSource::Filesystem
-            && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
-    });
-    let mut merged = local;
-    for item in zshrs {
-        if rust_filesystem && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
-        {
-            continue;
-        }
-        let duplicate = merged.iter_mut().find(|existing| same_item(existing, item));
-        if let Some(existing) = duplicate {
-            if item.description.is_some() || item.location.is_some() {
-                *existing = item.clone();
-            }
-        } else {
-            merged.push(item.clone());
-        }
-    }
-    merged
-}
-
-fn merge_response_metadata(
-    previous: &[CompletionItem],
-    response: Vec<CompletionItem>,
-) -> Vec<CompletionItem> {
-    response
-        .into_iter()
-        .map(|mut item| {
-            if let Some(previous) = previous
-                .iter()
-                .find(|candidate| same_item(candidate, &item))
-            {
-                if item.description.is_none() {
-                    item.description = previous.description.clone();
-                }
-                if item.location.is_none() {
-                    item.location = previous.location.clone();
-                }
-                if item.group.is_none() {
-                    item.group = previous.group.clone();
-                }
-            }
-            item
-        })
-        .collect()
-}
-
-fn same_item(left: &CompletionItem, right: &CompletionItem) -> bool {
-    left.display == right.display && left.insert == right.insert && left.kind == right.kind
-}
-#[cfg(test)]
-mod tests {
-    use super::{merge_items, merge_response_metadata};
-    use crate::completion::{CompletionItem, CompletionKind};
-
-    #[test]
-    fn zshrs_metadata_replaces_a_local_placeholder() {
-        let local = [CompletionItem::new(
-            "git",
-            "path",
-            "git",
-            CompletionKind::Generic,
-        )];
-        let zshrs = [CompletionItem::new(
-            "git",
-            "/usr/bin/git",
-            "git",
-            CompletionKind::Generic,
-        )];
-        let merged = merge_items(&local, &zshrs);
-        assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
-    }
-
-    #[test]
-    fn partial_zshrs_updates_keep_metadata_from_an_earlier_response() {
-        let previous = vec![CompletionItem::new(
-            "git",
-            "/usr/bin/git",
-            "git",
-            CompletionKind::Generic,
-        )];
-        let response = vec![CompletionItem::new(
-            "git",
-            "",
-            "git",
-            CompletionKind::Generic,
-        )];
-        let merged = merge_response_metadata(&previous, response);
-        assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
     }
 }

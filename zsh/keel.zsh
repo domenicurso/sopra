@@ -52,8 +52,24 @@ _keel_edit() {
     emulate -L zsh
     local raw prompt
     local -x FPATH="${(j.:.)fpath}"
-    local -x KEEL_ALIASES="${(j:\n:)${(k)aliases}}"
-    local -x KEEL_FUNCTIONS="${(j:\n:)${(k)functions}}"
+    local -x KEEL_ALIASES KEEL_FUNCTIONS KEEL_COMMANDS KEEL_VARIABLES KEEL_ARRAYS
+    printf -v KEEL_ALIASES '%s\n' "${(@k)aliases}"
+    printf -v KEEL_FUNCTIONS '%s\n' "${(@k)functions}"
+    printf -v KEEL_VARIABLES '%s\n' "${(@k)parameters}"
+    local -a keel_arrays
+    local keel_variable
+    for keel_variable in ${(k)parameters}; do
+        if [[ ${(tP)keel_variable} == *array* ]]; then
+            keel_arrays+=("$keel_variable")
+        fi
+    done
+    printf -v KEEL_ARRAYS '%s\n' "${keel_arrays[@]}"
+    local -a keel_commands
+    local keel_command
+    for keel_command in ${(k)commands}; do
+        keel_commands+=("$keel_command"$'\t'"${commands[$keel_command]}")
+    done
+    printf -v KEEL_COMMANDS '%s\n' "${keel_commands[@]}"
     prompt=$(print -P -- "$KEEL_PROMPT")
     raw=$("$KEEL_BIN" \
         --buffer "$BUFFER" \

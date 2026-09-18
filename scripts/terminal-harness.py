@@ -78,6 +78,15 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     if b"\xe2\x9d\xaf" not in interrupted or b"Cargo.lock" not in interrupted:
         fail("Ctrl-C did not keep the completed transient command", *session)
     return origins
+
+def exercise_nested_help(session: tuple[int, int], output: bytearray, origins: int) -> int:
+    start = len(output)
+    send(session[0], b"npm install --")
+    wait_for_plain_after(session, output, b"--install-strategy", start, 3)
+    send(session[0], b"\x03")
+    origins += 1
+    wait_for_count(session, output, b"\x1b[s", origins)
+    return origins
 def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
     for byte in b"print -r -- keel-transient\r":
@@ -144,6 +153,7 @@ def main() -> int:
     try:
         origins = check_initial(session, output)
         origins = exercise_command_completion(session, output, origins)
+        origins = exercise_nested_help(session, output, origins)
         origins = exercise_path_completion(session, output, origins)
         origins = exercise_accept(session, output, origins)
         exercise_escape(session, output, origins)

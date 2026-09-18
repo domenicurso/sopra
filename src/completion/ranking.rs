@@ -3,6 +3,8 @@ use unicode_width::UnicodeWidthStr;
 
 use super::{CompletionItem, CompletionKind, path};
 
+pub(crate) use super::token::token_range;
+
 pub(crate) fn broad_context(line: &str, cursor_chars: usize) -> (String, usize) {
     let cursor = byte_offset(line, cursor_chars);
     let (start, end) = token_range(line, cursor);
@@ -30,27 +32,6 @@ fn context_token(token: &str) -> &str {
         };
     }
     ""
-}
-
-pub(crate) fn token_range(line: &str, cursor: usize) -> (usize, usize) {
-    let prefix = &line[..cursor];
-    let start = prefix
-        .char_indices()
-        .rev()
-        .find_map(|(index, character)| {
-            is_token_boundary(character).then_some(index + character.len_utf8())
-        })
-        .unwrap_or(0);
-    let suffix = &line[cursor..];
-    let end = suffix
-        .char_indices()
-        .find_map(|(index, character)| is_token_boundary(character).then_some(cursor + index))
-        .unwrap_or(line.len());
-    (start, end)
-}
-
-fn is_token_boundary(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '|' | '&' | ';' | '(' | ')' | '<' | '>')
 }
 
 pub(crate) fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {

@@ -1,10 +1,14 @@
 mod commands;
 mod filesystem;
+mod help;
 mod local;
 mod model;
 mod path;
 mod prefetch;
 pub(crate) mod ranking;
+mod response;
+mod token;
+mod variables;
 mod worker;
 
 pub(crate) use model::Request;
@@ -14,12 +18,12 @@ pub(crate) use model::{
 };
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Range,
     path::Path,
     sync::mpsc::{self, Receiver, Sender},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 struct CachedCompletion {
@@ -31,6 +35,10 @@ pub(crate) struct CompletionEngine {
     requests: Sender<Request>,
     response_tx: Sender<CompletionResponse>,
     responses: Receiver<CompletionResponse>,
+    help_requests: Sender<help::HelpRequest>,
+    help_responses: Receiver<help::HelpResponse>,
+    help_pending: HashSet<String>,
+    help_latest: HashMap<String, Request>,
     generation: u64,
     pending_context: Option<String>,
     cache: HashMap<String, CachedCompletion>,
@@ -46,10 +54,15 @@ impl CompletionEngine {
             .name("keel-zshrs-completion".to_string())
             .spawn(move || worker::run(request_rx, worker_response_tx))
             .ok()?;
+        let help_worker = help::Worker::spawn()?;
         Some(Self {
             requests: request_tx,
             response_tx,
             responses: response_rx,
+            help_requests: help_worker.requests,
+            help_responses: help_worker.responses,
+            help_pending: HashSet::new(),
+            help_latest: HashMap::new(),
             generation: 0,
             pending_context: None,
             cache: HashMap::new(),
@@ -72,11 +85,14 @@ impl CompletionEngine {
             generation: self.generation,
             context_key: context_key.clone(),
         };
-        self.send_local(&request);
         if line.trim().is_empty() {
             return;
         }
-        if self.prefetch_argument_context(line, cursor, cwd) {
+        let local = self.send_local(&request);
+        if local.prefetch && self.prefetch_argument_context(line, cursor, cwd) {
+            return;
+        }
+        if local.handled {
             return;
         }
         if let Some(cached) = self.cache.get(&context_key) {
@@ -93,6 +109,19 @@ impl CompletionEngine {
 
     pub(crate) fn poll(&mut self) -> impl Iterator<Item = CompletionResponse> {
         let mut responses = Vec::new();
+        while let Ok(response) = self.help_responses.try_recv() {
+            let help::HelpResponse {
+                key,
+                request: response_request,
+                spec,
+                elapsed,
+            } = response;
+            self.help_pending.remove(&key);
+            let request = self.help_latest.remove(&key).unwrap_or(response_request);
+            self.local.cache_help(key, spec);
+            let items = self.local.complete(&request).items;
+            responses.push(self.local_response(&request, items, elapsed));
+        }
         while let Ok(response) = self.responses.try_recv() {
             if response.source == CompletionResponseSource::Zshrs {
                 if self.pending_context.as_deref() == Some(response.context_key.as_str()) {
@@ -111,38 +140,6 @@ impl CompletionEngine {
             responses.push(response);
         }
         responses.into_iter()
-    }
-
-    fn send_local(&mut self, request: &Request) {
-        let started = Instant::now();
-        let items = self.local.complete(request);
-        let _ = self.response_tx.send(CompletionResponse {
-            line: request.line.clone(),
-            cursor: request.cursor,
-            context_line: request.context_line.clone(),
-            context_cursor: request.context_cursor,
-            context_key: request.context_key.clone(),
-            items,
-            generation: request.generation,
-            source: CompletionResponseSource::Local,
-            incomplete: false,
-            elapsed: started.elapsed(),
-        });
-    }
-
-    fn send_zshrs(&self, request: &Request, items: Vec<CompletionItem>, elapsed: Duration) {
-        let _ = self.response_tx.send(CompletionResponse {
-            line: request.line.clone(),
-            cursor: request.cursor,
-            context_line: request.context_line.clone(),
-            context_cursor: request.context_cursor,
-            context_key: request.context_key.clone(),
-            items,
-            generation: request.generation,
-            source: CompletionResponseSource::Zshrs,
-            incomplete: false,
-            elapsed,
-        });
     }
 }
 
@@ -163,24 +160,4 @@ pub(crate) fn rebind(items: &[CompletionItem], replace: Range<usize>) -> Vec<Com
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::CompletionEngine;
-
-    #[test]
-    fn local_completion_refreshes_inside_a_cached_semantic_context() {
-        let mut engine = CompletionEngine::new().expect("completion worker");
-        let cwd = PathBuf::from(".");
-        engine.request("cd ", 3, &cwd);
-        engine.request("cd C", 4, &cwd);
-        let responses = engine.poll().collect::<Vec<_>>();
-        assert_eq!(
-            responses
-                .iter()
-                .filter(|response| response.source == super::CompletionResponseSource::Local)
-                .count(),
-            2
-        );
-    }
-}
+mod tests;

@@ -6,6 +6,7 @@ pub(super) fn complete(query: &str, replace: Range<usize>) -> Vec<CompletionItem
     crate::syntax::catalog()
         .entries()
         .iter()
+        .filter(|entry| entry.visible_for_completion(query))
         .filter(|entry| query.is_empty() || fuzzy_contains(entry.name(), query))
         .map(|entry| {
             let kind = match entry.detail() {

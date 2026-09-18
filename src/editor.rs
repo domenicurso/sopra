@@ -1,7 +1,9 @@
 mod commands;
+mod completion_merge;
 mod completions;
 mod editing;
 mod navigation;
+mod pairs;
 #[cfg(test)]
 mod tests;
 mod view;

@@ -2,8 +2,7 @@ use super::{EditorState, ExitReason, RunResult, navigation::previous_grapheme_st
 
 impl EditorState {
     pub(super) fn insert_character(&mut self, character: char) {
-        self.buffer.insert(self.cursor, character);
-        self.cursor += character.len_utf8();
+        super::pairs::insert(&mut self.buffer, &mut self.cursor, character);
         self.reset_selection();
     }
 
@@ -28,8 +27,13 @@ impl EditorState {
         } else {
             self.current_token_range()
         };
-        self.buffer.replace_range(start..end, &item.insert);
-        self.cursor = start + item.insert.len();
+        let inserted = format!("{}{}", item.insert, item.suffix);
+        self.buffer.replace_range(start..end, &inserted);
+        self.cursor = start
+            + item
+                .cursor_offset
+                .unwrap_or(inserted.len())
+                .min(inserted.len());
         self.reset_selection();
         true
     }
@@ -38,7 +42,16 @@ impl EditorState {
         let Some(start) = previous_grapheme_start(&self.buffer, self.cursor) else {
             return;
         };
-        self.buffer.replace_range(start..self.cursor, "");
+        let delete_pair = super::pairs::should_delete_pair(&self.buffer, start, self.cursor);
+        let end = if delete_pair {
+            self.buffer[self.cursor..]
+                .chars()
+                .next()
+                .map_or(self.cursor, |character| self.cursor + character.len_utf8())
+        } else {
+            self.cursor
+        };
+        self.buffer.replace_range(start..end, "");
         self.cursor = start;
         self.reset_selection();
     }
