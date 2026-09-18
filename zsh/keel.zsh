@@ -41,7 +41,7 @@ _keel_parse_result() {
     local raw=$1
     local -a fields
     IFS=$'\t' read -rA fields <<< "$raw"
-    [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|cancel|interrupt|up|down|tab|eof) ]] || return 1
+    [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|interrupt|up|down|tab|eof) ]] || return 1
     [[ ${fields[3]-} == <-> ]] || return 1
     _keel_hex_decode "${fields[4]-}" || return 1
     typeset -g _KEEL_RESULT_ACTION=${fields[2]}
@@ -86,10 +86,6 @@ _keel_line_init() {
                 BUFFER=''
                 CURSOR=0
                 zle .accept-line
-                return 0
-                ;;
-            cancel)
-                zle -R
                 return 0
                 ;;
             up)

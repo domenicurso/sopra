@@ -14,7 +14,10 @@ use std::time::Instant;
 
 use ratatui::{buffer::Buffer, layout::Rect};
 
-use crate::{editor::EditorState, input::TerminalSize};
+use crate::{
+    editor::EditorState,
+    input::{CursorPosition, TerminalSize},
+};
 
 use canvas::Canvas;
 
@@ -25,6 +28,7 @@ pub(crate) struct Frame {
     pub(crate) buffer: Buffer,
     pub(crate) clear_rows: Vec<u16>,
     pub(crate) repaint_cells: Vec<(u16, u16)>,
+    pub(crate) cursor: CursorPosition,
 }
 
 trait Element {
@@ -35,6 +39,7 @@ pub(crate) struct Scene {
     area: Rect,
     clear_rows: Vec<u16>,
     repaint_cells: Vec<(u16, u16)>,
+    cursor: CursorPosition,
     elements: Vec<Box<dyn Element>>,
 }
 
@@ -51,12 +56,14 @@ impl Scene {
         area: Rect,
         clear_rows: Vec<u16>,
         repaint_cells: Vec<(u16, u16)>,
+        cursor: CursorPosition,
         elements: Vec<Box<dyn Element>>,
     ) -> Self {
         Self {
             area,
             clear_rows,
             repaint_cells,
+            cursor,
             elements,
         }
     }
@@ -70,6 +77,7 @@ impl Scene {
             buffer: canvas.into_buffer(),
             clear_rows: self.clear_rows,
             repaint_cells: self.repaint_cells,
+            cursor: self.cursor,
         }
     }
 }

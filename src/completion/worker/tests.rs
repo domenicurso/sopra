@@ -4,6 +4,7 @@ use std::{
 };
 
 use super::{CompletionKind, Request, complete, kind_for_group, kind_for_match};
+use crate::completion::model::normalize_description;
 
 #[test]
 fn zsh_groups_become_structured_kinds() {
@@ -28,6 +29,29 @@ fn default_groups_keep_file_options_and_positionals_distinct() {
     assert_eq!(
         kind_for_match(Some("-default-"), "README.md", "custom ", true),
         CompletionKind::File
+    );
+}
+
+#[test]
+fn zsh_display_descriptions_drop_the_repeated_match_label() {
+    assert_eq!(
+        normalize_description(
+            "completion",
+            Some(" completion  -- generate shell completion script\n".to_string()),
+        ),
+        Some("generate shell completion script".to_string())
+    );
+    assert_eq!(
+        normalize_description("completion", Some("completion".to_string())),
+        None
+    );
+    assert_eq!(
+        normalize_description("completion", Some("completion:generate".to_string())),
+        Some("generate".to_string())
+    );
+    assert_eq!(
+        normalize_description("entry", Some("-- details".to_string())),
+        Some("details".to_string())
     );
 }
 

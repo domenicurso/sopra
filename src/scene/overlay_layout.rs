@@ -17,13 +17,13 @@ pub(super) fn for_editor(
         return None;
     }
     let requested = editor.visible_items().len().min(MAX_OVERLAY_ITEMS) as u16 + 2;
-    let below = size.rows.saturating_sub(row.saturating_add(2));
+    let below = size.rows.saturating_sub(row.saturating_add(1));
     let above = row.saturating_sub(1);
     let (above, height) = placement(requested, below, above)?;
     let overlay_row = if above {
         row.saturating_sub(height.saturating_add(1))
     } else {
-        row.saturating_add(2)
+        row.saturating_add(1)
     };
     Some(OverlayLayout {
         row: overlay_row,

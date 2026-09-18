@@ -20,6 +20,7 @@ impl EditorState {
             self.suggestions.clear();
             self.selected = 0;
             self.suggestion_scroll = 0;
+            self.completion_elapsed = std::time::Duration::ZERO;
         }
         if let Some(completion) = self.completion.as_mut() {
             completion.request(&self.buffer, cursor_chars, &self.cwd);
@@ -50,7 +51,10 @@ impl EditorState {
                 return;
             }
             self.latest_zshrs_generation = response.generation;
-            self.zshrs_source = response.items;
+            let (start, end) = ranking::token_range(&self.buffer, self.cursor);
+            let replace = start..end;
+            let items = crate::completion::rebind(&response.items, replace);
+            self.zshrs_source = merge_response_metadata(&self.zshrs_source, items);
         } else {
             if response.line != self.buffer
                 || response.cursor != cursor_chars
@@ -60,6 +64,12 @@ impl EditorState {
             }
             self.latest_local_generation = response.generation;
             self.completion_source = response.items;
+        }
+        if response.generation > self.completion_latency_generation {
+            self.completion_latency_generation = response.generation;
+            self.completion_elapsed = response.elapsed;
+        } else if response.generation == self.completion_latency_generation {
+            self.completion_elapsed = self.completion_elapsed.max(response.elapsed);
         }
         self.merge_completion_sources();
     }
@@ -91,21 +101,22 @@ impl EditorState {
 }
 
 fn merge_items(local: &[CompletionItem], zshrs: &[CompletionItem]) -> Vec<CompletionItem> {
-    let mut merged = local.to_vec();
+    let local = local
+        .iter()
+        .filter(|item| item.source != crate::completion::CompletionSource::Zshrs)
+        .cloned()
+        .collect::<Vec<_>>();
     let rust_filesystem = local.iter().any(|item| {
         item.source == crate::completion::CompletionSource::Filesystem
             && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
     });
+    let mut merged = local;
     for item in zshrs {
         if rust_filesystem && matches!(item.kind, CompletionKind::File | CompletionKind::Directory)
         {
             continue;
         }
-        let duplicate = merged.iter_mut().find(|existing| {
-            existing.display == item.display
-                && existing.insert == item.insert
-                && existing.kind == item.kind
-        });
+        let duplicate = merged.iter_mut().find(|existing| same_item(existing, item));
         if let Some(existing) = duplicate {
             if item.description.is_some() || item.location.is_some() {
                 *existing = item.clone();
@@ -117,9 +128,38 @@ fn merge_items(local: &[CompletionItem], zshrs: &[CompletionItem]) -> Vec<Comple
     merged
 }
 
+fn merge_response_metadata(
+    previous: &[CompletionItem],
+    response: Vec<CompletionItem>,
+) -> Vec<CompletionItem> {
+    response
+        .into_iter()
+        .map(|mut item| {
+            if let Some(previous) = previous
+                .iter()
+                .find(|candidate| same_item(candidate, &item))
+            {
+                if item.description.is_none() {
+                    item.description = previous.description.clone();
+                }
+                if item.location.is_none() {
+                    item.location = previous.location.clone();
+                }
+                if item.group.is_none() {
+                    item.group = previous.group.clone();
+                }
+            }
+            item
+        })
+        .collect()
+}
+
+fn same_item(left: &CompletionItem, right: &CompletionItem) -> bool {
+    left.display == right.display && left.insert == right.insert && left.kind == right.kind
+}
 #[cfg(test)]
 mod tests {
-    use super::merge_items;
+    use super::{merge_items, merge_response_metadata};
     use crate::completion::{CompletionItem, CompletionKind};
 
     #[test]
@@ -137,6 +177,24 @@ mod tests {
             CompletionKind::Generic,
         )];
         let merged = merge_items(&local, &zshrs);
+        assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
+    }
+
+    #[test]
+    fn partial_zshrs_updates_keep_metadata_from_an_earlier_response() {
+        let previous = vec![CompletionItem::new(
+            "git",
+            "/usr/bin/git",
+            "git",
+            CompletionKind::Generic,
+        )];
+        let response = vec![CompletionItem::new(
+            "git",
+            "",
+            "git",
+            CompletionKind::Generic,
+        )];
+        let merged = merge_response_metadata(&previous, response);
         assert_eq!(merged[0].description.as_deref(), Some("/usr/bin/git"));
     }
 }

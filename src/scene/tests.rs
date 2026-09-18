@@ -60,10 +60,10 @@ fn overlay_cells_keep_the_terminal_background() {
         CompletionKind::Generic,
     )]);
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
-    assert_eq!(frame.buffer[(2, 3)].symbol(), "a");
-    assert_eq!(frame.buffer[(2, 3)].bg, Color::Reset);
-    assert!(frame.buffer[(2, 3)].modifier.contains(Modifier::REVERSED));
-    assert_eq!(frame.buffer[(9, 3)].symbol(), "c");
+    assert_eq!(frame.buffer[(2, 2)].symbol(), "a");
+    assert_eq!(frame.buffer[(2, 2)].bg, Color::Reset);
+    assert!(frame.buffer[(2, 2)].modifier.contains(Modifier::REVERSED));
+    assert_eq!(frame.buffer[(9, 2)].symbol(), "c");
 }
 
 #[test]

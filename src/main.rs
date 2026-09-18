@@ -58,6 +58,9 @@ impl Args {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse().map_err(|message| format!("keel: {message}"))?;
+    // Start the completion runtime while the terminal is being configured so command-name
+    // prefetching can warm argument completions before the user reaches the spacebar.
+    zsh::compsys::in_editor::bootstrap();
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
     // ZLE has already positioned the terminal on the active line. The renderer saves that
@@ -100,7 +103,6 @@ fn write_result(result: &RunResult) -> std::io::Result<()> {
 
     let action = match result.reason {
         ExitReason::Accepted => "accept",
-        ExitReason::Cancelled => "cancel",
         ExitReason::Interrupted => "interrupt",
         ExitReason::DelegateUp => "up",
         ExitReason::DelegateDown => "down",

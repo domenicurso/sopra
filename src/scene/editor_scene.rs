@@ -2,7 +2,11 @@ use std::time::Instant;
 
 use ratatui::layout::Rect;
 
-use crate::{completion::CompletionItem, editor::EditorState, input::TerminalSize};
+use crate::{
+    completion::CompletionItem,
+    editor::EditorState,
+    input::{CursorPosition, TerminalSize},
+};
 
 use super::overlay::{OverlayElement, overlay_width};
 use super::{
@@ -16,13 +20,23 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> S
     let prompt = crate::prompt::parse(editor.prompt());
     let mut layout = EditorLayout::new(editor, size, crate::prompt::width(&prompt));
     layout.footer = editor.completion_footer();
-    layout.overlay_width = overlay_width(&items, &layout.footer, size.columns);
+    layout.footer_hint = editor.completion_hint().to_string();
+    layout.overlay_width = overlay_width(&items, &layout.footer_hint, &layout.footer, size.columns);
     let elements = editor_elements(editor, &layout, now, items, prompt);
     let cursor_cells = (0..editor.cursor_cell_width())
         .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
         .filter(|(column, _)| *column < size.columns)
         .collect();
-    Scene::new(layout.area, clear_rows(&layout), cursor_cells, elements)
+    Scene::new(
+        layout.area,
+        clear_rows(&layout),
+        cursor_cells,
+        CursorPosition {
+            column: layout.cursor_column,
+            row: layout.row,
+        },
+        elements,
+    )
 }
 
 struct EditorLayout {
@@ -37,6 +51,7 @@ struct EditorLayout {
     overlay_width: u16,
     overlay_above: bool,
     completion_token_width: u16,
+    footer_hint: String,
     footer: String,
 }
 
@@ -69,6 +84,7 @@ impl EditorLayout {
             overlay_width,
             overlay_above: placement.is_some_and(|value| value.above),
             completion_token_width,
+            footer_hint: String::new(),
             footer: String::new(),
         }
     }
@@ -106,6 +122,7 @@ fn editor_elements(
             selected: editor.selected_index(),
             viewport_start: editor.suggestion_viewport_start(),
             query: editor.query().to_string(),
+            footer_hint: layout.footer_hint.clone(),
             footer: layout.footer.clone(),
             connector_column: layout.connector_column(),
             connector: if layout.overlay_above { "┬" } else { "┴" },

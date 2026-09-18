@@ -3,7 +3,10 @@ use ratatui::{
     style::{Color, Modifier, Style},
 };
 
-use crate::{editor::EditorState, input::TerminalSize};
+use crate::{
+    editor::EditorState,
+    input::{CursorPosition, TerminalSize},
+};
 
 use super::{
     Element, Scene, TRANSIENT_PROMPT,
@@ -31,5 +34,11 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
             spans: editor.syntax().to_vec(),
         }),
     ];
-    Scene::new(area, vec![0], Vec::new(), elements)
+    Scene::new(
+        area,
+        vec![0],
+        Vec::new(),
+        CursorPosition { column: 0, row: 0 },
+        elements,
+    )
 }

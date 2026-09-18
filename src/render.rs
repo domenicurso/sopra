@@ -26,10 +26,15 @@ pub(crate) struct Renderer {
 
 impl Renderer {
     pub(crate) fn render(&mut self, next: Frame, terminal: &mut Terminal) -> io::Result<usize> {
+        let resized = self
+            .previous
+            .as_ref()
+            .is_some_and(|previous| previous.area != next.buffer.area);
         let Frame {
             buffer: next,
-            clear_rows: rows,
+            clear_rows: next_rows,
             repaint_cells,
+            cursor,
         } = next;
         let old_area = self
             .previous
@@ -37,11 +42,18 @@ impl Renderer {
             .map_or(Rect::default(), |frame| *frame.area());
         let mut output = Vec::new();
         self.begin_frame(&mut output);
-        if self.previous.is_none() {
-            clear_rows(&mut output, &rows);
+        if resized {
+            // The terminal may reflow the active line during SIGWINCH. The frame leaves the
+            // cursor there, so use its current visual row as the new scene origin before repaint.
+            output.extend_from_slice(b"\r\x1b[s");
+            self.previous = None;
+            clear_rows(&mut output, &(0..next.area.height).collect::<Vec<_>>());
+        } else if self.previous.is_none() {
+            clear_rows(&mut output, &next_rows);
         }
         let changed = self.paint_diff(&next, old_area, &repaint_cells, &mut output);
         if changed > 0 || !output.is_empty() {
+            move_to(&mut output, cursor.column, cursor.row);
             output.extend_from_slice(b"\x1b[0m");
             terminal.write_all(&output)?;
             terminal.flush()?;

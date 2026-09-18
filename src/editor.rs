@@ -25,7 +25,6 @@ const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExitReason {
     Accepted,
-    Cancelled,
     Interrupted,
     DelegateUp,
     DelegateDown,
@@ -65,6 +64,8 @@ pub(crate) struct EditorState {
     latest_local_generation: u64,
     latest_zshrs_generation: u64,
     completion: Option<CompletionEngine>,
+    completion_elapsed: Duration,
+    completion_latency_generation: u64,
     cwd: PathBuf,
     palette: TerminalPalette,
     syntax: Vec<SyntaxSpan>,
@@ -91,6 +92,8 @@ impl EditorState {
             latest_local_generation: 0,
             latest_zshrs_generation: 0,
             completion: CompletionEngine::new(),
+            completion_elapsed: Duration::ZERO,
+            completion_latency_generation: 0,
             cwd: config.cwd,
             palette: config.palette,
             syntax: Vec::new(),
@@ -183,7 +186,6 @@ impl EditorState {
                 self.restore_prompt_position(size, crate::scene::TRANSIENT_PROMPT),
                 Some(Scene::for_transient(self, size).render()),
             ),
-            ExitReason::Cancelled => (self.restore_position(size), None),
             ExitReason::DelegateUp
             | ExitReason::DelegateDown
             | ExitReason::DelegateTab

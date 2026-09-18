@@ -1,100 +1,25 @@
 #!/usr/bin/env python3
 """Bidirectional PTY smoke test for the stock-Zsh editor."""
 from __future__ import annotations
-import errno
-import fcntl
 import os
-import pty
-import re
 import select
-import signal
 import subprocess
-import struct
-import termios
 import time
-from pathlib import Path
-from typing import Callable, NoReturn
-CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]"); ROOT = Path(__file__).resolve().parent.parent
-START = ROOT / "scripts" / "start-keel.sh"; ROWS, COLUMNS = 40, 100
-def fail(message: str, pid: int | None = None, master: int | None = None) -> NoReturn:
-    if pid is not None:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + 0.5
-        while time.monotonic() < deadline:
-            try:
-                waited, _ = os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                break
-            if waited == pid:
-                break
-            time.sleep(0.01)
-    if master is not None:
-        try: os.close(master)
-        except OSError: pass
-    raise SystemExit(f"terminal harness: {message}")
-def read_available(master: int, output: bytearray) -> None:
-    while True:
-        ready, _, _ = select.select([master], [], [], 0)
-        if not ready:
-            return
-        try:
-            chunk = os.read(master, 65_536)
-            if not chunk:
-                return
-            output.extend(chunk)
-            if b"\x1b]11;?\x1b\\" in chunk:
-                os.write(
-                    master,
-                    b"\x1b]11;rgb:0000/0000/0000\x1b\\"
-                    b"\x1b]12;#00ff00\x07",
-                )
-        except OSError as error:
-            if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EIO):
-                return
-            raise
-def read_for(master: int, output: bytearray, seconds: float) -> None:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        wait = max(0.0, deadline - time.monotonic())
-        ready, _, _ = select.select([master], [], [], wait)
-        if ready:
-            read_available(master, output)
-def wait_until(session: tuple[int, int], output: bytearray, done: Callable[[], bool], seconds: float) -> bool:
-    master, _ = session
-    deadline = time.monotonic() + seconds
-    while not done() and time.monotonic() < deadline:
-        wait = max(0.0, deadline - time.monotonic())
-        ready, _, _ = select.select([master], [], [], wait)
-        if ready:
-            read_available(master, output)
-    return done()
-def wait_for(session: tuple[int, int], output: bytearray, needle: bytes, seconds: float) -> None:
-    if not wait_until(session, output, lambda: needle in output, seconds):
-        fail(f"did not see {needle!r}", *session)
-def wait_for_plain(session: tuple[int, int], output: bytearray, needle: bytes, seconds: float) -> None:
-    if not wait_until(session, output, lambda: needle in plain(output), seconds):
-        fail(f"did not see rendered {needle!r}", *session)
-def wait_for_count(session: tuple[int, int], output: bytearray, needle: bytes, count: int) -> None:
-    if not wait_until(session, output, lambda: output.count(needle) >= count, 3):
-        fail(f"did not see {count} occurrences of {needle!r}", *session)
-def send(master: int, text: bytes) -> None: os.write(master, text)
-def plain(output: bytes) -> bytes:
-    return CSI.sub(b"", output)
-def start_session() -> tuple[tuple[int, int], bytearray]:
-    env = os.environ.copy()
-    env.update({"TERM": "xterm-256color", "COLUMNS": str(COLUMNS), "LINES": str(ROWS)})
-    pid, master = pty.fork()
-    if pid == 0:
-        os.environ.update(env)
-        os.execv(str(START), [str(START)])
-    flags = fcntl.fcntl(master, fcntl.F_GETFL)
-    fcntl.fcntl(master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-    window = struct.pack("HHHH", ROWS, COLUMNS, 0, 0)
-    fcntl.ioctl(master, termios.TIOCSWINSZ, window)
-    return (master, pid), bytearray()
+from terminal_harness_support import (
+    COLUMNS,
+    ROOT,
+    ROWS,
+    fail,
+    plain,
+    read_for,
+    resize,
+    send,
+    start_session,
+    wait_for,
+    wait_for_count,
+    wait_for_plain,
+    wait_for_plain_after,
+)
 def check_initial(session: tuple[int, int], output: bytearray) -> int:
     wait_for(session, output, b"\x1b[s", 10)
     wait_for_plain(session, output, b" in ~/", 10)
@@ -133,8 +58,18 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     start = len(output)
     send(session[0], b"cd ")
     wait_for_plain(session, output, b"Cargo.toml", 3)
-    if b"; 0.0ms" not in plain(output[start:]):
+    if b"ms" not in plain(output[start:]) or b"0.0ms" in plain(output[start:]):
         fail("completion overlay was not rendered", *session)
+    start = len(output)
+    resize(session[0], 30, 80)
+    origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
+    if output[start:].count(b"\x1b[2K") < 30:
+        fail("resize did not clear the visible terminal rows", *session)
+    start = len(output)
+    resize(session[0], ROWS, COLUMNS)
+    origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
+    if output[start:].count(b"\x1b[2K") < ROWS:
+        fail("resize did not clear the expanded terminal rows", *session)
     send(session[0], b"\t")
     read_for(session[0], output, 0.10)
     send(session[0], b"\x03")
@@ -159,18 +94,32 @@ def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -
     return origins
 def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -> None:
     start = len(output)
-    send(session[0], b"echo escape-kept")
-    read_for(session[0], output, 0.10)
+    for byte in b"echo escape-kept":
+        send(session[0], bytes([byte]))
+        read_for(session[0], output, 0.01)
+    wait_for_plain_after(session, output, b"escape-kept", start, 3)
+    start = len(output)
     send(session[0], b"\x1b")
     read_for(session[0], output, 0.10)
-    if b"escape-kept" not in plain(output[start:]):
-        fail("Escape did not preserve the edited buffer", *session)
-    send(session[0], b"\r")
-    wait_for(session, output, b"\r\nescape-kept\r\n", 3)
+    if output.count(b"\x1b[s") != origins:
+        fail("Escape relaunched the editor loop", *session)
+    start = len(output)
+    send(session[0], b"\x15cd ")
+    wait_for_plain_after(session, output, b"Cargo.toml", start, 3)
+    read_for(session[0], output, 0.10)
+    start = len(output)
+    send(session[0], b"\x1b")
+    read_for(session[0], output, 0.10)
+    if output.count(b"\x1b[s") != origins:
+        fail("Escape relaunched the editor loop", *session)
+    if any(marker.encode() in plain(output[start:]) for marker in ("╭", "╮", "─")):
+        fail("Escape did not hide the completion overlay", *session)
+    start = len(output)
+    send(session[0], b"\x15cd ")
+    wait_for_plain_after(session, output, b"Cargo.toml", start, 3)
+    send(session[0], b"\x03")
     origins += 1
     wait_for_count(session, output, b"\x1b[s", origins)
-    send(session[0], b"\x1b")
-    read_for(session[0], output, 0.10)
     send(session[0], b"exit\r")
 def wait_for_exit(session: tuple[int, int], output: bytearray) -> None:
     master, pid = session

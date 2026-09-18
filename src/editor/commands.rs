@@ -11,6 +11,14 @@ impl EditorState {
         self.overlay_visible = !self.overlay_visible;
     }
 
+    pub(super) fn hide_overlay(&mut self) {
+        self.overlay_visible = false;
+    }
+
+    pub(super) fn show_overlay(&mut self) {
+        self.overlay_visible = true;
+    }
+
     pub(super) fn apply_selected(&mut self) -> bool {
         let Some(item) = self.suggestions.get(self.selected).cloned() else {
             return false;

@@ -3,48 +3,28 @@ mod filesystem;
 mod local;
 mod model;
 mod path;
+mod prefetch;
 pub(crate) mod ranking;
 mod worker;
 
-pub(crate) use model::{Completion, CompletionItem, CompletionKind, CompletionSource};
+pub(crate) use model::Request;
+pub(crate) use model::{
+    Completion, CompletionItem, CompletionKind, CompletionResponse, CompletionResponseSource,
+    CompletionSource,
+};
 
 use std::{
     collections::HashMap,
     ops::Range,
-    path::{Path, PathBuf},
+    path::Path,
     sync::mpsc::{self, Receiver, Sender},
     thread,
+    time::{Duration, Instant},
 };
 
-#[derive(Debug, Clone)]
-pub(super) struct Request {
-    pub(super) line: String,
-    pub(super) cursor: usize,
-    pub(super) context_line: String,
-    pub(super) context_cursor: usize,
-    pub(super) replace: Range<usize>,
-    pub(super) cwd: PathBuf,
-    pub(super) generation: u64,
-    pub(super) context_key: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompletionResponseSource {
-    Local,
-    Zshrs,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct CompletionResponse {
-    pub(crate) line: String,
-    pub(crate) cursor: usize,
-    pub(crate) context_line: String,
-    pub(crate) context_cursor: usize,
-    pub(crate) context_key: String,
-    pub(crate) items: Vec<CompletionItem>,
-    pub(crate) generation: u64,
-    pub(crate) source: CompletionResponseSource,
-    pub(crate) incomplete: bool,
+struct CachedCompletion {
+    items: Vec<CompletionItem>,
+    elapsed: Duration,
 }
 
 pub(crate) struct CompletionEngine {
@@ -53,7 +33,7 @@ pub(crate) struct CompletionEngine {
     responses: Receiver<CompletionResponse>,
     generation: u64,
     pending_context: Option<String>,
-    cache: HashMap<String, Vec<CompletionItem>>,
+    cache: HashMap<String, CachedCompletion>,
     local: local::LocalCompletion,
 }
 
@@ -96,8 +76,12 @@ impl CompletionEngine {
         if line.trim().is_empty() {
             return;
         }
-        if let Some(items) = self.cache.get(&context_key) {
-            self.send_zshrs(&request, rebind(items, request.replace.clone()));
+        if self.prefetch_argument_context(line, cursor, cwd) {
+            return;
+        }
+        if let Some(cached) = self.cache.get(&context_key) {
+            let items = rebind(&cached.items, request.replace.clone());
+            self.send_zshrs(&request, items, cached.elapsed);
             return;
         }
         if self.pending_context.as_deref() == Some(context_key.as_str()) {
@@ -111,10 +95,17 @@ impl CompletionEngine {
         let mut responses = Vec::new();
         while let Ok(response) = self.responses.try_recv() {
             if response.source == CompletionResponseSource::Zshrs {
-                self.pending_context = None;
+                if self.pending_context.as_deref() == Some(response.context_key.as_str()) {
+                    self.pending_context = None;
+                }
                 if !response.incomplete && !response.items.is_empty() {
-                    self.cache
-                        .insert(response.context_key.clone(), response.items.clone());
+                    self.cache.insert(
+                        response.context_key.clone(),
+                        CachedCompletion {
+                            items: response.items.clone(),
+                            elapsed: response.elapsed,
+                        },
+                    );
                 }
             }
             responses.push(response);
@@ -123,6 +114,7 @@ impl CompletionEngine {
     }
 
     fn send_local(&mut self, request: &Request) {
+        let started = Instant::now();
         let items = self.local.complete(request);
         let _ = self.response_tx.send(CompletionResponse {
             line: request.line.clone(),
@@ -134,10 +126,11 @@ impl CompletionEngine {
             generation: request.generation,
             source: CompletionResponseSource::Local,
             incomplete: false,
+            elapsed: started.elapsed(),
         });
     }
 
-    fn send_zshrs(&self, request: &Request, items: Vec<CompletionItem>) {
+    fn send_zshrs(&self, request: &Request, items: Vec<CompletionItem>, elapsed: Duration) {
         let _ = self.response_tx.send(CompletionResponse {
             line: request.line.clone(),
             cursor: request.cursor,
@@ -148,6 +141,7 @@ impl CompletionEngine {
             generation: request.generation,
             source: CompletionResponseSource::Zshrs,
             incomplete: false,
+            elapsed,
         });
     }
 }
@@ -157,7 +151,7 @@ fn active_range(line: &str, cursor: usize) -> Range<usize> {
     start..end
 }
 
-fn rebind(items: &[CompletionItem], replace: Range<usize>) -> Vec<CompletionItem> {
+pub(crate) fn rebind(items: &[CompletionItem], replace: Range<usize>) -> Vec<CompletionItem> {
     items
         .iter()
         .cloned()

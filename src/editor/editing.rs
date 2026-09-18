@@ -4,6 +4,7 @@ use super::{EditorState, ExitReason, RunResult};
 
 impl EditorState {
     pub(super) fn handle_key(&mut self, key: Key) -> Option<RunResult> {
+        let reveal_overlay = !matches!(key, Key::Escape | Key::Clear);
         match key {
             Key::Character(character) => self.insert_character(character),
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
@@ -36,13 +37,16 @@ impl EditorState {
             }
             Key::Clear => self.toggle_overlay(),
             Key::Cancel => return Some(self.result(ExitReason::Interrupted)),
-            Key::Escape => return Some(self.result(ExitReason::Cancelled)),
+            Key::Escape => self.hide_overlay(),
             Key::Eof => {
                 if self.buffer.is_empty() {
                     return Some(self.result(ExitReason::DelegateEof));
                 }
                 self.delete();
             }
+        }
+        if reveal_overlay {
+            self.show_overlay();
         }
         self.note_activity();
         self.request_completion();

@@ -18,6 +18,7 @@ pub(super) struct OverlayElement {
     pub(super) selected: usize,
     pub(super) viewport_start: usize,
     pub(super) query: String,
+    pub(super) footer_hint: String,
     pub(super) footer: String,
     pub(super) connector_column: u16,
     pub(super) connector: &'static str,
@@ -35,7 +36,7 @@ impl Element for OverlayElement {
         canvas.border(self.area, border);
         self.paint_connector(canvas, border);
         self.paint_items(canvas, inner);
-        paint_footer(canvas, self.area, &self.footer);
+        paint_footer(canvas, self.area, &self.footer_hint, &self.footer);
     }
 }
 
@@ -106,22 +107,34 @@ fn viewport_start(total: usize, selected: usize, requested: usize, visible: usiz
         .min(maximum)
 }
 
-fn paint_footer(canvas: &mut Canvas, area: Rect, footer: &str) {
-    let width = UnicodeWidthStr::width(footer) as u16;
+fn paint_footer(canvas: &mut Canvas, area: Rect, hint: &str, footer: &str) {
+    let right_width = UnicodeWidthStr::width(footer) as u16;
+    let left = area.left().saturating_add(2);
+    let right = area.right().saturating_sub(1).saturating_sub(right_width);
+    let hint_width = right.saturating_sub(left).saturating_sub(1);
+    let style = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::DIM);
     canvas.text(TextRun {
-        position: (
-            area.right().saturating_sub(1).saturating_sub(width),
-            area.bottom().saturating_sub(1),
-        ),
+        position: (left, area.bottom().saturating_sub(1)),
+        text: hint,
+        style,
+        max_width: hint_width,
+    });
+    canvas.text(TextRun {
+        position: (right, area.bottom().saturating_sub(1)),
         text: footer,
-        style: Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::DIM),
-        max_width: width,
+        style,
+        max_width: right_width,
     });
 }
 
-pub(super) fn overlay_width(items: &[CompletionItem], footer: &str, terminal_width: u16) -> u16 {
+pub(super) fn overlay_width(
+    items: &[CompletionItem],
+    hint: &str,
+    footer: &str,
+    terminal_width: u16,
+) -> u16 {
     if terminal_width <= 2 {
         return terminal_width.max(1);
     }
@@ -133,7 +146,11 @@ pub(super) fn overlay_width(items: &[CompletionItem], footer: &str, terminal_wid
                 + UnicodeWidthStr::width(detail.as_str())
                 + if detail.is_empty() { 0 } else { 2 }
         })
-        .chain(std::iter::once(UnicodeWidthStr::width(footer)))
+        .chain(std::iter::once(
+            UnicodeWidthStr::width(hint)
+                .saturating_add(1)
+                .saturating_add(UnicodeWidthStr::width(footer)),
+        ))
         .max()
         .unwrap_or(1)
         .saturating_add(4);
@@ -153,7 +170,7 @@ mod tests {
             "a-very-long-command-name",
             CompletionKind::Generic,
         )];
-        assert_eq!(overlay_width(&items, "", 120), 59);
-        assert_eq!(overlay_width(&items, "", 32), 30);
+        assert_eq!(overlay_width(&items, "", "", 120), 59);
+        assert_eq!(overlay_width(&items, "", "", 32), 30);
     }
 }

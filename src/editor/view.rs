@@ -51,7 +51,16 @@ impl EditorState {
     }
 
     pub(crate) fn completion_footer(&self) -> String {
-        format!("{}/{}; 0.0ms", self.selected + 1, self.suggestions.len())
+        format!(
+            "{}/{}; {}",
+            self.selected + 1,
+            self.suggestions.len(),
+            completion_elapsed(self.completion_elapsed)
+        )
+    }
+
+    pub(crate) fn completion_hint(&self) -> &'static str {
+        "Tab to accept"
     }
 
     pub(crate) fn syntax(&self) -> &[crate::syntax::SyntaxSpan] {
@@ -104,5 +113,17 @@ impl EditorState {
             .saturating_add(content_width)
             .min(size.columns.saturating_sub(1));
         CursorPosition { row, column }
+    }
+}
+
+fn completion_elapsed(elapsed: Duration) -> String {
+    if elapsed.is_zero() {
+        return "pending".to_string();
+    }
+    let millis = elapsed.as_secs_f64() * 1_000.0;
+    if millis < 0.1 {
+        "<0.1ms".to_string()
+    } else {
+        format!("{millis:.1}ms")
     }
 }

@@ -1,3 +1,5 @@
+mod retry;
+
 use std::{
     sync::mpsc::{Receiver, Sender},
     time::{Duration, Instant},
@@ -7,15 +9,12 @@ use super::{
     Completion, CompletionKind, CompletionResponse, CompletionResponseSource, CompletionSource,
     Request,
 };
+use crate::completion::model::normalize_description;
 
 const COMPLETION_BUDGET: Duration = Duration::from_millis(120);
-const COMPLETION_RETRY_BUDGET: Duration = Duration::from_secs(2);
 
 pub(super) fn run(requests: Receiver<Request>, responses: Sender<CompletionResponse>) {
     zsh::compsys::in_editor::bootstrap();
-    while !zsh::compsys::in_editor::is_ready() {
-        std::thread::sleep(Duration::from_millis(1));
-    }
     let mut pending = None;
     loop {
         let mut request = match pending.take().or_else(|| requests.recv().ok()) {
@@ -25,17 +24,19 @@ pub(super) fn run(requests: Receiver<Request>, responses: Sender<CompletionRespo
         while let Ok(next) = requests.try_recv() {
             request = next;
         }
-        let (mut items, mut incomplete) = complete(&request);
-        let retry_deadline = Instant::now() + Duration::from_secs(2);
-        while items.is_empty() && incomplete && Instant::now() < retry_deadline {
-            std::thread::sleep(Duration::from_millis(25));
-            (items, incomplete) = complete(&request);
-        }
-        if !send_response(&responses, &request, items, incomplete) {
+        let started = Instant::now();
+        let (items, incomplete) = complete(&request);
+        if !send_response(
+            &responses,
+            &request,
+            items.clone(),
+            incomplete,
+            started.elapsed(),
+        ) {
             return;
         }
         if incomplete {
-            pending = retry_request(&requests, &responses, &request);
+            pending = retry::request(&requests, &responses, &request, &items, started);
         }
     }
 }
@@ -45,6 +46,7 @@ fn send_response(
     request: &Request,
     items: Vec<Completion>,
     incomplete: bool,
+    elapsed: Duration,
 ) -> bool {
     responses
         .send(CompletionResponse {
@@ -57,40 +59,20 @@ fn send_response(
             generation: request.generation,
             source: CompletionResponseSource::Zshrs,
             incomplete,
+            elapsed,
         })
         .is_ok()
 }
 
-fn retry_request(
-    requests: &Receiver<Request>,
-    responses: &Sender<CompletionResponse>,
-    request: &Request,
-) -> Option<Request> {
-    let deadline = Instant::now() + COMPLETION_RETRY_BUDGET;
-    while Instant::now() < deadline {
-        if let Ok(mut next) = requests.try_recv() {
-            while let Ok(newer) = requests.try_recv() {
-                next = newer;
-            }
-            return Some(next);
-        }
-        std::thread::sleep(Duration::from_millis(25));
-        let (items, incomplete) = complete(request);
-        if !items.is_empty() || !incomplete {
-            if !send_response(responses, request, items, incomplete) {
-                return None;
-            }
-            return None;
-        }
-    }
-    None
+fn complete(request: &Request) -> (Vec<Completion>, bool) {
+    complete_with_budget(request, COMPLETION_BUDGET)
 }
 
-fn complete(request: &Request) -> (Vec<Completion>, bool) {
+fn complete_with_budget(request: &Request, budget: Duration) -> (Vec<Completion>, bool) {
     let response = zsh::compsys::in_editor::complete_at(zsh::compsys::in_editor::CompsysRequest {
         line: &request.context_line,
         cursor: request.context_cursor,
-        deadline: Instant::now() + COMPLETION_BUDGET,
+        deadline: Instant::now() + budget,
         allow_exec: true,
     });
     let items = response
@@ -119,10 +101,12 @@ fn completion_from_match(
         &request.context_line,
         item.is_file,
     );
+    let display = item.completion.clone();
+    let description = normalize_description(&display, item.description);
     let mut completion = Completion::with_range(
-        item.completion.clone(),
+        display,
         item.completion,
-        item.description,
+        description,
         kind,
         start..request.replace.end,
         CompletionSource::Zshrs,

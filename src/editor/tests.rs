@@ -36,8 +36,11 @@ fn escape_keeps_the_edited_buffer() {
     let mut state = editor("");
     state.handle_key(Key::Character('g'));
     state.handle_key(Key::Character('i'));
-    state.handle_key(Key::Escape);
+    assert!(state.handle_key(Key::Escape).is_none());
     assert_eq!(state.buffer(), "gi");
+    assert!(!state.overlay_visible());
+    state.handle_key(Key::Character('t'));
+    assert!(state.overlay_visible());
 }
 
 #[test]
