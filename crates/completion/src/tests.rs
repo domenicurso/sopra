@@ -77,10 +77,8 @@ fn whitespace_does_not_request_the_root_command_menu() {
 fn help_response_hydrates_nested_command_before_replaying_completion() {
     use std::{fs, os::unix::fs::PermissionsExt, thread, time::Duration};
 
-    let path = std::env::temp_dir().join(format!(
-        "sopra-completion-fixture-{}",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("sopra-completion-fixture-{}", std::process::id()));
     fs::write(
         &path,
         "#!/bin/sh\nif [ \"$1\" = child ]; then\n  printf 'child\\n\\nOptions:\\n  --child-option  child option\\n'\nelse\n  printf 'Commands:\\n  child  child command\\n\\nOptions:\\n  --root-option  root option\\n'\nfi\n",
