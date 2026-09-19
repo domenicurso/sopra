@@ -1,10 +1,11 @@
 mod command_catalog;
 mod command_discovery;
 mod commands;
+mod engine;
 mod filesystem;
-mod help;
-mod local;
+mod graph;
 mod model;
+mod parser;
 mod path;
 mod prefetch;
 pub mod ranking;
@@ -20,6 +21,18 @@ pub use model::{
     CompletionSource,
 };
 
+pub fn dump_command_graph(command: &str, cwd: &Path) -> Result<String, String> {
+    parser::render_command_graph(command, cwd)
+}
+
+pub fn dump_command_root(command: &str, cwd: &Path) -> Result<String, String> {
+    parser::render_command_root(command, cwd)
+}
+
+pub fn dump_command_chunk(command: &str, path: &[String], cwd: &Path) -> Result<String, String> {
+    parser::render_command_chunk(command, cwd, path)
+}
+
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -30,18 +43,18 @@ use std::{
 pub struct CompletionEngine {
     response_tx: Sender<CompletionResponse>,
     responses: Receiver<CompletionResponse>,
-    help_requests: Sender<help::HelpRequest>,
-    help_responses: Receiver<help::HelpResponse>,
+    help_requests: Sender<parser::HelpRequest>,
+    help_responses: Receiver<parser::HelpResponse>,
     help_pending: HashSet<String>,
     help_latest: HashMap<String, Request>,
     generation: u64,
-    local: local::LocalCompletion,
+    local: engine::LocalCompletion,
 }
 
 impl CompletionEngine {
     pub fn new() -> Option<Self> {
         let (response_tx, response_rx) = mpsc::channel();
-        let help_worker = help::Worker::spawn()?;
+        let help_worker = parser::Worker::spawn()?;
         Some(Self {
             response_tx,
             responses: response_rx,
@@ -50,7 +63,7 @@ impl CompletionEngine {
             help_pending: HashSet::new(),
             help_latest: HashMap::new(),
             generation: 0,
-            local: local::LocalCompletion::new(),
+            local: engine::LocalCompletion::new(),
         })
     }
 
@@ -79,16 +92,22 @@ impl CompletionEngine {
     pub fn poll(&mut self) -> impl Iterator<Item = CompletionResponse> {
         let mut responses = Vec::new();
         while let Ok(response) = self.help_responses.try_recv() {
-            let help::HelpResponse {
+            let parser::HelpResponse {
+                id,
                 key,
+                path,
                 request: response_request,
-                spec,
+                graph,
                 elapsed,
             } = response;
-            self.help_pending.remove(&key);
-            let request = self.help_latest.remove(&key).unwrap_or(response_request);
-            self.local.cache_help(key, spec);
-            let items = self.local.complete(&request).items;
+            self.help_pending.remove(&id);
+            let request = self.help_latest.remove(&id).unwrap_or(response_request);
+            self.local.cache_graph(key, path, graph);
+            let result = self.local.complete(&request);
+            if let Some(help) = result.help {
+                self.enqueue_help(help);
+            }
+            let items = result.items;
             responses.push(self.local_response(&request, items, elapsed));
         }
         while let Ok(response) = self.responses.try_recv() {

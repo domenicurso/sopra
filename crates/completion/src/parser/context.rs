@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use super::HelpRequest;
+use super::discover::HelpRequest;
 use crate::{Request, commands, ranking};
 
 #[derive(Debug, Clone)]
@@ -13,10 +13,10 @@ pub(crate) struct Invocation {
     pub(crate) trailing_space: bool,
 }
 
-pub(super) fn invocation(request: &Request) -> Option<Invocation> {
+pub(crate) fn invocation(request: &Request) -> Option<Invocation> {
     let cursor = ranking::byte_offset(&request.line, request.cursor);
     let prefix = &request.line[..cursor];
-    let (active_start, _) = ranking::token_range(&request.line, cursor);
+    let active_start = ranking::token_range(&request.line, cursor).0;
     let parts = tokenize(prefix);
     let mut command = None;
     let mut args = Vec::new();
@@ -38,32 +38,37 @@ pub(super) fn invocation(request: &Request) -> Option<Invocation> {
         return None;
     }
     let program = brush_parser::unquote_str(&command.text);
-    let (key, command_path) = resolve_command(&program, &request.cwd)?;
+    let (key, command_path) = commands::resolve(&program, &request.cwd)?;
     let (_, active_end) = ranking::token_range(&request.line, cursor);
-    let active = request.line[active_start..active_end.min(cursor)].to_string();
     Some(Invocation {
         key,
         command: command_path,
         program,
         args,
-        active,
+        active: request.line[active_start..active_end.min(cursor)].to_string(),
         trailing_space: prefix.chars().last().is_some_and(char::is_whitespace),
     })
 }
 
-pub(super) fn request_for(request: &Request, invocation: &Invocation) -> HelpRequest {
+pub(crate) fn request_for(request: &Request, invocation: &Invocation) -> HelpRequest {
+    request_for_path(request, invocation, Vec::new(), true)
+}
+
+pub(crate) fn request_for_path(
+    request: &Request,
+    invocation: &Invocation,
+    path: Vec<String>,
+    discover_usage_commands: bool,
+) -> HelpRequest {
     HelpRequest {
         key: invocation.key.clone(),
         command: invocation.command.clone(),
         program: invocation.program.clone(),
-        args: Vec::new(),
+        args: path,
         cwd: request.cwd.clone(),
         request: request.clone(),
+        discover_usage_commands,
     }
-}
-
-fn resolve_command(program: &str, cwd: &Path) -> Option<(String, Option<PathBuf>)> {
-    commands::resolve(program, cwd)
 }
 
 #[derive(Debug)]
@@ -83,29 +88,23 @@ fn tokenize(input: &str) -> Vec<ShellWord> {
         if escaped {
             current.push(character);
             escaped = false;
-            continue;
-        }
-        if character == '\\' && quote != Some('\'') {
+        } else if character == '\\' && quote != Some('\'') {
             start.get_or_insert(index);
             current.push(character);
             escaped = true;
-            continue;
-        }
-        if let Some(active_quote) = quote {
+        } else if let Some(active) = quote {
             current.push(character);
-            if character == active_quote {
+            if character == active {
                 quote = None;
             }
-            continue;
-        }
-        if matches!(character, '\'' | '"') {
+        } else if matches!(character, '\'' | '"') {
             start.get_or_insert(index);
             current.push(character);
             quote = Some(character);
         } else if character.is_whitespace() {
-            flush_word(&mut words, &mut current, &mut start, index);
-        } else if is_operator(character) {
-            flush_word(&mut words, &mut current, &mut start, index);
+            flush(&mut words, &mut current, &mut start, index);
+        } else if matches!(character, '|' | '&' | ';' | '(' | ')' | '<' | '>') {
+            flush(&mut words, &mut current, &mut start, index);
             words.push(ShellWord {
                 text: character.to_string(),
                 end: index + character.len_utf8(),
@@ -116,28 +115,18 @@ fn tokenize(input: &str) -> Vec<ShellWord> {
             current.push(character);
         }
     }
-    flush_word(&mut words, &mut current, &mut start, input.len());
+    flush(&mut words, &mut current, &mut start, input.len());
     words
 }
 
-fn flush_word(
-    words: &mut Vec<ShellWord>,
-    current: &mut String,
-    start: &mut Option<usize>,
-    end: usize,
-) {
-    let Some(_start) = start.take() else {
-        return;
-    };
-    words.push(ShellWord {
-        text: std::mem::take(current),
-        end,
-        separator: false,
-    });
-}
-
-fn is_operator(character: char) -> bool {
-    matches!(character, '|' | '&' | ';' | '(' | ')' | '<' | '>')
+fn flush(words: &mut Vec<ShellWord>, current: &mut String, start: &mut Option<usize>, end: usize) {
+    if start.take().is_some() {
+        words.push(ShellWord {
+            text: std::mem::take(current),
+            end,
+            separator: false,
+        });
+    }
 }
 
 fn is_assignment(word: &str) -> bool {
@@ -150,26 +139,4 @@ fn is_wrapper(word: &str) -> bool {
         brush_parser::unquote_str(word).as_str(),
         "builtin" | "command" | "env" | "exec" | "nohup" | "sudo" | "time"
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::{Request, invocation};
-
-    #[test]
-    fn finds_the_real_command_after_a_wrapper() {
-        let request = Request {
-            line: "command opencode import ".to_string(),
-            cursor: 23,
-            context_line: String::new(),
-            context_cursor: 0,
-            replace: 23..23,
-            cwd: PathBuf::from("."),
-            generation: 0,
-            context_key: String::new(),
-        };
-        let _ = invocation(&request);
-    }
 }

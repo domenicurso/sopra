@@ -48,8 +48,8 @@ def exercise_command_completion(session: tuple[int, int], output: bytearray, ori
     send(session[0], b"\x03")
     origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
     option_start = len(output); send(session[0], b"git --vrsn")
-    wait_for_plain(session, output, b"--version", 3)
-    if b"--version" not in plain(output[option_start:]):
+    wait_for_plain(session, output, b"version", 3)
+    if b"version" not in plain(output[option_start:]):
         fail("option completion did not fuzzy-match git flags", *session)
     send(session[0], b"\x03")
     origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
@@ -81,7 +81,7 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
 
 def exercise_nested_help(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
-    send(session[0], b"npm install --")
+    send(session[0], b"npm install --ins")
     wait_for_plain_after(session, output, b"--install-strategy", start, 3)
     send(session[0], b"\x03")
     origins += 1

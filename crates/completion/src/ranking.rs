@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use neo_frizbee::{Config, Matcher};
 use unicode_width::UnicodeWidthStr;
 
@@ -51,13 +53,30 @@ pub fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {
         item.score = score as f32;
         ranked.push((score, index, item));
     }
-    ranked.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
+    ranked.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| label_order(&left.2.display, &right.2.display))
+            .then(left.1.cmp(&right.1))
+    });
+    ranked.dedup_by(|left, right| {
+        left.2.display == right.2.display
+            && left.2.insert == right.2.insert
+            && left.2.kind == right.2.kind
+    });
     let mut ranked = ranked
         .into_iter()
         .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
     path::compact_labels(&mut ranked, query);
     ranked
+}
+
+fn label_order(left: &str, right: &str) -> Ordering {
+    left.to_ascii_lowercase()
+        .cmp(&right.to_ascii_lowercase())
+        .then_with(|| left.cmp(right))
 }
 
 pub fn completion_token_width(items: &[CompletionItem], query: &str) -> usize {
@@ -145,6 +164,35 @@ mod tests {
         assert_eq!(rank(&items, "").len(), 300);
     }
 
+    #[test]
+    fn empty_queries_use_stable_alphabetical_order_and_deduplicate() {
+        let items = vec![
+            CompletionItem::new("zeta", "", "zeta", CompletionKind::Option),
+            CompletionItem::new("Alpha", "", "Alpha", CompletionKind::Option),
+            CompletionItem::new("alpha", "", "alpha", CompletionKind::Option),
+            CompletionItem::new("zeta", "", "zeta", CompletionKind::Option),
+        ];
+        let ranked = rank(&items, "");
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|item| item.display.as_str())
+                .collect::<Vec<_>>(),
+            ["Alpha", "alpha", "zeta"]
+        );
+    }
+
+    #[test]
+    fn option_queries_keep_the_option_prefix() {
+        let items = vec![CompletionItem::new(
+            "--version",
+            "show the version",
+            "--version",
+            CompletionKind::Option,
+        )];
+        let ranked = rank(&items, "--vrsn");
+        assert_eq!(ranked[0].display, "--version");
+    }
     #[test]
     fn token_range_stops_at_shell_operators() {
         assert_eq!(token_range("echo|ec", 7), (5, 7));

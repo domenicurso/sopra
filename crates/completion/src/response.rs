@@ -1,15 +1,15 @@
 use std::time::{Duration, Instant};
 
 use super::{
-    CompletionEngine, CompletionItem, CompletionResponse, CompletionResponseSource, Request, help,
-    local,
+    CompletionEngine, CompletionItem, CompletionResponse, CompletionResponseSource, Request,
+    engine, parser,
 };
 
 impl CompletionEngine {
     pub(super) fn send_local(&mut self, request: &Request) -> bool {
         let started = Instant::now();
         let result = self.local.complete(request);
-        let local::LocalResult {
+        let engine::LocalResult {
             items,
             prefetch,
             help,
@@ -18,31 +18,27 @@ impl CompletionEngine {
             .response_tx
             .send(self.local_response(request, items, started.elapsed()));
         if let Some(help) = help {
-            let key = help.key.clone();
-            self.help_latest.insert(key.clone(), help.request.clone());
-            if self.help_pending.insert(key.clone()) && self.help_requests.send(help).is_err() {
-                self.help_pending.remove(&key);
-                self.help_latest.remove(&key);
-            }
+            self.enqueue_help(help);
         }
         prefetch
     }
 
     pub(super) fn schedule_help(&mut self, request: &Request) {
-        let Some(invocation) = help::invocation(request) else {
+        let Some(invocation) = parser::invocation(request) else {
             return;
         };
-        if !self.local.needs_help(&invocation.key) {
+        if !self.local.needs_graph(&invocation.key) {
             return;
         }
-        let key = invocation.key.clone();
-        if self.help_pending.insert(key.clone()) {
-            let help = help::request_for(request, &invocation);
-            self.help_latest.insert(key.clone(), help.request.clone());
-            if self.help_requests.send(help).is_err() {
-                self.help_pending.remove(&key);
-                self.help_latest.remove(&key);
-            }
+        self.enqueue_help(parser::request_for(request, &invocation));
+    }
+
+    pub(super) fn enqueue_help(&mut self, help: parser::HelpRequest) {
+        let key = help.id();
+        self.help_latest.insert(key.clone(), help.request.clone());
+        if self.help_pending.insert(key.clone()) && self.help_requests.send(help).is_err() {
+            self.help_pending.remove(&key);
+            self.help_latest.remove(&key);
         }
     }
 

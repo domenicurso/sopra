@@ -77,6 +77,8 @@ Sopra runs as the editor behind Zsh's ZLE integration rather than as a replaceme
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 
+The completion parser's ownership, source flow, and command-agnostic design rules are documented in [docs/completions.md](docs/completions.md).
+
 ## Development
 
 The checkout launcher starts a development Zsh session:
