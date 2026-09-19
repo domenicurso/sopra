@@ -4,10 +4,10 @@ use ratatui::style::{Color, Modifier};
 
 use super::Scene;
 use crate::{
-    completion::{CompletionItem, CompletionKind},
     editor::{EditorConfig, EditorState},
     input::{CursorPosition, TerminalSize},
 };
+use sopra_completion::{CompletionItem, CompletionKind};
 
 fn editor(buffer: &str, size: TerminalSize) -> EditorState {
     EditorState::new(EditorConfig {

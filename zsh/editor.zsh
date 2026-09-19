@@ -29,6 +29,7 @@ fi
 typeset -g _SOPRA_RESULT_ACTION=''
 typeset -g _SOPRA_RESULT_BUFFER=''
 typeset -g _SOPRA_RESULT_CURSOR=0
+typeset -g _SOPRA_RESULT_HIGHLIGHTS=''
 
 _sopra_hex_decode() {
     emulate -L zsh
@@ -54,12 +55,12 @@ _sopra_parse_result() {
     _sopra_hex_decode "${fields[4]-}" || return 1
     typeset -g _SOPRA_RESULT_ACTION=${fields[2]}
     typeset -g _SOPRA_RESULT_CURSOR=${fields[3]}
+    typeset -g _SOPRA_RESULT_HIGHLIGHTS=${fields[5]-}
 }
 
 _sopra_edit() {
     emulate -L zsh
     local raw prompt
-    local -x FPATH="${(j.:.)fpath}"
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
     printf -v SOPRA_ALIASES '%s\n' "${(@k)aliases}"
     printf -v SOPRA_FUNCTIONS '%s\n' "${(@k)functions}"
@@ -93,20 +94,61 @@ _sopra_prepare_transient() {
     RPROMPT=''
 }
 
+_sopra_highlight_style() {
+    case "$1" in
+        real-command) REPLY='fg=green,bold' ;;
+        fake-command) REPLY='fg=red,bold' ;;
+        flag) REPLY='fg=yellow' ;;
+        operator|variable|escape) REPLY='fg=cyan' ;;
+        string|quote) REPLY='fg=magenta' ;;
+        number) REPLY='fg=blue' ;;
+        comment) REPLY='fg=8,dim' ;;
+        matched-quote) REPLY='fg=yellow,underline' ;;
+        error) REPLY='fg=red,underline' ;;
+        *) return 1 ;;
+    esac
+}
+
+_sopra_apply_highlights() {
+    emulate -L zsh
+    region_highlight=()
+    local entry start end kind style
+    local -a fields
+    for entry in ${(s.;.)_SOPRA_RESULT_HIGHLIGHTS}; do
+        fields=("${(@s.:.)entry}")
+        (( ${#fields} == 3 )) || continue
+        start=${fields[1]}
+        end=${fields[2]}
+        kind=${fields[3]}
+        [[ $start == <-> && $end == <-> ]] || continue
+        (( start < end )) || continue
+        _sopra_highlight_style "$kind" || continue
+        style=$REPLY
+        region_highlight+=("$start $end $style")
+    done
+}
+
+_sopra_clear_highlights() {
+    region_highlight=()
+}
+
 _sopra_line_init() {
     PROMPT=$SOPRA_PROMPT
     RPROMPT=$SOPRA_RPROMPT
+    _sopra_clear_highlights
     while _sopra_edit; do
         BUFFER=$_SOPRA_RESULT_BUFFER
         CURSOR=$_SOPRA_RESULT_CURSOR
         case $_SOPRA_RESULT_ACTION in
             accept)
                 _sopra_prepare_transient
+                _sopra_apply_highlights
                 zle .accept-line
                 return 0
                 ;;
             interrupt)
                 _sopra_prepare_transient
+                _sopra_clear_highlights
                 BUFFER=''
                 CURSOR=0
                 zle .accept-line

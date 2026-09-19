@@ -5,7 +5,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::completion::{CompletionItem, CompletionKind};
+use sopra_completion::{CompletionItem, CompletionKind, CompletionSource};
 
 use super::{
     canvas::{Canvas, TextRun},
@@ -124,7 +124,7 @@ pub(super) fn item_detail(item: &CompletionItem) -> String {
     item.description
         .clone()
         .or_else(|| {
-            if matches!(item.source, crate::completion::CompletionSource::Filesystem) {
+            if matches!(item.source, CompletionSource::Filesystem) {
                 None
             } else {
                 item.location

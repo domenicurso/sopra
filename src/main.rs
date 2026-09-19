@@ -1,5 +1,4 @@
 mod animation;
-mod completion;
 mod editor;
 mod input;
 mod palette;
@@ -58,9 +57,6 @@ impl Args {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
-    // Start the completion runtime while the terminal is being configured so command-name
-    // prefetching can warm argument completions before the user reaches the spacebar.
-    zsh::compsys::in_editor::bootstrap();
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
     // ZLE has already positioned the terminal on the active line. The renderer saves that
@@ -112,10 +108,44 @@ fn write_result(result: &RunResult) -> std::io::Result<()> {
     let mut stdout = std::io::stdout().lock();
     writeln!(
         stdout,
-        "K1\t{action}\t{}\t{}",
+        "K1\t{action}\t{}\t{}\t{}",
         result.cursor,
-        hex_encode(result.buffer.as_bytes())
+        hex_encode(result.buffer.as_bytes()),
+        encode_highlights(&result.buffer, &result.highlights)
     )
+}
+
+fn encode_highlights(buffer: &str, spans: &[crate::syntax::SyntaxSpan]) -> String {
+    spans
+        .iter()
+        .filter_map(|span| {
+            let kind = highlight_name(span.kind)?;
+            let start = buffer[..span.start].chars().count();
+            let end = buffer[..span.end].chars().count();
+            (start < end).then(|| format!("{start}:{end}:{kind}"))
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+fn highlight_name(kind: crate::syntax::SyntaxKind) -> Option<&'static str> {
+    use crate::syntax::SyntaxKind;
+
+    match kind {
+        SyntaxKind::RealCommand => Some("real-command"),
+        SyntaxKind::FakeCommand => Some("fake-command"),
+        SyntaxKind::Flag => Some("flag"),
+        SyntaxKind::Operator => Some("operator"),
+        SyntaxKind::Argument => None,
+        SyntaxKind::String => Some("string"),
+        SyntaxKind::Number => Some("number"),
+        SyntaxKind::Variable => Some("variable"),
+        SyntaxKind::Comment => Some("comment"),
+        SyntaxKind::Quote => Some("quote"),
+        SyntaxKind::MatchedQuote => Some("matched-quote"),
+        SyntaxKind::Error => Some("error"),
+        SyntaxKind::Escape => Some("escape"),
+    }
 }
 
 fn print_usage() {

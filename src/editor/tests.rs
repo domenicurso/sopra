@@ -44,6 +44,25 @@ fn escape_keeps_the_edited_buffer() {
 }
 
 #[test]
+fn accepted_result_carries_cursor_free_syntax_highlighting() {
+    let state = editor("echo \"hi\"");
+    let result = state.result(ExitReason::Accepted);
+
+    assert!(
+        result
+            .highlights
+            .iter()
+            .any(|span| span.kind == crate::syntax::SyntaxKind::RealCommand)
+    );
+    assert!(
+        result
+            .highlights
+            .iter()
+            .all(|span| span.end <= result.buffer.len())
+    );
+}
+
+#[test]
 fn whitespace_only_input_keeps_the_completion_menu_empty() {
     let state = editor("   ");
     assert!(state.visible_items().is_empty());
@@ -73,11 +92,11 @@ fn comments_do_not_receive_auto_pairs() {
 #[test]
 fn structured_completion_can_leave_the_cursor_inside_a_pair() {
     let mut state = editor("export ar");
-    let item = crate::completion::CompletionItem::new(
+    let item = sopra_completion::CompletionItem::new(
         "arr",
         "shell array",
         "arr",
-        crate::completion::CompletionKind::Array,
+        sopra_completion::CompletionKind::Array,
     )
     .with_suffix("=()", 4);
     state.set_completion_source_for_test(vec![item]);

@@ -8,6 +8,10 @@ repository = "https://github.com/domenicurso/sopra"
 readme = "README.md"
 default-run = "sopra"
 
+[workspace]
+members = ["crates/completion"]
+resolver = "3"
+
 [[bin]]
 name = "sopra"
 path = "src/main.rs"
@@ -18,6 +22,6 @@ libc = "0.2"
 notify = "6"
 neo_frizbee = "0.11"
 ratatui = { version = "0.29", default-features = false }
-zshrs = { path = "crates/zshrs", default-features = false, features = ["completion-only"] }
+sopra-completion = { path = "crates/completion" }
 unicode-segmentation = "1.12"
 unicode-width = "0.2"

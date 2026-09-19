@@ -1,11 +1,13 @@
+#[cfg(test)]
 use super::lex::{is_assignment, lex};
 
+#[cfg(test)]
 pub(super) fn command_position(line: &str, cursor: usize) -> bool {
     let cursor = cursor.min(line.len());
     let prefix = &line[..cursor];
     let lexed = lex(prefix);
     if let Some(word) = lexed.words.last()
-        && word.end == prefix.len()
+        && prefix.ends_with(&word.text)
     {
         return word.command_expected && !is_assignment(&word.text);
     }

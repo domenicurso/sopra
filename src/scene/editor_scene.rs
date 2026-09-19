@@ -4,10 +4,10 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use crate::{
-    completion::CompletionItem,
     editor::EditorState,
     input::{CursorPosition, TerminalSize},
 };
+use sopra_completion::CompletionItem;
 
 use super::overlay::{OverlayElement, overlay_width};
 use super::{

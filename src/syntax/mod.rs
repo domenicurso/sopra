@@ -1,4 +1,3 @@
-mod commands;
 mod context;
 mod delimiters;
 mod highlight;
@@ -11,8 +10,7 @@ use std::path::Path;
 
 use ratatui::style::{Color, Modifier, Style};
 
-pub(crate) use commands::catalog;
-use commands::command_available;
+use sopra_completion::command_available;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SyntaxKind {
@@ -75,6 +73,7 @@ pub(crate) fn style_at(spans: &[SyntaxSpan], byte: usize) -> Style {
         .map_or_else(|| Style::default().fg(Color::Reset), SyntaxSpan::style)
 }
 
+#[cfg(test)]
 pub(crate) fn command_position(line: &str, cursor: usize) -> bool {
     context::command_position(line, cursor)
 }

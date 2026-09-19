@@ -1,5 +1,4 @@
 mod commands;
-mod completion_merge;
 mod completions;
 mod editing;
 mod navigation;
@@ -15,13 +14,13 @@ use std::{
 };
 
 use crate::{
-    completion::{CompletionEngine, CompletionItem},
     input::{CursorPosition, Terminal, TerminalSize},
     palette::TerminalPalette,
     render::Renderer,
     scene::Scene,
     syntax::SyntaxSpan,
 };
+use sopra_completion::{CompletionEngine, CompletionItem};
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +38,7 @@ pub(crate) struct RunResult {
     pub(crate) reason: ExitReason,
     pub(crate) buffer: String,
     pub(crate) cursor: usize,
+    pub(crate) highlights: Vec<SyntaxSpan>,
 }
 
 pub(crate) struct EditorConfig {
@@ -60,11 +60,9 @@ pub(crate) struct EditorState {
     suggestion_scroll: usize,
     overlay_visible: bool,
     completion_source: Vec<CompletionItem>,
-    zshrs_source: Vec<CompletionItem>,
     suggestions: Vec<CompletionItem>,
     completion_key: String,
     latest_local_generation: u64,
-    latest_zshrs_generation: u64,
     completion: Option<CompletionEngine>,
     completion_elapsed: Duration,
     completion_latency_generation: u64,
@@ -88,11 +86,9 @@ impl EditorState {
             suggestion_scroll: 0,
             overlay_visible: true,
             completion_source: Vec::new(),
-            zshrs_source: Vec::new(),
             suggestions: Vec::new(),
             completion_key: String::new(),
             latest_local_generation: 0,
-            latest_zshrs_generation: 0,
             completion: CompletionEngine::new(),
             completion_elapsed: Duration::ZERO,
             completion_latency_generation: 0,
@@ -166,7 +162,6 @@ impl EditorState {
         self.selected = 0;
         self.suggestion_scroll = 0;
         self.completion_source.clear();
-        self.zshrs_source.clear();
         self.suggestions.clear();
         self.completion_key.clear();
         self.yank.clear();

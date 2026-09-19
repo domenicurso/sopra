@@ -1,6 +1,6 @@
-use crate::completion::{CompletionEngine, CompletionResponseSource, ranking};
+use sopra_completion::{CompletionEngine, ranking};
 
-use super::{EditorState, completion_merge};
+use super::EditorState;
 
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
@@ -18,7 +18,6 @@ impl EditorState {
         if key != self.completion_key {
             self.completion_key = key;
             self.completion_source.clear();
-            self.zshrs_source.clear();
             self.suggestions.clear();
             self.selected = 0;
             self.suggestion_scroll = 0;
@@ -42,43 +41,22 @@ impl EditorState {
         }
     }
 
-    fn apply_completion(&mut self, response: crate::completion::CompletionResponse) {
+    fn apply_completion(&mut self, response: sopra_completion::CompletionResponse) {
         let cursor_chars = self.buffer[..self.cursor].chars().count();
-        let (context_line, context_cursor) = ranking::broad_context(&self.buffer, cursor_chars);
-        if response.source == CompletionResponseSource::Zshrs {
-            if response.context_line != context_line
-                || response.context_cursor != context_cursor
-                || response.generation < self.latest_zshrs_generation
-            {
-                return;
-            }
-            self.latest_zshrs_generation = response.generation;
-            let (start, end) = ranking::token_range(&self.buffer, self.cursor);
-            let replace = start..end;
-            let items = crate::completion::rebind(&response.items, replace);
-            self.zshrs_source = completion_merge::response_metadata(&self.zshrs_source, items);
-        } else {
-            if response.line != self.buffer
-                || response.cursor != cursor_chars
-                || response.generation < self.latest_local_generation
-            {
-                return;
-            }
-            self.latest_local_generation = response.generation;
-            self.completion_source = response.items;
+        if response.line != self.buffer
+            || response.cursor != cursor_chars
+            || response.generation < self.latest_local_generation
+        {
+            return;
         }
+        self.latest_local_generation = response.generation;
+        self.completion_source = response.items;
         if response.generation > self.completion_latency_generation {
             self.completion_latency_generation = response.generation;
             self.completion_elapsed = response.elapsed;
         } else if response.generation == self.completion_latency_generation {
             self.completion_elapsed = self.completion_elapsed.max(response.elapsed);
         }
-        self.merge_completion_sources();
-    }
-
-    fn merge_completion_sources(&mut self) {
-        self.completion_source =
-            completion_merge::items(&self.completion_source, &self.zshrs_source);
         self.refresh_suggestions();
     }
 
@@ -98,7 +76,6 @@ impl EditorState {
 
     fn clear_completion_state(&mut self) {
         self.completion_source.clear();
-        self.zshrs_source.clear();
         self.suggestions.clear();
         self.selected = 0;
         self.suggestion_scroll = 0;
@@ -108,7 +85,7 @@ impl EditorState {
     #[cfg(test)]
     pub(crate) fn set_completion_source_for_test(
         &mut self,
-        items: Vec<crate::completion::CompletionItem>,
+        items: Vec<sopra_completion::CompletionItem>,
     ) {
         self.completion_source = items;
         self.refresh_suggestions();

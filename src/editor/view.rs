@@ -4,10 +4,8 @@ use ratatui::style::{Modifier, Style};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-    completion::CompletionItem,
-    input::{CursorPosition, TerminalSize},
-};
+use crate::input::{CursorPosition, TerminalSize};
+use sopra_completion::CompletionItem;
 
 use super::EditorState;
 
@@ -42,7 +40,7 @@ impl EditorState {
     }
 
     pub(crate) fn completion_token_width(&self) -> u16 {
-        crate::completion::ranking::completion_token_width(&self.suggestions, self.query())
+        sopra_completion::ranking::completion_token_width(&self.suggestions, self.query())
             .min(u16::MAX as usize) as u16
     }
 

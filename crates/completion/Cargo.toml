@@ -1,0 +1,13 @@
+[package]
+name = "sopra-completion"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Native shell completion engine for Sopra"
+repository = "https://github.com/domenicurso/sopra"
+
+[dependencies]
+brush-parser = "0.4"
+neo_frizbee = "0.11"
+notify = "6"
+unicode-width = "0.2"

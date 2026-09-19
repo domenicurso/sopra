@@ -4,7 +4,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::completion::CompletionItem;
+use sopra_completion::CompletionItem;
 
 use super::{
     Element,
@@ -160,7 +160,7 @@ pub(super) fn overlay_width(
 #[cfg(test)]
 mod tests {
     use super::overlay_width;
-    use crate::completion::{CompletionItem, CompletionKind};
+    use sopra_completion::{CompletionItem, CompletionKind};
 
     #[test]
     fn width_follows_content_until_the_terminal_edge() {

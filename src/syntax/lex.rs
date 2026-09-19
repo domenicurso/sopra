@@ -12,7 +12,6 @@ pub(super) struct LexedLine {
 
 #[derive(Debug, Clone)]
 pub(super) struct WordToken {
-    pub(super) end: usize,
     pub(super) text: String,
     pub(super) span_start: usize,
     pub(super) span_end: usize,
@@ -96,7 +95,6 @@ pub(super) fn lex(line: &str) -> LexedLine {
                 close: pair.close.map(|index| index + offset),
             }));
         result.words.push(WordToken {
-            end,
             text: line[word_start..end].to_string(),
             span_start,
             span_end: result.spans.len(),

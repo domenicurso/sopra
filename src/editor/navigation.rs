@@ -1,7 +1,8 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::EditorState;
-use crate::{completion::ranking, scene::MAX_OVERLAY_ITEMS};
+use crate::scene::MAX_OVERLAY_ITEMS;
+use sopra_completion::ranking;
 
 impl EditorState {
     pub(super) fn delete(&mut self) {
