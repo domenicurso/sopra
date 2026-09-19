@@ -2,7 +2,7 @@
   <h1>Sopra</h1>
   <p><code>/ˈsoʊ.prə/</code></p>
   <p>A Rust-owned Zsh line editor for the future</p>
-  <img width="700" alt="Sopra" src="./assets/sopra.png" />
+  <img width="700" alt="Sopra" src="./assets/sopra.png" style />
 </div>
 
 **Sopra** adds fast editing, syntax highlighting, and contextual completions while Zsh continues to own command execution and the shell environment.
