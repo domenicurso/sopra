@@ -39,6 +39,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
         vec![0],
         Vec::new(),
         CursorPosition { column: 0, row: 0 },
+        1,
         elements,
     )
 }

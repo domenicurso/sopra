@@ -36,6 +36,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> S
             column: layout.cursor_column,
             row: layout.row,
         },
+        layout.required_height(),
         elements,
     )
 }
@@ -167,6 +168,12 @@ impl EditorLayout {
         } else {
             0
         }
+    }
+
+    fn required_height(&self) -> u16 {
+        let line_height = self.row.saturating_add(1);
+        let overlay_height = self.overlay_row.saturating_add(self.overlay_height);
+        line_height.max(overlay_height)
     }
 }
 

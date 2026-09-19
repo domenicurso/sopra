@@ -1,3 +1,4 @@
+mod cursor;
 mod keys;
 
 use std::{
@@ -117,6 +118,12 @@ impl Terminal {
 
     pub(crate) fn flush(&mut self) -> io::Result<()> {
         self.tty.flush()
+    }
+
+    pub(crate) fn cursor_row(&mut self) -> Option<u16> {
+        let (row, pending) = cursor::read(self.tty.as_raw_fd());
+        self.pending_input.extend(pending);
+        row
     }
 
     pub(crate) fn poll(&self, timeout: Duration) -> io::Result<bool> {

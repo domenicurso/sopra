@@ -50,6 +50,20 @@ fn overlay_clear_rows_stay_inside_the_terminal() {
 }
 
 #[test]
+fn editor_scene_reports_the_popup_rows_that_must_fit_below_the_prompt() {
+    let size = TerminalSize::new(80, 24);
+    let mut editor = editor("cd ", size);
+    editor.set_completion_source_for_test(vec![CompletionItem::new(
+        "alpha",
+        "command",
+        "alpha",
+        CompletionKind::Generic,
+    )]);
+    let frame = Scene::for_editor(&editor, size, Instant::now()).render();
+    assert_eq!(frame.required_height, 4);
+}
+
+#[test]
 fn overlay_cells_keep_the_terminal_background() {
     let size = TerminalSize::new(80, 24);
     let mut editor = editor("", size);

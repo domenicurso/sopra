@@ -29,6 +29,7 @@ pub(crate) struct Frame {
     pub(crate) clear_rows: Vec<u16>,
     pub(crate) repaint_cells: Vec<(u16, u16)>,
     pub(crate) cursor: CursorPosition,
+    pub(crate) required_height: u16,
 }
 
 trait Element {
@@ -40,6 +41,7 @@ pub(crate) struct Scene {
     clear_rows: Vec<u16>,
     repaint_cells: Vec<(u16, u16)>,
     cursor: CursorPosition,
+    required_height: u16,
     elements: Vec<Box<dyn Element>>,
 }
 
@@ -57,6 +59,7 @@ impl Scene {
         clear_rows: Vec<u16>,
         repaint_cells: Vec<(u16, u16)>,
         cursor: CursorPosition,
+        required_height: u16,
         elements: Vec<Box<dyn Element>>,
     ) -> Self {
         Self {
@@ -64,6 +67,7 @@ impl Scene {
             clear_rows,
             repaint_cells,
             cursor,
+            required_height,
             elements,
         }
     }
@@ -78,6 +82,7 @@ impl Scene {
             clear_rows: self.clear_rows,
             repaint_cells: self.repaint_cells,
             cursor: self.cursor,
+            required_height: self.required_height,
         }
     }
 }

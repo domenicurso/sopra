@@ -39,3 +39,22 @@ fn moves_are_relative_to_the_saved_origin() {
     super::ansi::move_to(&mut output, 5, 2);
     assert_eq!(output, b"\x1b[u\x1b[2B\x1b[6G");
 }
+
+#[test]
+fn scrolling_makes_room_only_for_the_missing_popup_rows() {
+    assert_eq!(super::rows_to_scroll(39, 15, 40), 14);
+    assert_eq!(super::rows_to_scroll(35, 15, 40), 10);
+    assert_eq!(super::rows_to_scroll(0, 15, 40), 0);
+}
+
+#[test]
+fn scrolling_resets_the_saved_origin_after_moving_the_viewport() {
+    let mut renderer = super::Renderer {
+        origin_row: Some(35),
+        ..super::Renderer::default()
+    };
+    let mut output = Vec::new();
+    renderer.ensure_space(15, 40, &mut output);
+    assert_eq!(renderer.origin_row, Some(25));
+    assert_eq!(output, b"\x1b[u\x1b[10S\x1b[10A\r\x1b[s".to_vec());
+}

@@ -24,6 +24,7 @@ pub(crate) struct Renderer {
     previous: Option<Buffer>,
     cursor_hidden: bool,
     origin_saved: bool,
+    origin_row: Option<u16>,
 }
 
 impl Renderer {
@@ -37,19 +38,33 @@ impl Renderer {
             clear_rows: next_rows,
             repaint_cells,
             cursor,
+            required_height,
         } = next;
         let old_area = self
             .previous
             .as_ref()
             .map_or(Rect::default(), |frame| *frame.area());
         let mut output = Vec::new();
+        if resized {
+            self.origin_row = None;
+        }
+        if required_height > 1 && self.origin_row.is_none() {
+            self.origin_row = terminal.cursor_row().or(Some(0));
+        }
         self.begin_frame(&mut output);
         if resized {
             // The terminal may reflow the active line during SIGWINCH. The frame leaves the
             // cursor there, so use its current visual row as the new scene origin before repaint.
             output.extend_from_slice(b"\r\x1b[s");
             self.previous = None;
-            clear_rows(&mut output, &(0..next.area.height).collect::<Vec<_>>());
+        }
+        self.ensure_space(required_height, next.area.height, &mut output);
+        if resized {
+            let visible_rows = next
+                .area
+                .height
+                .saturating_sub(self.origin_row.unwrap_or_default());
+            clear_rows(&mut output, &(0..visible_rows).collect::<Vec<_>>());
         } else if self.previous.is_none() {
             clear_rows(&mut output, &next_rows);
         }
@@ -75,6 +90,20 @@ impl Renderer {
             output.extend_from_slice(b"\r\x1b[s");
             self.origin_saved = true;
         }
+    }
+
+    fn ensure_space(&mut self, required_height: u16, terminal_rows: u16, output: &mut Vec<u8>) {
+        let Some(origin_row) = self.origin_row else {
+            return;
+        };
+        let rows = rows_to_scroll(origin_row, required_height, terminal_rows);
+        if rows == 0 {
+            return;
+        }
+        output.extend_from_slice(b"\x1b[u");
+        output.extend_from_slice(format!("\x1b[{rows}S\x1b[{rows}A\r\x1b[s").as_bytes());
+        self.origin_row = Some(origin_row - rows);
+        self.previous = None;
     }
 
     fn paint_diff(
@@ -121,8 +150,16 @@ impl Renderer {
         terminal.flush()?;
         self.cursor_hidden = false;
         self.origin_saved = false;
+        self.origin_row = None;
         Ok(())
     }
+}
+
+fn rows_to_scroll(origin_row: u16, required_height: u16, terminal_rows: u16) -> u16 {
+    origin_row
+        .saturating_add(required_height)
+        .saturating_sub(terminal_rows)
+        .min(origin_row)
 }
 
 fn clear_rows(output: &mut Vec<u8>, rows: &[u16]) {
