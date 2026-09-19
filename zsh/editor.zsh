@@ -94,40 +94,6 @@ _sopra_prepare_transient() {
     RPROMPT=''
 }
 
-_sopra_highlight_style() {
-    case "$1" in
-        real-command) REPLY='fg=green,bold' ;;
-        fake-command) REPLY='fg=red,bold' ;;
-        flag) REPLY='fg=yellow' ;;
-        operator|variable|escape) REPLY='fg=cyan' ;;
-        string|quote) REPLY='fg=magenta' ;;
-        number) REPLY='fg=blue' ;;
-        comment) REPLY='fg=8,dim' ;;
-        matched-quote) REPLY='fg=yellow,underline' ;;
-        error) REPLY='fg=red,underline' ;;
-        *) return 1 ;;
-    esac
-}
-
-_sopra_apply_highlights() {
-    emulate -L zsh
-    region_highlight=()
-    local entry start end kind style
-    local -a fields
-    for entry in ${(s.;.)_SOPRA_RESULT_HIGHLIGHTS}; do
-        fields=("${(@s.:.)entry}")
-        (( ${#fields} == 3 )) || continue
-        start=${fields[1]}
-        end=${fields[2]}
-        kind=${fields[3]}
-        [[ $start == <-> && $end == <-> ]] || continue
-        (( start < end )) || continue
-        _sopra_highlight_style "$kind" || continue
-        style=$REPLY
-        region_highlight+=("$start $end $style")
-    done
-}
-
 _sopra_clear_highlights() {
     region_highlight=()
 }
@@ -142,7 +108,9 @@ _sopra_line_init() {
         case $_SOPRA_RESULT_ACTION in
             accept)
                 _sopra_prepare_transient
-                _sopra_apply_highlights
+                if [[ -n $_SOPRA_RESULT_HIGHLIGHTS ]]; then
+                    region_highlight=("${(@s.;.)_SOPRA_RESULT_HIGHLIGHTS}")
+                fi
                 zle .accept-line
                 return 0
                 ;;

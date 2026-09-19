@@ -1,5 +1,7 @@
 mod ansi;
 
+pub(crate) use self::ansi::region_highlight_style;
+
 #[cfg(test)]
 mod tests;
 

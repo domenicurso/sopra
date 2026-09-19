@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
 };
 
 use super::ansi::cell_at;
@@ -20,6 +20,17 @@ fn ratatui_cells_are_the_renderer_contract() {
         .set_style(Style::default().fg(Color::Cyan));
     assert_eq!(frame[(0, 0)].symbol(), "K");
     assert_eq!(frame[(0, 0)].fg, Color::Cyan);
+}
+
+#[test]
+fn region_highlight_uses_the_ratatui_style_model() {
+    let style = Style::default()
+        .fg(Color::LightMagenta)
+        .add_modifier(Modifier::UNDERLINED);
+    assert_eq!(
+        super::ansi::region_highlight_style(style).as_deref(),
+        Some("fg=13,underline")
+    );
 }
 
 #[test]

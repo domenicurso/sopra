@@ -1,7 +1,35 @@
 use ratatui::{
     buffer::{Buffer, Cell},
-    style::{Color, Modifier},
+    style::{Color, Modifier, Style},
 };
+
+#[derive(Clone, Copy)]
+enum TerminalColor {
+    Palette(u8),
+    Indexed(u8),
+    Rgb(u8, u8, u8),
+}
+
+pub(crate) fn region_highlight_style(style: Style) -> Option<String> {
+    let mut parts = vec![format!("fg={}", style_color(style.fg?)?)];
+    for (modifier, name) in [
+        (Modifier::BOLD, "bold"),
+        (Modifier::DIM, "dim"),
+        (Modifier::UNDERLINED, "underline"),
+    ] {
+        if style.add_modifier.contains(modifier) {
+            parts.push(name.to_string());
+        }
+    }
+    Some(parts.join(","))
+}
+
+fn style_color(color: Color) -> Option<String> {
+    Some(match terminal_color(color)? {
+        TerminalColor::Palette(index) | TerminalColor::Indexed(index) => index.to_string(),
+        TerminalColor::Rgb(red, green, blue) => format!("#{red:02x}{green:02x}{blue:02x}"),
+    })
+}
 
 pub(super) fn cell_at(buffer: &Buffer, column: u16, row: u16) -> Cell {
     buffer.cell((column, row)).cloned().unwrap_or(Cell::EMPTY)
@@ -52,30 +80,39 @@ fn paint_style(output: &mut Vec<u8>, cell: &Cell) {
 
 fn paint_color(output: &mut Vec<u8>, color: Color, foreground: bool) {
     let prefix = if foreground { 38 } else { 48 };
-    match color {
-        Color::Reset => {}
-        Color::Black => paint_basic_color(output, prefix, 0),
-        Color::Red => paint_basic_color(output, prefix, 1),
-        Color::Green => paint_basic_color(output, prefix, 2),
-        Color::Yellow => paint_basic_color(output, prefix, 3),
-        Color::Blue => paint_basic_color(output, prefix, 4),
-        Color::Magenta => paint_basic_color(output, prefix, 5),
-        Color::Cyan => paint_basic_color(output, prefix, 6),
-        Color::Gray => paint_basic_color(output, prefix, 7),
-        Color::DarkGray => paint_basic_color(output, prefix, 8),
-        Color::LightRed => paint_basic_color(output, prefix, 9),
-        Color::LightGreen => paint_basic_color(output, prefix, 10),
-        Color::LightYellow => paint_basic_color(output, prefix, 11),
-        Color::LightBlue => paint_basic_color(output, prefix, 12),
-        Color::LightMagenta => paint_basic_color(output, prefix, 13),
-        Color::LightCyan => paint_basic_color(output, prefix, 14),
-        Color::White => paint_basic_color(output, prefix, 15),
-        Color::Indexed(index) => {
+    match terminal_color(color) {
+        None => {}
+        Some(TerminalColor::Palette(index)) => paint_basic_color(output, prefix, index),
+        Some(TerminalColor::Indexed(index)) => {
             output.extend_from_slice(format!("\x1b[{};5;{}m", prefix, index).as_bytes())
         }
-        Color::Rgb(red, green, blue) => output
+        Some(TerminalColor::Rgb(red, green, blue)) => output
             .extend_from_slice(format!("\x1b[{};2;{};{};{}m", prefix, red, green, blue).as_bytes()),
     }
+}
+
+fn terminal_color(color: Color) -> Option<TerminalColor> {
+    Some(match color {
+        Color::Reset => return None,
+        Color::Black => TerminalColor::Palette(0),
+        Color::Red => TerminalColor::Palette(1),
+        Color::Green => TerminalColor::Palette(2),
+        Color::Yellow => TerminalColor::Palette(3),
+        Color::Blue => TerminalColor::Palette(4),
+        Color::Magenta => TerminalColor::Palette(5),
+        Color::Cyan => TerminalColor::Palette(6),
+        Color::Gray => TerminalColor::Palette(7),
+        Color::DarkGray => TerminalColor::Palette(8),
+        Color::LightRed => TerminalColor::Palette(9),
+        Color::LightGreen => TerminalColor::Palette(10),
+        Color::LightYellow => TerminalColor::Palette(11),
+        Color::LightBlue => TerminalColor::Palette(12),
+        Color::LightMagenta => TerminalColor::Palette(13),
+        Color::LightCyan => TerminalColor::Palette(14),
+        Color::White => TerminalColor::Palette(15),
+        Color::Indexed(index) => TerminalColor::Indexed(index),
+        Color::Rgb(red, green, blue) => TerminalColor::Rgb(red, green, blue),
+    })
 }
 
 fn paint_basic_color(output: &mut Vec<u8>, prefix: u8, color: u8) {

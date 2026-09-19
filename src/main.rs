@@ -119,33 +119,13 @@ fn encode_highlights(buffer: &str, spans: &[crate::syntax::SyntaxSpan]) -> Strin
     spans
         .iter()
         .filter_map(|span| {
-            let kind = highlight_name(span.kind)?;
+            let style = crate::render::region_highlight_style(span.style())?;
             let start = buffer[..span.start].chars().count();
             let end = buffer[..span.end].chars().count();
-            (start < end).then(|| format!("{start}:{end}:{kind}"))
+            (start < end).then(|| format!("{start} {end} {style}"))
         })
         .collect::<Vec<_>>()
         .join(";")
-}
-
-fn highlight_name(kind: crate::syntax::SyntaxKind) -> Option<&'static str> {
-    use crate::syntax::SyntaxKind;
-
-    match kind {
-        SyntaxKind::RealCommand => Some("real-command"),
-        SyntaxKind::FakeCommand => Some("fake-command"),
-        SyntaxKind::Flag => Some("flag"),
-        SyntaxKind::Operator => Some("operator"),
-        SyntaxKind::Argument => None,
-        SyntaxKind::String => Some("string"),
-        SyntaxKind::Number => Some("number"),
-        SyntaxKind::Variable => Some("variable"),
-        SyntaxKind::Comment => Some("comment"),
-        SyntaxKind::Quote => Some("quote"),
-        SyntaxKind::MatchedQuote => Some("matched-quote"),
-        SyntaxKind::Error => Some("error"),
-        SyntaxKind::Escape => Some("escape"),
-    }
 }
 
 fn print_usage() {
