@@ -61,7 +61,7 @@ impl EditorState {
     }
 
     pub(crate) fn completion_hint(&self) -> &'static str {
-        if self.selected.is_some() {
+        if self.selected.is_some() || self.suggestions.len() == 1 {
             "Tab to accept"
         } else {
             "Tab to focus"

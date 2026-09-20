@@ -4,13 +4,50 @@ use super::{EditorState, ExitReason, RunResult};
 
 impl EditorState {
     pub(super) fn handle_key(&mut self, key: Key) -> Option<RunResult> {
+        self.resume_completion_for(key);
         let reveal_overlay = !matches!(key, Key::Escape | Key::Clear);
+        if let Some(result) = self.dispatch_key(key) {
+            return Some(result);
+        }
+        if reveal_overlay {
+            self.show_overlay();
+        }
+        self.note_activity();
+        self.request_completion();
+        None
+    }
+
+    fn resume_completion_for(&mut self, key: Key) {
+        if matches!(
+            key,
+            Key::Character(_)
+                | Key::Backspace
+                | Key::Delete
+                | Key::WordBackspace
+                | Key::KillToEnd
+                | Key::KillToStart
+                | Key::Yank
+                | Key::Left
+                | Key::Right
+                | Key::WordLeft
+                | Key::WordRight
+                | Key::Home
+                | Key::End
+        ) {
+            self.resume_completion();
+        }
+    }
+
+    fn dispatch_key(&mut self, key: Key) -> Option<RunResult> {
         match key {
             Key::Character(character) => self.insert_character(character),
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
             Key::Tab => {
                 if self.selected.is_none() {
                     if !self.arm_first_completion() {
+                        return Some(self.result(ExitReason::DelegateTab));
+                    }
+                    if self.suggestions.len() == 1 && !self.apply_selected() {
                         return Some(self.result(ExitReason::DelegateTab));
                     }
                 } else if !self.apply_selected() {
@@ -52,11 +89,6 @@ impl EditorState {
                 self.delete();
             }
         }
-        if reveal_overlay {
-            self.show_overlay();
-        }
-        self.note_activity();
-        self.request_completion();
         None
     }
 }

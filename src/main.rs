@@ -17,6 +17,7 @@ struct Args {
     buffer: String,
     cursor: usize,
     arm_completion: bool,
+    suppress_completion: bool,
     prompt: String,
     cwd: PathBuf,
 }
@@ -26,6 +27,7 @@ impl Args {
         let mut buffer = String::new();
         let mut cursor = 0;
         let mut arm_completion = false;
+        let mut suppress_completion = false;
         let mut prompt = "$ ".to_string();
         let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
@@ -39,6 +41,7 @@ impl Args {
                         .map_err(|_| "--cursor must be a character index".to_string())?;
                 }
                 "--arm-completion" => arm_completion = true,
+                "--suppress-completion" => suppress_completion = true,
                 "--prompt" => prompt = next_value(&mut arguments, "--prompt")?,
                 "--cwd" => cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?),
                 "--help" | "-h" => {
@@ -53,6 +56,7 @@ impl Args {
             buffer,
             cursor,
             arm_completion,
+            suppress_completion,
             prompt,
             cwd,
         })
@@ -70,6 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         buffer: args.buffer,
         cursor_chars: args.cursor,
         arm_completion: args.arm_completion,
+        suppress_completion: args.suppress_completion,
         prompt: args.prompt,
         anchor,
         size,
@@ -135,7 +140,7 @@ fn encode_highlights(buffer: &str, spans: &[crate::syntax::SyntaxSpan]) -> Strin
 
 fn print_usage() {
     println!(
-        "sopra\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  sopra [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH]"
+        "sopra\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  sopra [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH] [--arm-completion] [--suppress-completion]"
     );
 }
 

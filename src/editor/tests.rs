@@ -6,6 +6,7 @@ fn editor(buffer: &str) -> EditorState {
         buffer: buffer.to_string(),
         cursor_chars: buffer.chars().count(),
         arm_completion: false,
+        suppress_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size: TerminalSize::new(80, 24),
@@ -102,8 +103,6 @@ fn structured_completion_can_leave_the_cursor_inside_a_pair() {
     .with_suffix("=()", 4);
     state.set_completion_source_for_test(vec![item]);
     state.handle_key(Key::Tab);
-    assert_eq!(state.buffer(), "export ar");
-    state.handle_key(Key::Tab);
     assert_eq!(state.buffer(), "export arr=()");
     assert_eq!(state.result(ExitReason::Accepted).cursor, 11);
 }
@@ -123,22 +122,90 @@ fn attached_value_completion_preserves_the_assignment_key() {
     state.set_completion_source_for_test(vec![item]);
 
     state.handle_key(Key::Tab);
-    assert_eq!(state.buffer(), "npm access set mfa=");
-    assert_eq!(state.selected, Some(0));
-    state.handle_key(Key::Tab);
-
-    assert_eq!(state.buffer(), "npm access set mfa=automation");
+    assert_eq!(state.buffer(), "npm access set mfa=automation ");
 }
 
 #[test]
-fn tab_focuses_the_first_completion_before_accepting_it() {
-    let mut state = editor("git ");
+fn accepting_a_word_completion_appends_a_space() {
+    let mut state = editor("git st");
+    let end = state.buffer().len();
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::with_range(
+        "status",
+        "status",
+        None,
+        sopra_completion::CompletionKind::Subcommand,
+        4..end,
+        sopra_completion::CompletionSource::CommandIndex,
+    )]);
+
+    state.handle_key(Key::Tab);
+
+    assert_eq!(state.buffer(), "git status ");
+}
+
+#[test]
+fn accepting_an_assignment_key_keeps_the_value_attached() {
+    let mut state = editor("npm access set ");
+    let end = state.buffer().len();
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::with_range(
+        "mfa=",
+        "mfa=",
+        None,
+        sopra_completion::CompletionKind::Value,
+        end..end,
+        sopra_completion::CompletionSource::CommandIndex,
+    )]);
+
+    state.handle_key(Key::Tab);
+
+    assert_eq!(state.buffer(), "npm access set mfa=");
+}
+
+#[test]
+fn suspended_history_completion_waits_for_editing() {
+    let mut state = EditorState::new(EditorConfig {
+        buffer: "git st".to_string(),
+        cursor_chars: 6,
+        arm_completion: false,
+        suppress_completion: true,
+        prompt: "$ ".to_string(),
+        anchor: CursorPosition { row: 0, column: 0 },
+        size: TerminalSize::new(80, 24),
+        cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
+    });
     state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
         "status",
         "",
         "status",
         sopra_completion::CompletionKind::Subcommand,
     )]);
+
+    assert!(state.visible_items().is_empty());
+    assert!(!state.overlay_visible());
+
+    state.handle_key(Key::Character('x'));
+
+    assert!(!state.completion_suspended);
+    assert!(state.overlay_visible());
+}
+
+#[test]
+fn tab_focuses_the_first_completion_before_accepting_it() {
+    let mut state = editor("git ");
+    state.set_completion_source_for_test(
+        ["status", "stash"]
+            .into_iter()
+            .map(|name| {
+                sopra_completion::CompletionItem::new(
+                    name,
+                    "",
+                    name,
+                    sopra_completion::CompletionKind::Subcommand,
+                )
+            })
+            .collect(),
+    );
 
     state.handle_key(Key::Tab);
 
@@ -150,6 +217,26 @@ fn tab_focuses_the_first_completion_before_accepting_it() {
 #[test]
 fn unselected_completion_prompts_tab_to_focus() {
     let mut state = editor("git ");
+    state.set_completion_source_for_test(
+        ["status", "stash"]
+            .into_iter()
+            .map(|name| {
+                sopra_completion::CompletionItem::new(
+                    name,
+                    "",
+                    name,
+                    sopra_completion::CompletionKind::Subcommand,
+                )
+            })
+            .collect(),
+    );
+
+    assert_eq!(state.completion_hint(), "Tab to focus");
+}
+
+#[test]
+fn single_completion_prompts_tab_to_accept() {
+    let mut state = editor("git st");
     state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
         "status",
         "",
@@ -157,7 +244,7 @@ fn unselected_completion_prompts_tab_to_focus() {
         sopra_completion::CompletionKind::Subcommand,
     )]);
 
-    assert_eq!(state.completion_hint(), "Tab to focus");
+    assert_eq!(state.completion_hint(), "Tab to accept");
 }
 
 #[test]

@@ -121,6 +121,35 @@ def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -
     wait_for_count(session, output, b"\x1b[s", origins)
     read_for(session[0], output, 0.20)
     return output.count(b"\x1b[s")
+
+
+def exercise_history_suspension(
+    session: tuple[int, int], output: bytearray, origins: int
+) -> int:
+    command_start = len(output)
+    for byte in b"git st\r":
+        send(session[0], bytes([byte]))
+        read_for(session[0], output, 0.01)
+    wait_for_plain_after(session, output, b"gitst", command_start, 3)
+    read_for(session[0], output, 0.25)
+    origins = output.count(b"\x1b[s")
+
+    history_start = len(output)
+    send(session[0], b"\x1b[A")
+    wait_for_plain_after(session, output, b"gitst", history_start, 3)
+    read_for(session[0], output, 0.15)
+    history_output = plain(output[history_start:])
+    if any(marker.encode() in history_output for marker in ("╭", "╮", "╰", "╯")):
+        fail("history navigation reopened the completion overlay", *session)
+
+    send(session[0], b"\x1b[D")
+    wait_for_plain_after(session, output, b"status", history_start, 3)
+    repaint_start = output.count(b"\x1b[s")
+    send(session[0], b"\x03")
+    wait_for_count(session, output, b"\x1b[s", repaint_start + 1)
+    return output.count(b"\x1b[s")
+
+
 def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -> None:
     start = len(output)
     for byte in b"echo escape-kept":
@@ -149,7 +178,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     send(session[0], b"\x03")
     origins += 1
     wait_for_count(session, output, b"\x1b[s", origins)
-    send(session[0], b"exit\r")
+    send(session[0], b"exit 0\r")
 def wait_for_exit(session: tuple[int, int], output: bytearray) -> None:
     master, pid = session
     deadline = time.monotonic() + 3
@@ -176,6 +205,7 @@ def main() -> int:
         origins = exercise_nested_help(session, output, origins)
         origins = exercise_path_completion(session, output, origins)
         origins = exercise_accept(session, output, origins)
+        origins = exercise_history_suspension(session, output, origins)
         exercise_escape(session, output, origins)
         wait_for_exit(session, output)
     except (OSError, select.error) as error:

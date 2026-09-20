@@ -45,6 +45,7 @@ pub(crate) struct EditorConfig {
     pub(crate) buffer: String,
     pub(crate) cursor_chars: usize,
     pub(crate) arm_completion: bool,
+    pub(crate) suppress_completion: bool,
     pub(crate) prompt: String,
     pub(crate) anchor: CursorPosition,
     pub(crate) size: TerminalSize,
@@ -59,6 +60,7 @@ pub(crate) struct EditorState {
     anchor: CursorPosition,
     selected: Option<usize>,
     completion_armed: bool,
+    completion_suspended: bool,
     suggestion_scroll: usize,
     overlay_visible: bool,
     completion_source: Vec<CompletionItem>,
@@ -84,10 +86,11 @@ impl EditorState {
             cursor,
             prompt: config.prompt,
             anchor: config.anchor,
-            selected: config.arm_completion.then_some(0),
-            completion_armed: config.arm_completion,
+            selected: (config.arm_completion && !config.suppress_completion).then_some(0),
+            completion_armed: config.arm_completion && !config.suppress_completion,
+            completion_suspended: config.suppress_completion,
             suggestion_scroll: 0,
-            overlay_visible: true,
+            overlay_visible: !config.suppress_completion,
             completion_source: Vec::new(),
             suggestions: Vec::new(),
             completion_key: String::new(),
@@ -164,6 +167,7 @@ impl EditorState {
         self.cursor = 0;
         self.selected = None;
         self.completion_armed = false;
+        self.completion_suspended = false;
         self.overlay_visible = true;
         self.suggestion_scroll = 0;
         self.completion_source.clear();

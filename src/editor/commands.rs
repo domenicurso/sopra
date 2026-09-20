@@ -40,12 +40,23 @@ impl EditorState {
                 self.current_token_range()
             };
         let inserted = format!("{}{}", item.insert, item.suffix);
-        self.buffer.replace_range(start..end, &inserted);
-        self.cursor = start
-            + item
-                .cursor_offset
-                .unwrap_or(inserted.len())
-                .min(inserted.len());
+        let cursor_offset = item
+            .cursor_offset
+            .unwrap_or(inserted.len())
+            .min(inserted.len());
+        // Assignment keys and directory paths are incomplete shell words, so keep them open.
+        let add_space = cursor_offset == inserted.len()
+            && end == self.buffer.len()
+            && inserted.chars().next_back().is_some_and(|character| {
+                !character.is_whitespace() && character != '=' && character != '/'
+            });
+        let replacement = if add_space {
+            format!("{inserted} ")
+        } else {
+            inserted.clone()
+        };
+        self.buffer.replace_range(start..end, &replacement);
+        self.cursor = start + cursor_offset + usize::from(add_space);
         self.reset_selection();
         true
     }

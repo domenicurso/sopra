@@ -5,7 +5,7 @@ use super::EditorState;
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
         self.syntax = crate::syntax::highlight_at(&self.buffer, &self.cwd, self.cursor);
-        if self.buffer.trim().is_empty() {
+        if self.buffer.trim().is_empty() || self.completion_suspended {
             self.clear_completion_state();
             return;
         }
@@ -41,6 +41,9 @@ impl EditorState {
     }
 
     fn apply_completion(&mut self, response: sopra_completion::CompletionResponse) {
+        if self.completion_suspended {
+            return;
+        }
         let cursor_chars = self.buffer[..self.cursor].chars().count();
         if response.line != self.buffer
             || response.cursor != cursor_chars
@@ -60,6 +63,12 @@ impl EditorState {
     }
 
     pub(super) fn refresh_suggestions(&mut self) {
+        if self.completion_suspended {
+            self.suggestions.clear();
+            self.selected = None;
+            self.suggestion_scroll = 0;
+            return;
+        }
         self.suggestions =
             ranking::rank_for_buffer(&self.completion_source, &self.buffer, self.cursor);
         if self.suggestions.is_empty() {
@@ -86,6 +95,16 @@ impl EditorState {
         self.selected = None;
         self.suggestion_scroll = 0;
         self.completion_elapsed = std::time::Duration::ZERO;
+    }
+
+    pub(super) fn resume_completion(&mut self) {
+        if !self.completion_suspended {
+            return;
+        }
+        self.completion_suspended = false;
+        self.overlay_visible = true;
+        self.completion_key.clear();
+        self.clear_completion_state();
     }
 
     #[cfg(test)]
