@@ -200,6 +200,8 @@ fn run_program(request: &HelpRequest, args: &[String]) -> Option<String> {
         .env("TERM", "dumb")
         .env("NO_COLOR", "1")
         .env("PAGER", "cat")
+        .env("GIT_PAGER", "cat")
+        .env("GIT_MAN_VIEWER", "cat")
         .env("MANPAGER", "cat")
         .env("LC_ALL", "C");
     process::run(&mut command)

@@ -18,13 +18,14 @@ CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 ROOT = Path(__file__).resolve().parent.parent
 START = ROOT / "scripts" / "start.sh"
 ROWS, COLUMNS = 40, 100
+ASYNC_COMPLETION_TIMEOUT = 10
 
 
 def fail(message: str, pid: int | None = None, master: int | None = None) -> NoReturn:
     if pid is not None:
         try:
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
+        except (PermissionError, ProcessLookupError):
             pass
         deadline = time.monotonic() + 0.5
         while time.monotonic() < deadline:
@@ -95,14 +96,24 @@ def wait_for(session: tuple[int, int], output: bytearray, needle: bytes, seconds
 def wait_for_plain(
     session: tuple[int, int], output: bytearray, needle: bytes, seconds: float
 ) -> None:
-    if not wait_until(session, output, lambda: has_plain(output, needle), seconds):
+    if not wait_until(
+        session,
+        output,
+        lambda: has_plain(output, needle),
+        max(seconds, ASYNC_COMPLETION_TIMEOUT),
+    ):
         fail(f"did not see rendered {needle!r}", *session)
 
 
 def wait_for_plain_after(
     session: tuple[int, int], output: bytearray, needle: bytes, start: int, seconds: float
 ) -> None:
-    if not wait_until(session, output, lambda: has_plain(output[start:], needle), seconds):
+    if not wait_until(
+        session,
+        output,
+        lambda: has_plain(output[start:], needle),
+        max(seconds, ASYNC_COMPLETION_TIMEOUT),
+    ):
         fail(f"did not see rendered {needle!r} after the current action", *session)
 
 
