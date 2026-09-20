@@ -139,10 +139,9 @@ impl Terminal {
         }
         let mut remaining = libc::timeval {
             tv_sec: timeout.as_secs().try_into().unwrap_or(libc::time_t::MAX),
-            tv_usec: timeout
-                .subsec_micros()
-                .try_into()
-                .unwrap_or(libc::suseconds_t::MAX),
+            // `subsec_micros` is always below one million, within every platform's
+            // `suseconds_t` range even where that type is a 32-bit integer.
+            tv_usec: timeout.subsec_micros() as libc::suseconds_t,
         };
         // macOS ptys can report POLLNVAL for /dev/tty even while select remains valid.
         let result = unsafe {

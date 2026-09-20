@@ -81,8 +81,8 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
 
 def exercise_nested_help(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
-    send(session[0], b"npm install --ins")
-    wait_for_plain_after(session, output, b"--install-strategy", start, 3)
+    send(session[0], b"cargo build --prof")
+    wait_for_plain_after(session, output, b"--profile", start, 3)
     send(session[0], b"\x03")
     origins += 1
     wait_for_count(session, output, b"\x1b[s", origins)
