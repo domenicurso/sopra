@@ -102,6 +102,8 @@ fn structured_completion_can_leave_the_cursor_inside_a_pair() {
     .with_suffix("=()", 4);
     state.set_completion_source_for_test(vec![item]);
     state.handle_key(Key::Tab);
+    assert_eq!(state.buffer(), "export ar");
+    state.handle_key(Key::Tab);
     assert_eq!(state.buffer(), "export arr=()");
     assert_eq!(state.result(ExitReason::Accepted).cursor, 11);
 }
@@ -121,8 +123,41 @@ fn attached_value_completion_preserves_the_assignment_key() {
     state.set_completion_source_for_test(vec![item]);
 
     state.handle_key(Key::Tab);
+    assert_eq!(state.buffer(), "npm access set mfa=");
+    assert_eq!(state.selected, Some(0));
+    state.handle_key(Key::Tab);
 
     assert_eq!(state.buffer(), "npm access set mfa=automation");
+}
+
+#[test]
+fn tab_focuses_the_first_completion_before_accepting_it() {
+    let mut state = editor("git ");
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
+        "status",
+        "",
+        "status",
+        sopra_completion::CompletionKind::Subcommand,
+    )]);
+
+    state.handle_key(Key::Tab);
+
+    assert_eq!(state.buffer(), "git ");
+    assert_eq!(state.selected, Some(0));
+    assert_eq!(state.completion_hint(), "Tab to accept");
+}
+
+#[test]
+fn unselected_completion_prompts_tab_to_focus() {
+    let mut state = editor("git ");
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
+        "status",
+        "",
+        "status",
+        sopra_completion::CompletionKind::Subcommand,
+    )]);
+
+    assert_eq!(state.completion_hint(), "Tab to focus");
 }
 
 #[test]

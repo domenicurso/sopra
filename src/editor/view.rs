@@ -61,7 +61,11 @@ impl EditorState {
     }
 
     pub(crate) fn completion_hint(&self) -> &'static str {
-        "Tab to accept"
+        if self.selected.is_some() {
+            "Tab to accept"
+        } else {
+            "Tab to focus"
+        }
     }
 
     pub(crate) fn syntax(&self) -> &[crate::syntax::SyntaxSpan] {

@@ -10,9 +10,10 @@ impl EditorState {
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
             Key::Tab => {
                 if self.selected.is_none() {
-                    self.arm_first_completion();
-                }
-                if !self.apply_selected() {
+                    if !self.arm_first_completion() {
+                        return Some(self.result(ExitReason::DelegateTab));
+                    }
+                } else if !self.apply_selected() {
                     return Some(self.result(ExitReason::DelegateTab));
                 }
             }
