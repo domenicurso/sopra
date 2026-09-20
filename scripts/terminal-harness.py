@@ -38,7 +38,7 @@ def check_initial(session: tuple[int, int], output: bytearray) -> int:
     return output.count(b"\x1b[s")
 def exercise_command_completion(session: tuple[int, int], output: bytearray, origins: int) -> int:
     command_start = len(output)
-    send(session[0], b"ec")
+    send(session[0], b"ech")
     wait_for_plain(session, output, b"echo", 3)
     if b"\x1b[31me" not in output[command_start:]:
         fail("fake command was not rendered red", *session)
