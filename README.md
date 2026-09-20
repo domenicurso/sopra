@@ -100,6 +100,8 @@ bash -n scripts/*.sh
 python3 scripts/terminal-harness.py
 ```
 
+For multi-turn terminal behavior, use the separate persistent PTY and virtual-screen tool described in [docs/terminal-sessions.md](docs/terminal-sessions.md). It lets an agent send named keystrokes, read rendered screen snapshots, resize the session, and preserve shell state across turns without changing the CI harness.
+
 ## Contributing
 
 Keep changes focused on editor, Zsh integration, or completion behavior, and add a focused test for behavior changes. Run the full check sequence above before opening a pull request. Bug reports are most useful when they include the operating system, Zsh version, terminal, installation method, and a minimal reproduction.
