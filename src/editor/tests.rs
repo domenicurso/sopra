@@ -163,6 +163,35 @@ fn armed_completion_keeps_the_first_result_selected_after_refresh() {
 }
 
 #[test]
+fn completion_position_does_not_move_when_selection_changes() {
+    let mut state = editor("cd ./s");
+    let start = "cd ./s".find("./s").expect("path token");
+    let first = sopra_completion::CompletionItem::with_range(
+        "src/",
+        "src/",
+        None,
+        sopra_completion::CompletionKind::Directory,
+        state.buffer().len()..state.buffer().len(),
+        sopra_completion::CompletionSource::Filesystem,
+    );
+    let second = sopra_completion::CompletionItem::with_range(
+        "scripts/",
+        "scripts/",
+        None,
+        sopra_completion::CompletionKind::Directory,
+        start..state.buffer().len(),
+        sopra_completion::CompletionSource::Filesystem,
+    );
+    state.set_completion_source_for_test(vec![first, second]);
+    let unselected_width = state.completion_token_width();
+
+    assert!(state.arm_first_completion());
+    assert!(state.move_selection(1));
+
+    assert_eq!(state.completion_token_width(), unselected_width);
+}
+
+#[test]
 fn eof_deletes_a_character_and_delegates_on_an_empty_line() {
     let mut state = editor("git st");
     state.handle_key(Key::Home);

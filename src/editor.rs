@@ -164,6 +164,7 @@ impl EditorState {
         self.cursor = 0;
         self.selected = None;
         self.completion_armed = false;
+        self.overlay_visible = true;
         self.suggestion_scroll = 0;
         self.completion_source.clear();
         self.suggestions.clear();

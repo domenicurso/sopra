@@ -41,8 +41,7 @@ impl EditorState {
     pub(crate) fn completion_token_width(&self) -> u16 {
         let query = self
             .suggestions
-            .get(self.selected.unwrap_or_default())
-            .filter(|_| self.selected.is_some())
+            .first()
             .map_or_else(String::new, |item| self.completion_query_for(item));
         sopra_completion::ranking::completion_token_width(&self.suggestions, &query)
             .min(u16::MAX as usize) as u16
