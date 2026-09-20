@@ -102,7 +102,10 @@ def wait_for_plain(
         lambda: has_plain(output, needle),
         max(seconds, ASYNC_COMPLETION_TIMEOUT),
     ):
-        fail(f"did not see rendered {needle!r}", *session)
+        fail(
+            f"did not see rendered {needle!r}; output tail={plain(output)[-500:]!r}",
+            *session,
+        )
 
 
 def wait_for_plain_after(
@@ -114,7 +117,11 @@ def wait_for_plain_after(
         lambda: has_plain(output[start:], needle),
         max(seconds, ASYNC_COMPLETION_TIMEOUT),
     ):
-        fail(f"did not see rendered {needle!r} after the current action", *session)
+        fail(
+            f"did not see rendered {needle!r} after the current action; "
+            f"output tail={plain(output[start:])[-500:]!r}",
+            *session,
+        )
 
 
 def wait_for_count(session: tuple[int, int], output: bytearray, needle: bytes, count: int) -> None:
