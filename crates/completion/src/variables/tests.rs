@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{complete, is_declaration_context, valid_name};
+use super::{complete, is_declaration_context, valid_name, visible_shell_variable};
 use crate::Request;
 
 fn request(line: &str) -> Request {
@@ -29,6 +29,43 @@ fn variable_names_use_shell_identifier_rules() {
     assert!(valid_name("_private2"));
     assert!(!valid_name("2FAST"));
     assert!(!valid_name("WITH-DASH"));
+}
+
+#[test]
+fn public_sopra_runtime_settings_remain_visible() {
+    for name in [
+        "SOPRA_BIN",
+        "SOPRA_PROMPT",
+        "SOPRA_RPROMPT",
+        "SOPRA_TRANSIENT_PROMPT",
+    ] {
+        assert!(visible_shell_variable(name), "{name} should be visible");
+    }
+}
+
+#[test]
+fn internal_sopra_variables_are_hidden() {
+    for name in [
+        "SOPRA_ALIASES",
+        "SOPRA_FUNCTIONS",
+        "SOPRA_COMMANDS",
+        "SOPRA_VARIABLES",
+        "SOPRA_ARRAYS",
+        "SOPRA_REPOSITORY",
+        "SOPRA_REF",
+        "SOPRA_PREFIX",
+        "SOPRA_REPO_ROOT",
+        "_SOPRA_LOADED",
+        "_SOPRA_RESULT_ACTION",
+    ] {
+        assert!(!visible_shell_variable(name), "{name} should be hidden");
+    }
+}
+
+#[test]
+fn unrelated_shell_variables_remain_visible() {
+    assert!(visible_shell_variable("HOME"));
+    assert!(visible_shell_variable("_private"));
 }
 
 #[test]

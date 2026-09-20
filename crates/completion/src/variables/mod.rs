@@ -5,6 +5,13 @@ use std::{collections::BTreeSet, ops::Range};
 
 use super::{CompletionItem, CompletionKind, CompletionSource, Request};
 
+const PUBLIC_SOPRA_VARIABLES: &[&str] = &[
+    "SOPRA_BIN",
+    "SOPRA_PROMPT",
+    "SOPRA_RPROMPT",
+    "SOPRA_TRANSIENT_PROMPT",
+];
+
 pub(super) fn complete(
     request: &Request,
     replace: Range<usize>,
@@ -128,12 +135,12 @@ fn valid_name_char(character: char) -> bool {
 fn names() -> BTreeSet<String> {
     let mut names = std::env::vars_os()
         .filter_map(|(name, _)| name.into_string().ok())
-        .filter(|name| valid_name(name))
+        .filter(|name| valid_name(name) && visible_shell_variable(name))
         .collect::<BTreeSet<_>>();
     if let Ok(raw) = std::env::var("SOPRA_VARIABLES") {
         names.extend(
             raw.lines()
-                .filter(|name| valid_name(name))
+                .filter(|name| valid_name(name) && visible_shell_variable(name))
                 .map(str::to_string),
         );
     }
@@ -144,9 +151,16 @@ fn arrays() -> BTreeSet<String> {
     std::env::var("SOPRA_ARRAYS")
         .unwrap_or_default()
         .lines()
-        .filter(|name| valid_name(name))
+        .filter(|name| valid_name(name) && visible_shell_variable(name))
         .map(str::to_string)
         .collect()
+}
+
+fn visible_shell_variable(name: &str) -> bool {
+    if name.starts_with("_SOPRA_") {
+        return false;
+    }
+    !name.starts_with("SOPRA_") || PUBLIC_SOPRA_VARIABLES.contains(&name)
 }
 
 fn is_declaration_context(prefix: &str) -> bool {
