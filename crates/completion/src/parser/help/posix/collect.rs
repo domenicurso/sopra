@@ -168,7 +168,7 @@ fn merge_positional(
         return false;
     }
     let value = if option::placeholder(token) || optional || repeatable {
-        ValueSpec::named(name)
+        option::value_spec(name, optional)
     } else {
         ValueSpec::choice(name)
     };

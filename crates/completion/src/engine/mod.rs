@@ -88,18 +88,34 @@ impl LocalCompletion {
         key: String,
         path: Vec<String>,
         graph: Option<crate::graph::CommandGraph>,
-    ) {
+    ) -> Vec<(Vec<String>, bool)> {
         self.hydrated.insert(chunk_key(&key, &path));
         if path.is_empty() {
-            self.graphs.insert(key, graph);
-            return;
+            self.graphs.insert(key.clone(), graph);
+        } else {
+            let Some(Some(root)) = self.graphs.get_mut(&key) else {
+                return Vec::new();
+            };
+            if let Some(graph) = graph {
+                root.merge_at(&path, graph.root);
+            }
         }
-        let Some(Some(root)) = self.graphs.get_mut(&key) else {
-            return;
+        let Some(Some(root)) = self.graphs.get(&key) else {
+            return Vec::new();
         };
-        if let Some(graph) = graph {
-            root.merge_at(&path, graph.root);
-        }
+        let Some(node) = root.root.find(&path) else {
+            return Vec::new();
+        };
+        node.subcommands
+            .iter()
+            .map(|child| {
+                let mut child_path = path.clone();
+                child_path.push(child.name.clone());
+                let discover = child.subcommands.is_empty() && child.positionals.is_empty();
+                (child_path, discover)
+            })
+            .filter(|(child_path, _)| !self.hydrated.contains(&chunk_key(&key, child_path)))
+            .collect()
     }
 
     pub(super) fn needs_graph(&self, key: &str) -> bool {

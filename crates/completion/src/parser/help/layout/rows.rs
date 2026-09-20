@@ -38,7 +38,15 @@ pub(super) fn command_grid(line: &str) -> Option<Vec<String>> {
 
 pub(super) fn command_row(line: &str) -> bool {
     let first = line.split_whitespace().next().unwrap_or_default();
-    !first.starts_with('-') && (split_columns(line).is_some() || manual_reference(first))
+    !first.starts_with('-') && split_columns(line).is_some()
+}
+
+pub(super) fn command_table_row(line: &str) -> Option<(String, String)> {
+    if !line.starts_with([' ', '\t']) {
+        return None;
+    }
+    let (left, description) = split_columns(line)?;
+    is_command_signature(&left).then_some((left, description))
 }
 
 pub(super) fn split_columns(line: &str) -> Option<(String, String)> {
@@ -96,22 +104,23 @@ fn push_column(result: &mut Vec<String>, value: &str, start: usize, end: usize) 
     }
 }
 
-fn manual_reference(value: &str) -> bool {
-    let Some(start) = value.rfind('(') else {
-        return false;
-    };
-    value.ends_with(')')
-        && !value[..start].is_empty()
-        && value[start + 1..value.len() - 1]
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric())
+fn is_command_signature(value: &str) -> bool {
+    let tokens = value.split_whitespace().collect::<Vec<_>>();
+    !tokens.is_empty()
+        && tokens.len() <= 4
+        && tokens.iter().all(|token| {
+            let token = token.trim_matches(',');
+            !token.is_empty()
+                && !token.starts_with(['-', '<', '[', '{'])
+                && (command_name(token) || command_argument(token))
+        })
 }
 
 pub(super) fn unlabelled_row(line: &str, section: Section) -> Option<(String, String)> {
     let value = line.trim();
     let first = value.split_whitespace().next()?;
     let allowed = match section {
-        Section::Commands => value.split_whitespace().count() == 1 && !first.starts_with('-'),
+        Section::Commands => value.split_whitespace().count() == 1 && command_name(first),
         Section::Options => first.starts_with('-'),
         Section::Positionals => first.starts_with(['<', '[', '{']),
         Section::Other => false,
@@ -122,11 +131,50 @@ pub(super) fn unlabelled_row(line: &str, section: Section) -> Option<(String, St
 pub(super) fn row_allowed(section: Section, left: &str) -> bool {
     let first = left.split_whitespace().next().unwrap_or_default();
     match section {
-        Section::Commands => !first.starts_with('-'),
+        Section::Commands => command_invocation(left),
         Section::Options => first.starts_with('-') || left.contains(" -"),
         Section::Positionals => !first.starts_with('-'),
         Section::Other => false,
     }
+}
+
+fn command_name(value: &str) -> bool {
+    let value = value.trim_matches(',');
+    !value.is_empty()
+        && !value.starts_with('-')
+        && !value.ends_with(['.', ':', ';'])
+        && value
+            .chars()
+            .any(|character| character.is_ascii_alphanumeric())
+        && !value.contains(['(', ')'])
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_.:-/".contains(character))
+}
+
+fn command_invocation(value: &str) -> bool {
+    let tokens = value.split_whitespace().collect::<Vec<_>>();
+    tokens.len() <= 4
+        && !tokens.is_empty()
+        && command_name(tokens[0])
+        && tokens.iter().skip(1).all(|token| {
+            token.starts_with(['-', '<', '[', '{'])
+                || command_name(token)
+                || command_argument(token)
+        })
+}
+
+fn command_argument(value: &str) -> bool {
+    let value = value.trim_matches([',', '.']);
+    !value.is_empty()
+        && value
+            .chars()
+            .any(|character| character.is_ascii_alphanumeric())
+        && value.contains(['[', ']', '<', '>', '{', '}', '@', '|'])
+        && !value.contains(['(', ')'])
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || "_.:-/@|[]{}<>".contains(character)
+        })
 }
 
 pub(super) fn append_description(row: &mut Row, raw: &str) {

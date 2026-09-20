@@ -158,6 +158,10 @@ impl CommandNode {
         }) else {
             return false;
         };
+        let mut incoming = incoming;
+        if path.len() == 1 && incoming.description == self.description {
+            incoming.description = None;
+        }
         child.merge_at(&path[1..], incoming)
     }
 

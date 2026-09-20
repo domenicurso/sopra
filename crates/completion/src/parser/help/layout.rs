@@ -16,6 +16,7 @@ pub(crate) struct Row {
 }
 
 pub(crate) struct Document {
+    pub(crate) preamble: Vec<String>,
     pub(crate) usage: Vec<String>,
     pub(crate) commands: Vec<Row>,
     pub(crate) options: Vec<Row>,

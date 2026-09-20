@@ -9,23 +9,75 @@ pub(super) fn parse(row: &Row, root: &CommandNode, path: &[String]) -> Option<Co
         return None;
     }
     let parts = signature.split(',').map(str::trim).collect::<Vec<_>>();
-    let first = command_name(parts.first().copied()?, root.name.as_str(), path, described)?;
-    let mut command = CommandNode::named(&first);
+    let (command_names, argument_start) =
+        command_path(parts.first().copied()?, root.name.as_str(), path, described)?;
+    let mut command = CommandNode::named(&command_names[0]);
     command.aliases = parts
         .iter()
         .skip(1)
         .filter_map(|part| command_name(part, "", &[], described))
         .collect();
     command.aliases.extend(aliases(&description_text));
-    command.aliases.retain(|alias| alias != &first);
-    command.description = option::clean_description(&description_text);
+    command.aliases.retain(|alias| alias != &command_names[0]);
+    append_command_path(&mut command, &command_names[1..]);
+    let leaf = command_leaf(&mut command, &command_names[1..]);
+    leaf.description = option::clean_description(&description_text);
     let tokens = signature
         .split_whitespace()
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
-    append_arguments(&mut command, &tokens, 1);
-    append_children(&mut command, &row.children);
+    append_arguments(leaf, &tokens, argument_start);
+    append_children(leaf, &row.children);
     Some(command)
+}
+
+fn command_path(
+    value: &str,
+    root: &str,
+    path: &[String],
+    allow_colon: bool,
+) -> Option<(Vec<String>, usize)> {
+    let tokens = value.split_whitespace().collect::<Vec<_>>();
+    let start = command_prefix(&tokens, root, path)?;
+    let mut names = Vec::new();
+    for token in tokens.iter().skip(start) {
+        if option::placeholder(token) || token.starts_with('-') || *token == "..." {
+            break;
+        }
+        let name = token.trim_matches([',', '.', '<', '>', '[', ']', ':']);
+        if name.is_empty() || manual_reference(name) || name.ends_with(':') {
+            break;
+        }
+        if !allow_colon && value.trim().ends_with([':', '.']) {
+            break;
+        }
+        names.push(name.to_string());
+    }
+    let end = start + names.len();
+    (!names.is_empty()).then_some((names, end))
+}
+
+fn append_command_path(command: &mut CommandNode, names: &[String]) {
+    let Some(name) = names.first() else {
+        return;
+    };
+    command.subcommands.push(CommandNode::named(name));
+    append_command_path(
+        command.subcommands.last_mut().expect("just appended"),
+        &names[1..],
+    );
+}
+
+fn command_leaf<'a>(command: &'a mut CommandNode, names: &[String]) -> &'a mut CommandNode {
+    let Some(name) = names.first() else {
+        return command;
+    };
+    let child = command
+        .subcommands
+        .iter_mut()
+        .find(|child| child.name == *name)
+        .expect("command path was appended");
+    command_leaf(child, &names[1..])
 }
 
 fn append_children(command: &mut CommandNode, children: &[Row]) {
@@ -258,6 +310,14 @@ fn command_name(value: &str, root: &str, path: &[String], allow_colon: bool) -> 
 
 fn command_prefix(tokens: &[&str], root: &str, path: &[String]) -> Option<usize> {
     if tokens.first().is_none_or(|token| *token != root) {
+        let matches_path = tokens
+            .iter()
+            .zip(path.iter().map(String::as_str))
+            .all(|(actual, expected)| *actual == expected)
+            && tokens.len() > path.len();
+        if matches_path {
+            return Some(path.len());
+        }
         return Some(0);
     }
     let expected = std::iter::once(root).chain(path.iter().map(String::as_str));

@@ -1,5 +1,7 @@
 use std::{collections::HashSet, ops::Range};
 
+use neo_frizbee::{Config, Matcher};
+
 use crate::{
     CompletionItem, CompletionKind, CompletionSource, Request,
     filesystem::FilesystemEngine,
@@ -67,6 +69,9 @@ fn value_items(
     request: &Request,
 ) -> Vec<CompletionItem> {
     if !value.choices.is_empty() {
+        if let Some(items) = assignment_items(&value.choices, query, replace.clone()) {
+            return items;
+        }
         return value
             .choices
             .iter()
@@ -87,6 +92,65 @@ fn value_items(
         ValueKind::File | ValueKind::Directory => filesystem.complete(request, query),
         _ => Vec::new(),
     }
+}
+
+fn assignment_items(
+    choices: &[String],
+    query: &str,
+    replace: Range<usize>,
+) -> Option<Vec<CompletionItem>> {
+    let assignments = choices
+        .iter()
+        .map(|choice| choice.split_once('='))
+        .collect::<Option<Vec<_>>>()?;
+    if assignments.iter().any(|(key, _)| key.is_empty()) {
+        return None;
+    }
+
+    if let Some((key, value_query)) = query.split_once('=') {
+        let prefix = format!("{key}=");
+        let value_replace = replace.start + prefix.len()..replace.end;
+        return Some(
+            assignments
+                .iter()
+                .filter(|(candidate_key, value)| {
+                    *candidate_key == key && matches_query(value, value_query)
+                })
+                .map(|(_, value)| {
+                    CompletionItem::with_range(
+                        *value,
+                        *value,
+                        None,
+                        CompletionKind::Value,
+                        value_replace.clone(),
+                        CompletionSource::CommandIndex,
+                    )
+                })
+                .collect(),
+        );
+    }
+
+    let mut keys = assignments
+        .iter()
+        .map(|(key, _)| format!("{key}="))
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys.dedup();
+    Some(
+        keys.into_iter()
+            .filter(|key| matches_query(key, query))
+            .map(|key| {
+                CompletionItem::with_range(
+                    &key,
+                    &key,
+                    None,
+                    CompletionKind::Value,
+                    replace.clone(),
+                    CompletionSource::CommandIndex,
+                )
+            })
+            .collect(),
+    )
 }
 
 fn option_items(options: &[OptionSpec], replace: Range<usize>) -> Vec<CompletionItem> {
@@ -149,9 +213,9 @@ fn is_partial_subcommand(invocation: &Invocation) -> bool {
 
 fn matches_query(candidate: &str, query: &str) -> bool {
     query.is_empty()
-        || candidate
-            .to_ascii_lowercase()
-            .contains(&query.to_ascii_lowercase())
+        || Matcher::new(query, &Config::default())
+            .match_one_indices(candidate, 0)
+            .is_some()
 }
 
 #[cfg(test)]
@@ -159,7 +223,12 @@ mod tests {
     use std::path::PathBuf;
 
     use super::complete;
-    use crate::{Request, filesystem::FilesystemEngine, parser::Invocation};
+    use crate::{
+        Request,
+        filesystem::FilesystemEngine,
+        graph::{CommandNode, PositionalSpec, ValueSpec},
+        parser::Invocation,
+    };
 
     #[test]
     fn help_choices_reach_pending_option_completion() {
@@ -192,5 +261,148 @@ mod tests {
             .map(|item| item.insert.as_str())
             .collect::<Vec<_>>();
         assert_eq!(names, ["2021", "2024"]);
+    }
+
+    #[test]
+    fn active_positional_is_filtered_as_the_current_value() {
+        let mut value = ValueSpec::named("status");
+        value.choices.push("status".to_string());
+        let node = CommandNode {
+            positionals: vec![PositionalSpec {
+                name: "status".to_string(),
+                description: None,
+                value,
+                optional: false,
+                repeatable: false,
+            }],
+            ..CommandNode::named("tool")
+        };
+        let invocation = Invocation {
+            key: "tool".to_string(),
+            command: None,
+            program: "tool".to_string(),
+            args: vec!["s".to_string()],
+            active: "s".to_string(),
+            trailing_space: false,
+        };
+        let request = Request {
+            line: "tool s".to_string(),
+            cursor: 6,
+            context_line: String::new(),
+            context_cursor: 0,
+            replace: 5..6,
+            cwd: PathBuf::from("."),
+            generation: 0,
+            context_key: String::new(),
+        };
+        let mut filesystem = FilesystemEngine::new();
+        let items = complete(&node, &invocation, &request, &mut filesystem);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.display.as_str())
+                .collect::<Vec<_>>(),
+            ["status"]
+        );
+    }
+
+    #[test]
+    fn choice_queries_support_fuzzy_abbreviations() {
+        assert!(super::matches_query("read-write", "rw"));
+    }
+
+    #[test]
+    fn assignment_values_complete_keys_before_values() {
+        let mut value = ValueSpec::named("setting");
+        value.choices = ["status=private", "status=public", "mfa=none"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let node = CommandNode {
+            positionals: vec![PositionalSpec {
+                name: "setting".to_string(),
+                description: None,
+                value,
+                optional: false,
+                repeatable: false,
+            }],
+            ..CommandNode::named("tool")
+        };
+        let invocation = Invocation {
+            key: "tool".to_string(),
+            command: None,
+            program: "tool".to_string(),
+            args: Vec::new(),
+            active: String::new(),
+            trailing_space: true,
+        };
+        let request = Request {
+            line: "tool ".to_string(),
+            cursor: 5,
+            context_line: String::new(),
+            context_cursor: 0,
+            replace: 5..5,
+            cwd: PathBuf::from("."),
+            generation: 0,
+            context_key: String::new(),
+        };
+        let mut filesystem = FilesystemEngine::new();
+        let items = complete(&node, &invocation, &request, &mut filesystem);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.display.as_str())
+                .collect::<Vec<_>>(),
+            ["mfa=", "status="]
+        );
+    }
+
+    #[test]
+    fn assignment_values_replace_only_the_value_suffix() {
+        let mut value = ValueSpec::named("setting");
+        value.choices = ["status=private", "status=public"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let node = CommandNode {
+            positionals: vec![PositionalSpec {
+                name: "setting".to_string(),
+                description: None,
+                value,
+                optional: false,
+                repeatable: false,
+            }],
+            ..CommandNode::named("tool")
+        };
+        let invocation = Invocation {
+            key: "tool".to_string(),
+            command: None,
+            program: "tool".to_string(),
+            args: vec!["status=".to_string()],
+            active: "status=".to_string(),
+            trailing_space: false,
+        };
+        let request = Request {
+            line: "tool status=".to_string(),
+            cursor: 12,
+            context_line: String::new(),
+            context_cursor: 0,
+            replace: 5..12,
+            cwd: PathBuf::from("."),
+            generation: 0,
+            context_key: String::new(),
+        };
+        let mut filesystem = FilesystemEngine::new();
+        let items = complete(&node, &invocation, &request, &mut filesystem);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| (item.display.as_str(), item.insert.as_str(), &item.replace))
+                .collect::<Vec<_>>(),
+            [
+                ("private", "private", &(12..12)),
+                ("public", "public", &(12..12))
+            ]
+        );
     }
 }

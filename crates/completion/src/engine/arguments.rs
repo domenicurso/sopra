@@ -57,7 +57,13 @@ pub(super) fn next_positional<'a>(
 ) -> Option<&'a PositionalSpec> {
     let mut index = 0;
     let mut skip_value = false;
-    for argument in &invocation.args {
+    for (position, argument) in invocation.args.iter().enumerate() {
+        if !invocation.trailing_space
+            && position + 1 == invocation.args.len()
+            && argument == &invocation.active
+        {
+            break;
+        }
         if skip_value {
             skip_value = false;
             continue;

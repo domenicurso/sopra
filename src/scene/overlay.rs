@@ -15,9 +15,9 @@ use super::{
 pub(super) struct OverlayElement {
     pub(super) area: Rect,
     pub(super) items: Vec<CompletionItem>,
-    pub(super) selected: usize,
+    pub(super) selected: Option<usize>,
     pub(super) viewport_start: usize,
-    pub(super) query: String,
+    pub(super) item_queries: Vec<String>,
     pub(super) footer_hint: String,
     pub(super) footer: String,
     pub(super) connector_column: u16,
@@ -79,8 +79,10 @@ impl OverlayElement {
                 inner,
                 row,
                 item,
-                start + offset == self.selected,
-                &self.query,
+                self.selected == Some(start + offset),
+                self.item_queries
+                    .get(start + offset)
+                    .map_or("", String::as_str),
             );
         }
         if self.items.len() > visible {
@@ -100,8 +102,14 @@ impl OverlayElement {
     }
 }
 
-fn viewport_start(total: usize, selected: usize, requested: usize, visible: usize) -> usize {
+fn viewport_start(
+    total: usize,
+    selected: Option<usize>,
+    requested: usize,
+    visible: usize,
+) -> usize {
     let maximum = total.saturating_sub(visible);
+    let selected = selected.unwrap_or_default();
     requested
         .max(selected.saturating_add(1).saturating_sub(visible))
         .min(maximum)

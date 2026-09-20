@@ -22,7 +22,7 @@ impl EditorState {
         self.anchor
     }
 
-    pub(crate) fn selected_index(&self) -> usize {
+    pub(crate) fn selected_index(&self) -> Option<usize> {
         self.selected
     }
 
@@ -34,13 +34,17 @@ impl EditorState {
         self.overlay_visible
     }
 
-    pub(crate) fn query(&self) -> &str {
-        let (start, end) = self.current_token_range();
-        &self.buffer[start..end]
+    pub(crate) fn completion_query_for(&self, item: &CompletionItem) -> String {
+        sopra_completion::ranking::replacement_query(&self.buffer, self.cursor, item).to_string()
     }
 
     pub(crate) fn completion_token_width(&self) -> u16 {
-        sopra_completion::ranking::completion_token_width(&self.suggestions, self.query())
+        let query = self
+            .suggestions
+            .get(self.selected.unwrap_or_default())
+            .filter(|_| self.selected.is_some())
+            .map_or_else(String::new, |item| self.completion_query_for(item));
+        sopra_completion::ranking::completion_token_width(&self.suggestions, &query)
             .min(u16::MAX as usize) as u16
     }
 
@@ -51,7 +55,7 @@ impl EditorState {
     pub(crate) fn completion_footer(&self) -> String {
         format!(
             "{}/{}; {}",
-            self.selected + 1,
+            self.selected.map_or(0, |index| index + 1),
             self.suggestions.len(),
             completion_elapsed(self.completion_elapsed)
         )

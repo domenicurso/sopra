@@ -70,26 +70,28 @@ impl EditorState {
         if count == 0 || !self.overlay_visible {
             return false;
         }
-        self.selected = if direction < 0 {
-            self.selected
-                .checked_sub(1)
-                .unwrap_or(count.saturating_sub(1))
-        } else {
-            (self.selected + 1) % count.max(1)
+        let Some(selected) = self.selected else {
+            return false;
         };
+        self.selected = Some(if direction < 0 {
+            selected.checked_sub(1).unwrap_or(count.saturating_sub(1))
+        } else {
+            (selected + 1) % count.max(1)
+        });
         self.update_suggestion_scroll();
         true
     }
 
     fn update_suggestion_scroll(&mut self) {
+        let selected = self.selected.unwrap_or_default();
         let visible = self.suggestions.len().clamp(1, MAX_OVERLAY_ITEMS);
         let max_start = self.suggestions.len().saturating_sub(visible);
-        if self.selected >= self.suggestion_scroll + visible.saturating_sub(1) {
-            let desired = self.selected.saturating_sub(visible.saturating_sub(2));
+        if selected >= self.suggestion_scroll + visible.saturating_sub(1) {
+            let desired = selected.saturating_sub(visible.saturating_sub(2));
             self.suggestion_scroll = self.suggestion_scroll.max(desired).min(max_start);
-        } else if self.selected <= self.suggestion_scroll {
-            self.suggestion_scroll = self.suggestion_scroll.min(self.selected.saturating_sub(1));
-        }
+        } else if selected <= self.suggestion_scroll {
+            self.suggestion_scroll = self.suggestion_scroll.min(selected.saturating_sub(1));
+        };
     }
 
     pub(super) fn current_token_range(&self) -> (usize, usize) {

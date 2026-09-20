@@ -44,6 +44,7 @@ pub(crate) struct RunResult {
 pub(crate) struct EditorConfig {
     pub(crate) buffer: String,
     pub(crate) cursor_chars: usize,
+    pub(crate) arm_completion: bool,
     pub(crate) prompt: String,
     pub(crate) anchor: CursorPosition,
     pub(crate) size: TerminalSize,
@@ -56,7 +57,8 @@ pub(crate) struct EditorState {
     cursor: usize,
     prompt: String,
     anchor: CursorPosition,
-    selected: usize,
+    selected: Option<usize>,
+    completion_armed: bool,
     suggestion_scroll: usize,
     overlay_visible: bool,
     completion_source: Vec<CompletionItem>,
@@ -82,7 +84,8 @@ impl EditorState {
             cursor,
             prompt: config.prompt,
             anchor: config.anchor,
-            selected: 0,
+            selected: config.arm_completion.then_some(0),
+            completion_armed: config.arm_completion,
             suggestion_scroll: 0,
             overlay_visible: true,
             completion_source: Vec::new(),
@@ -159,7 +162,8 @@ impl EditorState {
         terminal.flush()?;
         self.buffer.clear();
         self.cursor = 0;
-        self.selected = 0;
+        self.selected = None;
+        self.completion_armed = false;
         self.suggestion_scroll = 0;
         self.completion_source.clear();
         self.suggestions.clear();

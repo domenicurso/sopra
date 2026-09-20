@@ -9,6 +9,7 @@ use super::{
 
 pub(super) fn extract(text: &str) -> Document {
     let mut document = Document {
+        preamble: Vec::new(),
         usage: Vec::new(),
         commands: Vec::new(),
         options: Vec::new(),
@@ -20,20 +21,26 @@ pub(super) fn extract(text: &str) -> Document {
     let mut usage_seen = false;
     let mut tree_state = tree::State::new();
     let mut command_row_seen = false;
+    let mut command_group = false;
+    let mut preamble = true;
     for raw in text.lines().map(str::trim_end) {
         if let Some(rest) = sections::usage_line(raw) {
+            preamble = false;
             usage_open = true;
             usage_header_empty = rest.trim().is_empty();
             usage_seen = !rest.trim().is_empty();
+            command_group = false;
             append_usage(&mut document.usage, rest, true);
             continue;
         }
         if let Some(next) = sections::section_header(raw) {
+            preamble = false;
             usage_open = false;
             usage_header_empty = false;
             usage_seen = false;
             tree_state.reset();
             command_row_seen = false;
+            command_group = sections::is_command_group_header(raw);
             section = next;
             continue;
         }
@@ -61,10 +68,14 @@ pub(super) fn extract(text: &str) -> Document {
         if raw.trim().is_empty() {
             continue;
         }
+        if preamble {
+            document.preamble.push(raw.trim().to_string());
+        }
         append_row(
             &mut document,
             &mut tree_state,
             &mut command_row_seen,
+            command_group,
             section,
             raw,
         );
@@ -76,10 +87,29 @@ fn append_row(
     document: &mut Document,
     tree_state: &mut tree::State,
     command_row_seen: &mut bool,
+    command_group: bool,
     section: Section,
     raw: &str,
 ) -> bool {
     if section == Section::Commands && tree_state.append(document, raw) {
+        return true;
+    }
+    if section == Section::Other
+        && command_group
+        && let Some((left, description)) = rows::command_table_row(raw)
+    {
+        tree_state.reset();
+        push_row(document, Section::Commands, raw, left, description);
+        *command_row_seen = true;
+        return true;
+    }
+    if section == Section::Other
+        && command_group
+        && *command_row_seen
+        && let Some(row) = document.commands.last_mut()
+        && indentation(raw) > row.indent
+    {
+        append_description(row, raw);
         return true;
     }
     if section == Section::Commands

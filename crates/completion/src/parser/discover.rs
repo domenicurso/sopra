@@ -65,7 +65,6 @@ impl HelpRequest {
 
 fn run(requests: Receiver<HelpRequest>, responses: Sender<HelpResponse>) {
     while let Ok(request) = requests.recv() {
-        let request = drain_latest(request, &requests);
         let started = Instant::now();
         let graph = resolve_chunk(&request);
         if responses
@@ -82,13 +81,6 @@ fn run(requests: Receiver<HelpRequest>, responses: Sender<HelpResponse>) {
             break;
         }
     }
-}
-
-fn drain_latest(mut request: HelpRequest, requests: &Receiver<HelpRequest>) -> HelpRequest {
-    while let Ok(next) = requests.try_recv() {
-        request = next;
-    }
-    request
 }
 
 pub(super) fn resolve(request: &HelpRequest) -> Option<CommandGraph> {
@@ -137,7 +129,7 @@ fn probe_sources(request: &HelpRequest) -> Vec<Source> {
 }
 
 fn help_arguments(request: &HelpRequest) -> Vec<Vec<String>> {
-    ["--help", "-h", "help"]
+    ["--help", "-h"]
         .iter()
         .map(|probe| {
             let mut args = request.args.clone();
@@ -201,7 +193,7 @@ fn run_program(request: &HelpRequest, args: &[String]) -> Option<String> {
         .env("NO_COLOR", "1")
         .env("PAGER", "cat")
         .env("GIT_PAGER", "cat")
-        .env("GIT_MAN_VIEWER", "cat")
+        .env_remove("GIT_MAN_VIEWER")
         .env("MANPAGER", "cat")
         .env("LC_ALL", "C");
     process::run(&mut command)

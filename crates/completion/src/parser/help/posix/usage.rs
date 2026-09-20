@@ -90,13 +90,24 @@ fn literal_command(token: &str) -> bool {
 fn tokenize(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
+    let mut angle_depth = 0_usize;
+    let mut brace_depth = 0_usize;
     for character in text.chars() {
         if character.is_whitespace() {
             push_token(&mut tokens, &mut current);
-        } else if matches!(character, '[' | ']' | '(' | ')' | '|') {
+        } else if matches!(character, '[' | ']' | '(' | ')')
+            || character == '|' && angle_depth == 0 && brace_depth == 0
+        {
             push_token(&mut tokens, &mut current);
             tokens.push(character.to_string());
         } else {
+            match character {
+                '<' => angle_depth += 1,
+                '>' => angle_depth = angle_depth.saturating_sub(1),
+                '{' => brace_depth += 1,
+                '}' => brace_depth = brace_depth.saturating_sub(1),
+                _ => {}
+            }
             current.push(character);
         }
     }
@@ -152,7 +163,34 @@ pub(super) fn parse_alternatives(
             .expect("alternative exists")
             .push(node);
     }
+    expand_assignment_choices(&mut alternatives);
     alternatives
+}
+
+fn expand_assignment_choices(alternatives: &mut [Vec<Synopsis>]) {
+    let Some(prefix) = alternatives
+        .iter()
+        .find_map(|alternative| assignment_prefix(alternative))
+    else {
+        return;
+    };
+    for alternative in alternatives {
+        let Some(Synopsis::Token(token)) = alternative.first_mut() else {
+            continue;
+        };
+        if !token.contains('=') && !token.starts_with('-') {
+            *token = format!("{prefix}{token}");
+        }
+    }
+}
+
+fn assignment_prefix(alternative: &[Synopsis]) -> Option<String> {
+    let Synopsis::Token(token) = alternative.first()? else {
+        return None;
+    };
+    token
+        .split_once('=')
+        .map(|(prefix, _)| format!("{prefix}="))
 }
 
 fn parse_node(tokens: &[String], index: &mut usize) -> Option<Synopsis> {

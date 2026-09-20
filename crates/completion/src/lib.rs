@@ -34,7 +34,7 @@ pub fn dump_command_chunk(command: &str, path: &[String], cwd: &Path) -> Result<
 }
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     ops::Range,
     path::Path,
     sync::mpsc::{self, Receiver, Sender},
@@ -47,6 +47,9 @@ pub struct CompletionEngine {
     help_responses: Receiver<parser::HelpResponse>,
     help_pending: HashSet<String>,
     help_latest: HashMap<String, Request>,
+    help_prefetch: VecDeque<parser::HelpRequest>,
+    prefetch_keys: HashSet<String>,
+    prefetch_inflight: Option<String>,
     generation: u64,
     local: engine::LocalCompletion,
 }
@@ -62,6 +65,9 @@ impl CompletionEngine {
             help_responses: help_worker.responses,
             help_pending: HashSet::new(),
             help_latest: HashMap::new(),
+            help_prefetch: VecDeque::new(),
+            prefetch_keys: HashSet::new(),
+            prefetch_inflight: None,
             generation: 0,
             local: engine::LocalCompletion::new(),
         })
@@ -101,14 +107,28 @@ impl CompletionEngine {
                 elapsed,
             } = response;
             self.help_pending.remove(&id);
+            if self.prefetch_inflight.as_deref() == Some(id.as_str()) {
+                self.prefetch_inflight = None;
+            }
             let request = self.help_latest.remove(&id).unwrap_or(response_request);
-            self.local.cache_graph(key, path, graph);
+            let child_paths = self.local.cache_graph(key, path, graph);
+            if let Some(invocation) = parser::invocation(&request) {
+                for (path, discover) in child_paths {
+                    self.queue_prefetch(parser::request_for_path(
+                        &request,
+                        &invocation,
+                        path,
+                        discover,
+                    ));
+                }
+            }
             let result = self.local.complete(&request);
             if let Some(help) = result.help {
                 self.enqueue_help(help);
             }
             let items = result.items;
             responses.push(self.local_response(&request, items, elapsed));
+            self.pump_prefetch();
         }
         while let Ok(response) = self.responses.try_recv() {
             responses.push(response);

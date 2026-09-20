@@ -37,13 +37,44 @@ fn context_token(token: &str) -> &str {
 }
 
 pub fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {
+    rank_with(items, |_| query.to_string(), query)
+}
+
+pub fn rank_for_buffer(
+    items: &[CompletionItem],
+    buffer: &str,
+    cursor: usize,
+) -> Vec<CompletionItem> {
+    let cursor = cursor.min(buffer.len());
+    let (token_start, _) = token_range(buffer, cursor);
+    let query = buffer.get(token_start..cursor).unwrap_or_default();
+    rank_with(
+        items,
+        |item| replacement_query(buffer, cursor, item).to_string(),
+        query,
+    )
+}
+
+pub fn replacement_query<'a>(buffer: &'a str, cursor: usize, item: &CompletionItem) -> &'a str {
+    let cursor = cursor.min(buffer.len());
+    let (token_start, _) = token_range(buffer, cursor);
+    let start = item.replace.start.clamp(token_start, cursor);
+    buffer.get(start..cursor).unwrap_or_default()
+}
+
+fn rank_with(
+    items: &[CompletionItem],
+    mut query_for: impl FnMut(&CompletionItem) -> String,
+    compact_query: &str,
+) -> Vec<CompletionItem> {
     let config = Config::default();
     let mut ranked = Vec::new();
     for (index, item) in items.iter().enumerate() {
+        let query = query_for(item);
         let matched = if matches!(item.kind, CompletionKind::File | CompletionKind::Directory) {
-            path::match_item(item, query, &config)
+            path::match_item(item, &query, &config)
         } else {
-            match_generic(item, query, &config)
+            match_generic(item, &query, &config)
         };
         let Some((score, indices)) = matched else {
             continue;
@@ -69,7 +100,7 @@ pub fn rank(items: &[CompletionItem], query: &str) -> Vec<CompletionItem> {
         .into_iter()
         .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
-    path::compact_labels(&mut ranked, query);
+    path::compact_labels(&mut ranked, compact_query);
     ranked
 }
 
@@ -123,7 +154,7 @@ pub fn byte_offset(text: &str, char_index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{broad_context, rank, token_range};
-    use crate::{CompletionItem, CompletionKind};
+    use crate::{CompletionItem, CompletionKind, CompletionSource};
 
     #[test]
     fn broad_context_removes_only_the_active_token() {
@@ -193,6 +224,24 @@ mod tests {
         let ranked = rank(&items, "--vrsn");
         assert_eq!(ranked[0].display, "--version");
     }
+
+    #[test]
+    fn ranking_uses_the_replacement_suffix_for_attached_values() {
+        let item = CompletionItem::with_range(
+            "private",
+            "private",
+            None,
+            CompletionKind::Value,
+            12..12,
+            CompletionSource::CommandIndex,
+        );
+        let ranked = super::rank_for_buffer(&[item], "tool status=", 12);
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].display, "private");
+        assert_eq!(super::replacement_query("tool status=", 12, &ranked[0]), "");
+    }
+
     #[test]
     fn token_range_stops_at_shell_operators() {
         assert_eq!(token_range("echo|ec", 7), (5, 7));

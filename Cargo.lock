@@ -858,6 +858,7 @@ name = "sopra-completion"
 version = "0.1.0"
 dependencies = [
  "brush-parser",
+ "libc",
  "neo_frizbee",
  "notify",
  "unicode-width 0.2.0",

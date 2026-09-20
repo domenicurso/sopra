@@ -184,3 +184,17 @@ fn item_style(kind: CompletionKind, selected: bool) -> Style {
         style
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::fuzzy_positions;
+
+    #[test]
+    fn empty_queries_do_not_highlight_completion_labels() {
+        assert!(
+            fuzzy_positions("private", "")
+                .iter()
+                .all(|matched| !matched)
+        );
+    }
+}

@@ -251,6 +251,13 @@ fn description_value(description: &str) -> Option<ValueSpec> {
 }
 
 fn choices(text: &str) -> Vec<String> {
+    let inline = text.trim().trim_matches(['<', '>', '[', ']', '{', '}']);
+    if inline.contains(['|', ',']) {
+        let values = parse_choices(inline);
+        if values.len() > 1 && values.iter().all(|value| simple_choice(value)) {
+            return values;
+        }
+    }
     let lower = text.to_ascii_lowercase();
     for label in ["[choices:", "[possible values:"] {
         let Some(start) = lower.find(label) else {

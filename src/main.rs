@@ -16,6 +16,7 @@ use input::{CursorPosition, Terminal};
 struct Args {
     buffer: String,
     cursor: usize,
+    arm_completion: bool,
     prompt: String,
     cwd: PathBuf,
 }
@@ -24,6 +25,7 @@ impl Args {
     fn parse() -> Result<Self, String> {
         let mut buffer = String::new();
         let mut cursor = 0;
+        let mut arm_completion = false;
         let mut prompt = "$ ".to_string();
         let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut arguments = env::args_os().skip(1);
@@ -36,6 +38,7 @@ impl Args {
                         .parse()
                         .map_err(|_| "--cursor must be a character index".to_string())?;
                 }
+                "--arm-completion" => arm_completion = true,
                 "--prompt" => prompt = next_value(&mut arguments, "--prompt")?,
                 "--cwd" => cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?),
                 "--help" | "-h" => {
@@ -49,6 +52,7 @@ impl Args {
         Ok(Self {
             buffer,
             cursor,
+            arm_completion,
             prompt,
             cwd,
         })
@@ -65,6 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut editor = EditorState::new(EditorConfig {
         buffer: args.buffer,
         cursor_chars: args.cursor,
+        arm_completion: args.arm_completion,
         prompt: args.prompt,
         anchor,
         size,

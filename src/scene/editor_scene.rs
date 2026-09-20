@@ -18,12 +18,16 @@ use super::{
 
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
     let items = editor.visible_items().to_vec();
+    let item_queries: Vec<String> = items
+        .iter()
+        .map(|item| editor.completion_query_for(item))
+        .collect();
     let prompt = colored_prompt(editor.prompt());
     let mut layout = EditorLayout::new(editor, size, crate::prompt::width(&prompt));
     layout.footer = editor.completion_footer();
     layout.footer_hint = editor.completion_hint().to_string();
     layout.overlay_width = overlay_width(&items, &layout.footer_hint, &layout.footer, size.columns);
-    let elements = editor_elements(editor, &layout, now, items, prompt);
+    let elements = editor_elements(editor, &layout, now, items, item_queries, prompt);
     let cursor_cells = (0..editor.cursor_cell_width())
         .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
         .filter(|(column, _)| *column < size.columns)
@@ -97,6 +101,7 @@ fn editor_elements(
     layout: &EditorLayout,
     now: Instant,
     items: Vec<CompletionItem>,
+    item_queries: Vec<String>,
     prompt: Vec<crate::prompt::PromptSpan>,
 ) -> Vec<Box<dyn Element>> {
     let mut elements: Vec<Box<dyn Element>> = vec![
@@ -123,7 +128,7 @@ fn editor_elements(
             items,
             selected: editor.selected_index(),
             viewport_start: editor.suggestion_viewport_start(),
-            query: editor.query().to_string(),
+            item_queries,
             footer_hint: layout.footer_hint.clone(),
             footer: layout.footer.clone(),
             connector_column: layout.connector_column(),

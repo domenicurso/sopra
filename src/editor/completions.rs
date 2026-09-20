@@ -19,8 +19,7 @@ impl EditorState {
             self.completion_key = key;
             self.completion_source.clear();
             self.suggestions.clear();
-            self.selected = 0;
-            self.suggestion_scroll = 0;
+            self.reset_selection();
             self.completion_elapsed = std::time::Duration::ZERO;
         }
         if let Some(completion) = self.completion.as_mut() {
@@ -61,23 +60,30 @@ impl EditorState {
     }
 
     pub(super) fn refresh_suggestions(&mut self) {
-        let query = self.query().to_string();
-        self.suggestions = ranking::rank(&self.completion_source, &query);
+        self.suggestions =
+            ranking::rank_for_buffer(&self.completion_source, &self.buffer, self.cursor);
         if self.suggestions.is_empty() {
-            self.selected = 0;
+            self.selected = None;
             self.suggestion_scroll = 0;
-        } else {
-            self.selected = self.selected.min(self.suggestions.len() - 1);
+        } else if self.completion_armed {
+            self.selected = Some(
+                self.selected
+                    .unwrap_or_default()
+                    .min(self.suggestions.len().saturating_sub(1)),
+            );
             self.suggestion_scroll = self
                 .suggestion_scroll
                 .min(self.suggestions.len().saturating_sub(1));
+        } else {
+            self.selected = None;
+            self.suggestion_scroll = 0;
         }
     }
 
     fn clear_completion_state(&mut self) {
         self.completion_source.clear();
         self.suggestions.clear();
-        self.selected = 0;
+        self.selected = None;
         self.suggestion_scroll = 0;
         self.completion_elapsed = std::time::Duration::ZERO;
     }

@@ -9,6 +9,9 @@ impl EditorState {
             Key::Character(character) => self.insert_character(character),
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
             Key::Tab => {
+                if self.selected.is_none() {
+                    self.arm_first_completion();
+                }
                 if !self.apply_selected() {
                     return Some(self.result(ExitReason::DelegateTab));
                 }
@@ -37,7 +40,10 @@ impl EditorState {
             }
             Key::Clear => self.toggle_overlay(),
             Key::Cancel => return Some(self.result(ExitReason::Interrupted)),
-            Key::Escape => self.hide_overlay(),
+            Key::Escape => {
+                self.hide_overlay();
+                self.disarm_completion();
+            }
             Key::Eof => {
                 if self.buffer.is_empty() {
                     return Some(self.result(ExitReason::DelegateEof));

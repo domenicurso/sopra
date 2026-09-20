@@ -13,6 +13,7 @@ fn editor(buffer: &str, size: TerminalSize) -> EditorState {
     EditorState::new(EditorConfig {
         buffer: buffer.to_string(),
         cursor_chars: buffer.chars().count(),
+        arm_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
@@ -76,7 +77,7 @@ fn overlay_cells_keep_the_terminal_background() {
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.buffer[(2, 2)].symbol(), "a");
     assert_eq!(frame.buffer[(2, 2)].bg, Color::Reset);
-    assert!(frame.buffer[(2, 2)].modifier.contains(Modifier::REVERSED));
+    assert!(!frame.buffer[(2, 2)].modifier.contains(Modifier::REVERSED));
     assert_eq!(frame.buffer[(9, 2)].symbol(), "c");
 }
 
@@ -117,6 +118,7 @@ fn transient_scene_does_not_keep_cursor_pair_highlighting() {
     let editor = EditorState::new(EditorConfig {
         buffer: "echo \"hi\"".to_string(),
         cursor_chars: 6,
+        arm_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
@@ -139,6 +141,7 @@ fn cursor_repaint_covers_a_wide_grapheme() {
     let editor = EditorState::new(EditorConfig {
         buffer: "💡".to_string(),
         cursor_chars: 0,
+        arm_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
@@ -155,6 +158,7 @@ fn cursor_repaints_the_character_under_it() {
     let editor = EditorState::new(EditorConfig {
         buffer: "echo".to_string(),
         cursor_chars: 1,
+        arm_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,

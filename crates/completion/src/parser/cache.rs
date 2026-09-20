@@ -10,7 +10,7 @@ use super::discover::HelpRequest;
 
 const CACHE_LIMIT: u64 = 1_000_000;
 const CACHE_MARKER: &str = "\n\x1eSOPRA_COMPLETION_SOURCE\x1e\n";
-const CACHE_VERSION: &str = "SOPRA_COMPLETION_CACHE_V4";
+const CACHE_VERSION: &str = "SOPRA_COMPLETION_CACHE_V6";
 
 #[derive(Debug)]
 pub(super) enum Source {

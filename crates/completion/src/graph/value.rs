@@ -20,10 +20,13 @@ impl ValueSpec {
     }
 
     pub(super) fn merge(mut self, incoming: Self) -> Self {
+        let names_match = self.name.is_empty() || self.name == incoming.name;
         if self.name.is_empty() {
             self.name = incoming.name;
         }
-        if self.kind == ValueKind::Text {
+        if !names_match {
+            self.kind = ValueKind::Text;
+        } else if self.kind == ValueKind::Text {
             self.kind = incoming.kind;
         }
         if let (Some(current), Some(incoming)) = (&self.literal, &incoming.literal)
@@ -61,4 +64,16 @@ fn merge_choices(left: &[String], right: &[String]) -> Vec<String> {
         }
     }
     merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ValueKind, ValueSpec};
+
+    #[test]
+    fn alternatives_with_different_names_do_not_force_file_completion() {
+        let value = ValueSpec::named("path").merge(ValueSpec::named("commit"));
+
+        assert_eq!(value.kind, ValueKind::Text);
+    }
 }

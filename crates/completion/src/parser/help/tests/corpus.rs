@@ -64,6 +64,48 @@ fn ignores_colon_terminated_command_categories() {
 }
 
 #[test]
+fn parses_grouped_command_tables_and_nested_command_paths() {
+    let graph = parse(
+        "Manage dependencies:\n      add                  Install a package\n   i, install              Install all dependencies\n\nManage the store:\n      store add            Add a package to the store\n      store path           Print the store path\n",
+        "pnpm",
+    );
+    let install = graph
+        .root
+        .subcommands
+        .iter()
+        .find(|command| command.name == "i")
+        .expect("install command");
+    assert_eq!(install.aliases, ["install"]);
+    let store = graph
+        .root
+        .subcommands
+        .iter()
+        .find(|command| command.name == "store")
+        .expect("store command");
+    assert!(
+        store
+            .subcommands
+            .iter()
+            .any(|command| command.name == "add")
+    );
+    assert!(
+        store
+            .subcommands
+            .iter()
+            .any(|command| command.name == "path")
+    );
+}
+
+#[test]
+fn does_not_turn_manual_references_into_commands() {
+    let graph = parse(
+        "SEE ALSO:\n  git-add(1) Add file contents to the index\n  git-diff(1) Show changes between commits\n",
+        "git",
+    );
+    assert!(graph.root.subcommands.is_empty());
+}
+
+#[test]
 fn keeps_command_examples_out_of_descriptions() {
     let graph = parse(
         "Commands:\n  add       react                 Add a dependency to package.json\n  link      [<package>]          Register or link a local package\n",
@@ -139,7 +181,7 @@ fn usage_lines_build_nested_subcommands_for_recursive_help() {
 #[test]
 fn keeps_nested_usage_arguments_out_of_the_parent_node() {
     let graph = parse_for(
-        "Usage:\nnpm access list packages [<user>] [<package>]\nnpm access get status [<package>]\nnpm access set status=public|private [<package>]\nnpm access grant <read-only|read-write> <scope:team> [<package>]\n",
+        "Usage:\nnpm access list packages [<user>] [<package>]\nnpm access get status [<package>]\nnpm access set status=public|private [<package>]\nnpm access set mfa=none|publish|automation [<package>]\nnpm access grant <read-only|read-write> <scope:team> [<package>]\n",
         "npm",
         &["access".to_string()],
     );
@@ -154,8 +196,66 @@ fn keeps_nested_usage_arguments_out_of_the_parent_node() {
             && command.positionals[0]
                 .value
                 .choices
-                .contains(&"status=public".to_string())
+                .contains(&"status=private".to_string())
+            && command.positionals[0]
+                .value
+                .choices
+                .contains(&"mfa=publish".to_string())
     }));
+    let grant = graph
+        .root
+        .subcommands
+        .iter()
+        .find(|command| command.name == "grant")
+        .expect("grant command");
+    assert_eq!(
+        grant.positionals[0].value.choices,
+        ["read-only", "read-write"]
+    );
+}
+
+#[test]
+fn promotes_preamble_summaries_to_nested_command_descriptions() {
+    let graph = parse_for(
+        "Set access level on published packages\n\nUsage:\nnpm access get status [<package>]\n\nOptions:\n[--json]\n",
+        "npm",
+        &["access".to_string()],
+    );
+    assert_eq!(
+        graph.root.description.as_deref(),
+        Some("Set access level on published packages")
+    );
+}
+
+#[test]
+fn ignores_invocation_lines_in_help_preambles() {
+    let graph = parse_for(
+        "tool <command>\n\nUsage:\ntool run\n\nOptions:\n  -h, --help  show help\n",
+        "tool",
+        &[],
+    );
+    assert!(graph.root.description.is_none());
+}
+
+#[test]
+fn ignores_diagnostic_lines_in_help_preambles() {
+    let graph = parse(
+        "warning: pager configuration is unavailable\nUseful command summary\n\nUsage:\ntool run\n",
+        "tool",
+    );
+    assert_eq!(
+        graph.root.description.as_deref(),
+        Some("Useful command summary")
+    );
+}
+
+#[test]
+fn ignores_completion_script_preambles() {
+    let graph = parse(
+        "# npm command completion script\nif type complete &>/dev/null; then\ncomplete -F _npm npm\n",
+        "npm",
+    );
+    assert!(graph.root.description.is_none());
 }
 
 #[test]

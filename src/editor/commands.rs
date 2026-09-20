@@ -19,14 +19,26 @@ impl EditorState {
     }
 
     pub(super) fn apply_selected(&mut self) -> bool {
-        let Some(item) = self.suggestions.get(self.selected).cloned() else {
+        let Some(selected) = self.selected else {
             return false;
         };
-        let (start, end) = if item.replace.start < item.replace.end {
-            (item.replace.start, item.replace.end)
-        } else {
-            self.current_token_range()
+        let Some(item) = self.suggestions.get(selected).cloned() else {
+            return false;
         };
+        let replace = item.replace;
+        let explicit_range = replace.start != 0 || replace.end != 0;
+        let (start, end) =
+            if explicit_range && replace.start <= replace.end && replace.end <= self.buffer.len() {
+                if self.buffer.is_char_boundary(replace.start)
+                    && self.buffer.is_char_boundary(replace.end)
+                {
+                    (replace.start, replace.end)
+                } else {
+                    self.current_token_range()
+                }
+            } else {
+                self.current_token_range()
+            };
         let inserted = format!("{}{}", item.insert, item.suffix);
         self.buffer.replace_range(start..end, &inserted);
         self.cursor = start
@@ -111,7 +123,23 @@ impl EditorState {
     }
 
     pub(super) fn reset_selection(&mut self) {
-        self.selected = 0;
+        self.selected = self.completion_armed.then_some(0);
+        self.suggestion_scroll = 0;
+    }
+
+    pub(super) fn arm_first_completion(&mut self) -> bool {
+        if self.suggestions.is_empty() || !self.overlay_visible {
+            return false;
+        }
+        self.completion_armed = true;
+        self.selected = Some(0);
+        self.suggestion_scroll = 0;
+        true
+    }
+
+    pub(super) fn disarm_completion(&mut self) {
+        self.completion_armed = false;
+        self.selected = None;
         self.suggestion_scroll = 0;
     }
 

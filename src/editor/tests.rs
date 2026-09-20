@@ -5,6 +5,7 @@ fn editor(buffer: &str) -> EditorState {
     EditorState::new(EditorConfig {
         buffer: buffer.to_string(),
         cursor_chars: buffer.chars().count(),
+        arm_completion: false,
         prompt: "$ ".to_string(),
         anchor: CursorPosition { row: 0, column: 0 },
         size: TerminalSize::new(80, 24),
@@ -103,6 +104,62 @@ fn structured_completion_can_leave_the_cursor_inside_a_pair() {
     state.handle_key(Key::Tab);
     assert_eq!(state.buffer(), "export arr=()");
     assert_eq!(state.result(ExitReason::Accepted).cursor, 11);
+}
+
+#[test]
+fn attached_value_completion_preserves_the_assignment_key() {
+    let mut state = editor("npm access set mfa=");
+    let start = "npm access set mfa=".len();
+    let item = sopra_completion::CompletionItem::with_range(
+        "automation",
+        "automation",
+        None,
+        sopra_completion::CompletionKind::Value,
+        start..start,
+        sopra_completion::CompletionSource::CommandIndex,
+    );
+    state.set_completion_source_for_test(vec![item]);
+
+    state.handle_key(Key::Tab);
+
+    assert_eq!(state.buffer(), "npm access set mfa=automation");
+}
+
+#[test]
+fn completion_results_start_unselected_so_history_can_handle_navigation() {
+    let mut state = editor("git ");
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
+        "status",
+        "",
+        "status",
+        sopra_completion::CompletionKind::Subcommand,
+    )]);
+
+    assert_eq!(state.selected, None);
+    assert_eq!(
+        state.handle_key(Key::Up).expect("history result").reason,
+        ExitReason::DelegateUp
+    );
+    assert_eq!(state.selected, None);
+}
+
+#[test]
+fn armed_completion_keeps_the_first_result_selected_after_refresh() {
+    let mut state = editor("npm access set mfa=");
+    let start = "npm access set mfa=".len();
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::with_range(
+        "automation",
+        "automation",
+        None,
+        sopra_completion::CompletionKind::Value,
+        start..start,
+        sopra_completion::CompletionSource::CommandIndex,
+    )]);
+
+    assert!(state.arm_first_completion());
+    state.reset_selection();
+
+    assert_eq!(state.selected, Some(0));
 }
 
 #[test]

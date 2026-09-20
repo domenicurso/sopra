@@ -61,6 +61,7 @@ _sopra_parse_result() {
 _sopra_edit() {
     emulate -L zsh
     local raw prompt
+    local -i arm_completion=${1:-0}
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
     printf -v SOPRA_ALIASES '%s\n' "${(@k)aliases}"
     printf -v SOPRA_FUNCTIONS '%s\n' "${(@k)functions}"
@@ -80,12 +81,17 @@ _sopra_edit() {
     done
     printf -v SOPRA_COMMANDS '%s\n' "${command_list[@]}"
     prompt=$(print -P -- "$SOPRA_PROMPT")
-    raw=$("$SOPRA_BIN" \
+    local -a editor_args
+    editor_args=(
         --buffer "$BUFFER" \
         --cursor "$CURSOR" \
         --prompt "$prompt" \
-        --cwd "$PWD" \
-        </dev/tty) || return 1
+        --cwd "$PWD"
+    )
+    if (( arm_completion )); then
+        editor_args+=(--arm-completion)
+    fi
+    raw=$("$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
     _sopra_parse_result "$raw"
 }
 
@@ -102,7 +108,10 @@ _sopra_line_init() {
     PROMPT=$SOPRA_PROMPT
     RPROMPT=$SOPRA_RPROMPT
     _sopra_clear_highlights
-    while _sopra_edit; do
+    local -i arm_completion=0
+    local previous_buffer previous_cursor previous_history
+    while _sopra_edit "$arm_completion"; do
+        arm_completion=0
         BUFFER=$_SOPRA_RESULT_BUFFER
         CURSOR=$_SOPRA_RESULT_CURSOR
         case $_SOPRA_RESULT_ACTION in
@@ -123,10 +132,24 @@ _sopra_line_init() {
                 return 0
                 ;;
             up)
+                previous_buffer=$BUFFER
+                previous_cursor=$CURSOR
+                previous_history=${HISTNO:-}
                 zle up-line-or-history
+                if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
+                    && ${HISTNO:-} == $previous_history ]]; then
+                    arm_completion=1
+                fi
                 ;;
             down)
+                previous_buffer=$BUFFER
+                previous_cursor=$CURSOR
+                previous_history=${HISTNO:-}
                 zle down-line-or-history
+                if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
+                    && ${HISTNO:-} == $previous_history ]]; then
+                    arm_completion=1
+                fi
                 ;;
             tab)
                 zle expand-or-complete

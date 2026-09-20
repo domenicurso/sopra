@@ -52,6 +52,15 @@ pub(super) fn section_header(line: &str) -> Option<Section> {
     })
 }
 
+pub(super) fn is_command_group_header(line: &str) -> bool {
+    let trimmed = line.trim();
+    let name = trimmed.trim_end_matches(':').trim().to_ascii_lowercase();
+    !line.starts_with([' ', '\t'])
+        && line.trim_end().ends_with(':')
+        && !uppercase_heading(trimmed.trim_end_matches(':').trim())
+        && !known_heading(&name)
+}
+
 fn known_heading(name: &str) -> bool {
     matches!(
         name,
