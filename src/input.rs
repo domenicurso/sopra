@@ -31,6 +31,7 @@ pub(crate) enum Key {
     Character(char),
     Enter,
     Tab,
+    BackTab,
     Backspace,
     Delete,
     WordBackspace,

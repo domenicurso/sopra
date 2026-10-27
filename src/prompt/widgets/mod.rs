@@ -106,15 +106,19 @@ mod tests {
             WidgetAction::Consumed
         ));
         assert!(
-            crate::prompt::parse(&widgets.render().0)[0]
-                .text
-                .starts_with("[/one/two]")
+            crate::prompt::parse(&widgets.render().0)
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>()
+                .starts_with("/one/two")
         );
         widgets.handle(Key::Tab);
         assert!(
-            crate::prompt::parse(&widgets.render().0)[0]
-                .text
-                .starts_with("[/one]")
+            crate::prompt::parse(&widgets.render().0)
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>()
+                .starts_with("/one/two")
         );
         assert!(
             matches!(widgets.handle(Key::Enter), WidgetAction::ChangeDirectory(path) if path == std::path::Path::new("/one"))

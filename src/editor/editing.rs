@@ -63,6 +63,7 @@ impl EditorState {
                     return Some(self.result(ExitReason::DelegateTab));
                 }
             }
+            Key::BackTab => {}
             Key::Backspace => self.backspace(),
             Key::Delete => self.delete(),
             Key::WordBackspace => self.delete_word_back(),

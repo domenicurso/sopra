@@ -65,6 +65,7 @@ impl Terminal {
             }
         }
         Ok(match sequence.last().copied() {
+            Some(b'Z') if prefix == b'[' => Key::BackTab,
             Some(b'A') => Key::Up,
             Some(b'B') => Key::Down,
             Some(b'C') => Key::Right,

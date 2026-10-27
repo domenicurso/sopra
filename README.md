@@ -103,7 +103,7 @@ Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, pl
 
 Style text with `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives.
 
-With `{path}` visible, press Ctrl-G to focus it, Tab to cycle through parent directories, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
+With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
 
 ## How it works
 
