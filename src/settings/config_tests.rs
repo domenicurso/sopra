@@ -6,7 +6,7 @@ use super::{SettingKey, Settings, path};
 fn settings_round_trip_preserves_schema_values() {
     let file = env::temp_dir().join(format!("sopra-settings-{}", std::process::id()));
     let settings = Settings {
-        prompt: "%n in %~ $ ".to_string(),
+        prompt: "%n in %~\n$ ".to_string(),
         rprompt: "right".to_string(),
         transient_prompt: "done $ ".to_string(),
         clock_format: "%H[dim]:[/]%M".to_string(),

@@ -48,6 +48,12 @@ _sopra_load_settings() {
                     typeset -g SOPRA_PROMPT=$value
                 fi
                 ;;
+            prompt_hex)
+                if (( force )) || [[ -z ${SOPRA_PROMPT+x} ]]; then
+                    _sopra_hex_decode "$value" || return 1
+                    typeset -g SOPRA_PROMPT=$_SOPRA_RESULT_BUFFER
+                fi
+                ;;
             rprompt)
                 if (( force )) || [[ -z ${SOPRA_RPROMPT+x} ]]; then
                     typeset -g SOPRA_RPROMPT=$value

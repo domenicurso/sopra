@@ -115,7 +115,19 @@ impl Settings {
         }
         let contents = SettingKey::ALL
             .into_iter()
-            .map(|key| format!("{}={}\n", key.storage_name(), self.value(key)))
+            .map(|key| {
+                let value = self.value(key);
+                if key == SettingKey::Prompt && value.contains('\n') {
+                    let encoded = value
+                        .as_bytes()
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>();
+                    format!("prompt_hex={encoded}\n")
+                } else {
+                    format!("{}={value}\n", key.storage_name())
+                }
+            })
             .collect::<String>();
         let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
         fs::write(&temporary, contents)?;
@@ -125,6 +137,11 @@ impl Settings {
     fn set_serialized(&mut self, key: &str, value: &str) {
         match key {
             "prompt" => self.prompt = value.to_string(),
+            "prompt_hex" => {
+                if let Some(prompt) = decode_prompt(value) {
+                    self.prompt = prompt;
+                }
+            }
             "rprompt" => self.rprompt = value.to_string(),
             "transient_prompt" => self.transient_prompt = value.to_string(),
             "clock_format" => self.clock_format = value.to_string(),
@@ -138,6 +155,21 @@ impl Settings {
             _ => {}
         }
     }
+}
+
+fn decode_prompt(value: &str) -> Option<String> {
+    if !value.len().is_multiple_of(2) {
+        return None;
+    }
+    let bytes = value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let digits = std::str::from_utf8(pair).ok()?;
+            u8::from_str_radix(digits, 16).ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    String::from_utf8(bytes).ok()
 }
 
 fn parse_bool(value: &str, fallback: bool) -> bool {
