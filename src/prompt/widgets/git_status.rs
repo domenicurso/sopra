@@ -31,8 +31,22 @@ impl Widget for GitStatus {
     fn token(&self) -> &'static str {
         "{git_status}"
     }
+    fn markup(&self) -> bool {
+        true
+    }
     fn render(&self) -> String {
-        self.0.clone()
+        if self.0.is_empty() {
+            return String::new();
+        }
+        let parts = self.0[1..self.0.len() - 1].split('|');
+        let separator = "[default][dim]|[/][/]";
+        format!(
+            "[default][dim][[[/][/]{}[default][dim]][/][/]",
+            parts
+                .map(|part| format!("[bold]{part}[/]"))
+                .collect::<Vec<_>>()
+                .join(separator)
+        )
     }
 }
 
@@ -81,6 +95,29 @@ fn summarize(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::summarize;
+    #[test]
+    fn status_keeps_values_bold_and_punctuation_dim() {
+        use super::Widget;
+        use ratatui::style::{Color, Modifier};
+        let text = super::GitStatus("[13!|2?|6↑]".to_string()).render();
+        let spans = crate::prompt::parse(&format!("[magenta]{text}[/]"));
+        assert_eq!(
+            spans
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>(),
+            "[13!|2?|6↑]"
+        );
+        for span in spans {
+            if span.text.chars().all(|ch| "[]|".contains(ch)) {
+                assert_eq!(span.style.fg, Some(Color::Reset));
+                assert!(span.style.add_modifier.contains(Modifier::DIM));
+            } else {
+                assert_eq!(span.style.fg, Some(Color::Magenta));
+                assert!(span.style.add_modifier.contains(Modifier::BOLD));
+            }
+        }
+    }
     #[test]
     fn summarizes_changes_and_upstream_counts() {
         assert_eq!(
