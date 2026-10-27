@@ -18,7 +18,10 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
     fi
 fi
 source "$script_dir/settings.zsh"
+source "$script_dir/protocol.zsh"
+_sopra_load_prompt_config
 _sopra_load_settings
+source "$script_dir/context.zsh"
 source "$script_dir/prompt.zsh"
 _sopra_prompt_defaults
 if [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
@@ -35,8 +38,6 @@ if [[ ! -x $SOPRA_BIN ]]; then
     print -u2 "sopra: executable not found at $SOPRA_BIN"
     return 1
 fi
-
-source "$script_dir/protocol.zsh"
 
 _sopra_edit() {
     emulate -L zsh
@@ -99,7 +100,7 @@ _sopra_edit() {
     if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
-    raw=$(SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
+    raw=$(SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" SOPRA_WIDGET_DURATION="$_SOPRA_WIDGET_DURATION" SOPRA_WIDGET_USER="$USER" SOPRA_WIDGET_HOST="$HOST" SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
     _sopra_parse_result "$raw"
 }
 

@@ -99,7 +99,7 @@ impl SettingsState {
                 "Sopra could not determine a config directory",
             ));
         };
-        self.settings.save(path)
+        self.settings.save(path, self.selected_definition().key)
     }
 
     fn edit_value(&self) -> String {

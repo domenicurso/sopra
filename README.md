@@ -67,34 +67,43 @@ The Zsh bridge accepts these runtime variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SOPRA_BIN` | Auto-detected | Development override for the private Sopra worker. |
-| `SOPRA_PROMPT` | Colored `{path}` and Zsh prompt character | Prompt rendered while editing. |
-| `SOPRA_RPROMPT` | Colored `{git}` | Right prompt rendered while editing. |
+| `SOPRA_PROMPT` | Colored user, path, and prompt character | Prompt rendered while editing. |
+| `SOPRA_RPROMPT` | Colored Git branch and status | Right prompt rendered while editing. |
 | `SOPRA_TRANSIENT_PROMPT` | `$ ` | Prompt shown after accepting or interrupting a line. |
 | `SOPRA_CLOCK_FORMAT` | `%H:%M:%S` | Local time format for `{clock}`. |
 | `SOPRA_CURSOR_ANIMATION` | `1` | Enables the animated editing cursor. |
 | `SOPRA_SYNTAX_HIGHLIGHTING` | `1` | Enables live syntax highlighting. |
 | `SOPRA_COMPLETION_ENABLED` | `1` | Enables contextual completions. |
 
-`sopra settings` edits these values in a centered terminal modal, grouped into Prompts, Editor, and Completion tabs, and saves them to `~/.config/sopra/settings`. Explicit `SOPRA_*` values already present in the shell take precedence when the integration starts.
+`sopra settings` edits these values in a terminal modal and saves them to `~/.config/sopra/settings`. You can also create `~/.config/sopra/prompt.toml` (or `$XDG_CONFIG_HOME/sopra/prompt.toml`) with format strings:
 
-Prompt templates accept Zsh prompt escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
+```toml
+[prompt]
+left = "[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/] %# "
+right = "[if git]{git}[dim] : [/][/]{clock}"
+transient = "$ "
+
+[widgets.clock]
+format = "%H[dim]:[/]%M"
+```
+
+Explicit `SOPRA_*` variables take precedence over the corresponding TOML values; TOML takes precedence over saved settings. Restart the shell after editing the file directly. When you change a prompt setting in `sopra settings`, Sopra updates that field in an existing TOML file and preserves its other content and comments.
+
+Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
 
 | Widget | Display |
 | --- | --- |
 | `{path}` | Current directory, abbreviated relative to your home directory. |
 | `{git}` | Current Git branch or detached commit; empty outside a repository. |
-| `{clock}` | Local time in `HH:MM:SS`, refreshed while editing. |
+| `{git_status}` | Counts of changed and untracked files and commits ahead or behind. |
+| `{clock}` | Local time, refreshed while editing. |
+| `{status}` | Exit status of the last command when it failed. |
+| `{duration}` | Duration of the last command. |
+| `{user}`, `{host}`, `{shell}` | Current user, host, and shell name. |
 
-Use a widget in either prompt, for example `SOPRA_RPROMPT='%F{magenta}{git}%f  {clock}'`. With `{path}` visible, press Ctrl-G to focus it, Tab to cycle through parent directories, and Enter to change directory while preserving the command being edited. Escape cancels selection. Explicitly set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
+Style text with `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives.
 
-Style text inline with `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color tag such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. Use `[if git]...[/]` to show a section only when its widget has content. For example:
-
-```zsh
-SOPRA_RPROMPT='[if git]{git}[dim] : [/][/]{clock}'
-SOPRA_CLOCK_FORMAT='%H[dim]:[/]%M'
-```
-
-The separator before the clock disappears outside a Git repository. Clock formats use the system's `strftime` directives, and the clock updates while you edit. Set these variables before sourcing Sopra, or edit the prompt and clock format in `sopra settings`.
+With `{path}` visible, press Ctrl-G to focus it, Tab to cycle through parent directories, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
 
 ## How it works
 

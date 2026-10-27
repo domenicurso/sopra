@@ -1,9 +1,9 @@
 _sopra_prompt_defaults() {
     if [[ -z ${SOPRA_PROMPT+x} ]]; then
-        typeset -g SOPRA_PROMPT='%F{cyan}{path}%f %# '
+        typeset -g SOPRA_PROMPT='[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/] %# '
     fi
     if [[ -z ${SOPRA_RPROMPT+x} ]]; then
-        typeset -g SOPRA_RPROMPT='%F{magenta}{git}%f'
+        typeset -g SOPRA_RPROMPT='[if git][dim]on [/][bold][green]{git}[/][/][if git_status] [magenta]{git_status}[/][/][/]'
     fi
     if [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
         typeset -g SOPRA_CLOCK_FORMAT='%H:%M:%S'

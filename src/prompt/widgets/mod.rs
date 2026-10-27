@@ -1,6 +1,8 @@
 mod clock;
+mod context;
 mod format;
 mod git;
+mod git_status;
 mod path;
 
 use std::path::PathBuf;
@@ -40,14 +42,22 @@ impl Widgets {
             || prompt.contains("[if git]")
             || right.contains("[if git]");
         let git = git::Git::new(&cwd, git_enabled);
+        let status_enabled = prompt.contains("{git_status}")
+            || right.contains("{git_status}")
+            || prompt.contains("[if git_status]")
+            || right.contains("[if git_status]");
+        let git_status = git_status::GitStatus::new(&cwd, status_enabled);
+        let mut widgets = context::widgets();
+        widgets.extend([
+            Box::new(clock::Clock::new()) as Box<dyn Widget>,
+            Box::new(git),
+            Box::new(git_status),
+            Box::new(path::Path::new(cwd)),
+        ]);
         Self {
             prompt_template: prompt,
             right_template: right,
-            widgets: vec![
-                Box::new(clock::Clock::new()),
-                Box::new(git),
-                Box::new(path::Path::new(cwd)),
-            ],
+            widgets,
         }
     }
 

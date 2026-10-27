@@ -12,6 +12,30 @@ _sopra_config_path() {
     fi
 }
 
+_sopra_load_prompt_config() {
+    emulate -L zsh
+    local config=$(_sopra_config_path) raw key encoded name
+    config=${config:h}/prompt.toml
+    [[ -f $config ]] || return 0
+    raw=$("$SOPRA_BIN" --prompt-config "$config") || {
+        print -u2 -- "sopra: could not load $config"
+        return 1
+    }
+    while IFS=$'\t' read -r key encoded; do
+        case $key in
+            prompt) name=SOPRA_PROMPT ;;
+            rprompt) name=SOPRA_RPROMPT ;;
+            transient_prompt) name=SOPRA_TRANSIENT_PROMPT ;;
+            clock_format) name=SOPRA_CLOCK_FORMAT ;;
+            *) continue ;;
+        esac
+        if (( ! ${+parameters[$name]} )); then
+            _sopra_hex_decode "$encoded" || return 1
+            typeset -g "$name=$_SOPRA_RESULT_BUFFER"
+        fi
+    done <<< "$raw"
+}
+
 _sopra_load_settings() {
     emulate -L zsh
     local force=${1:-0} config key value

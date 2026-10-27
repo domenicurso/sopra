@@ -1,3 +1,4 @@
+pub(crate) mod config;
 mod markup;
 pub(crate) mod widgets;
 

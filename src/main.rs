@@ -16,6 +16,12 @@ use editor::{EditorConfig, EditorState, ExitReason, RunResult};
 use input::{CursorPosition, Terminal};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let mut arguments = std::env::args_os().skip(1);
+    if arguments.next().as_deref() == Some(std::ffi::OsStr::new("--prompt-config")) {
+        let path = arguments.next().ok_or("--prompt-config needs a path")?;
+        prompt::config::PromptConfig::read(std::path::Path::new(&path))?.print();
+        return Ok(());
+    }
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
     if args.settings {
         return settings::run().map_err(Into::into);

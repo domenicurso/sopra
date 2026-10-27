@@ -91,11 +91,28 @@ impl Settings {
         }
     }
 
-    pub(super) fn save(&self, path: &Path) -> io::Result<()> {
+    pub(super) fn save(&self, path: &Path, changed: SettingKey) -> io::Result<()> {
         let parent = path
             .parent()
             .ok_or_else(|| io::Error::other("Sopra config path has no parent"))?;
         fs::create_dir_all(parent)?;
+        let mut prompt = crate::prompt::config::PromptConfig::default();
+        match changed {
+            SettingKey::Prompt => prompt.left = Some(self.prompt.clone()),
+            SettingKey::RightPrompt => prompt.right = Some(self.rprompt.clone()),
+            SettingKey::TransientPrompt => prompt.transient = Some(self.transient_prompt.clone()),
+            SettingKey::ClockFormat => prompt.clock_format = Some(self.clock_format.clone()),
+            _ => {}
+        }
+        if matches!(
+            changed,
+            SettingKey::Prompt
+                | SettingKey::RightPrompt
+                | SettingKey::TransientPrompt
+                | SettingKey::ClockFormat
+        ) {
+            crate::prompt::config::update(&parent.join("prompt.toml"), &prompt)?;
+        }
         let contents = SettingKey::ALL
             .into_iter()
             .map(|key| format!("{}={}\n", key.storage_name(), self.value(key)))
@@ -143,37 +160,5 @@ pub(super) fn path() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{env, fs};
-
-    use super::{SettingKey, Settings, path};
-
-    #[test]
-    fn settings_round_trip_preserves_schema_values() {
-        let file = env::temp_dir().join(format!("sopra-settings-{}", std::process::id()));
-        let settings = Settings {
-            prompt: "%n in %~ $ ".to_string(),
-            rprompt: "right".to_string(),
-            transient_prompt: "done $ ".to_string(),
-            clock_format: "%H[dim]:[/]%M".to_string(),
-            cursor_animation: false,
-            syntax_highlighting: false,
-            completion_enabled: true,
-        };
-        let _ = fs::remove_file(&file);
-        settings.save(&file).expect("settings should save");
-        let loaded = Settings::load(Some(&file));
-        let _ = fs::remove_file(&file);
-        assert_eq!(loaded, settings);
-        assert_eq!(loaded.value(SettingKey::CompletionEnabled), "On");
-    }
-
-    #[test]
-    fn missing_config_uses_struct_defaults() {
-        let file = path().expect("config path").join("missing");
-        let settings = Settings::load(Some(&file));
-        assert!(settings.cursor_animation);
-        assert!(settings.syntax_highlighting);
-        assert!(settings.completion_enabled);
-    }
-}
+#[path = "config_tests.rs"]
+mod tests;
