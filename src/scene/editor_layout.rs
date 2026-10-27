@@ -30,17 +30,12 @@ impl EditorLayout {
     ) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let prompt_row = editor.anchor().row.min(size.rows.saturating_sub(1));
+        let prompt_breaks = editor.prompt().matches('\n').count() as u16;
         let row = prompt_row
-            .saturating_add(
-                editor
-                    .prompt()
-                    .bytes()
-                    .filter(|byte| *byte == b'\n')
-                    .count() as u16,
-            )
+            .saturating_add(prompt_breaks)
             .min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
-        let line_column = column
+        let line_column = if row == prompt_row { column } else { 0 }
             .saturating_add(prompt_width as u16)
             .min(size.columns.saturating_sub(1));
         let cursor_column = line_column
@@ -143,6 +138,35 @@ mod tests {
             cwd: std::path::PathBuf::new(),
             palette: TerminalPalette::default(),
         })
+    }
+
+    #[test]
+    fn multiline_input_starts_at_the_left_edge_after_a_nonzero_anchor() {
+        let editor = EditorState::new(EditorConfig {
+            buffer: "abc".into(),
+            cursor_chars: 3,
+            arm_completion: false,
+            suppress_completion: true,
+            completion_enabled: false,
+            syntax_highlighting: false,
+            cursor_animation: false,
+            prompt: "first\n$ ".into(),
+            rprompt: "right".into(),
+            anchor: CursorPosition { row: 0, column: 7 },
+            size: TerminalSize::new(40, 24),
+            cwd: std::path::PathBuf::new(),
+            palette: TerminalPalette::default(),
+        });
+        let layout = EditorLayout::new(&editor, TerminalSize::new(40, 24), 2, 5);
+        assert_eq!(
+            (
+                layout.prompt_row,
+                layout.row,
+                layout.line_column,
+                layout.cursor_column
+            ),
+            (0, 1, 2, 5)
+        );
     }
 
     #[test]

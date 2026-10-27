@@ -45,35 +45,7 @@ _sopra_edit() {
     local -i arm_completion=${1:-0}
     local -i suppress_completion=${2:-0}
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
-    local -a alias_list
-    local alias_name
-    for alias_name in ${(k)aliases}; do
-        [[ $alias_name == sopra ]] || alias_list+=($alias_name)
-    done
-    printf -v SOPRA_ALIASES '%s\n' "${alias_list[@]}"
-    local -a function_list
-    local function_name
-    for function_name in ${(k)functions}; do
-        [[ $function_name == sopra ]] || function_list+=($function_name)
-    done
-    printf -v SOPRA_FUNCTIONS '%s\n' "${function_list[@]}"
-    printf -v SOPRA_VARIABLES '%s\n' "${(@k)parameters}"
-    local -a arrays
-    local variable
-    for variable in ${(k)parameters}; do
-        if [[ ${(tP)variable} == *array* ]]; then
-            arrays+=("$variable")
-        fi
-    done
-    printf -v SOPRA_ARRAYS '%s\n' "${arrays[@]}"
-    local -a command_list
-    local command_name
-    for command_name in ${(k)commands}; do
-        [[ $command_name == sopra ]] && continue
-        command_list+=("$command_name"$'\t'"${commands[$command_name]}")
-    done
-    command_list+=("sopra"$'\t'"$SOPRA_BIN")
-    printf -v SOPRA_COMMANDS '%s\n' "${command_list[@]}"
+    _sopra_shell_context
     expanded_prompt=$(print -P -- "$PROMPT")
     expanded_rprompt=$(print -P -- "$RPROMPT")
     expanded_transient=$(print -P -- "$SOPRA_TRANSIENT_PROMPT")
@@ -100,7 +72,17 @@ _sopra_edit() {
     if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
-    raw=$(SOPRA_GIT_STATUS_ITEM_FORMAT="$SOPRA_GIT_STATUS_ITEM_FORMAT" SOPRA_GIT_STATUS_FORMAT="$SOPRA_GIT_STATUS_FORMAT" SOPRA_GIT_STATUS_SEPARATOR="$SOPRA_GIT_STATUS_SEPARATOR" SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" SOPRA_WIDGET_DURATION="$_SOPRA_WIDGET_DURATION" SOPRA_WIDGET_USER="$USER" SOPRA_WIDGET_HOST="$HOST" SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
+    raw=$(
+        SOPRA_GIT_STATUS_ITEM_FORMAT="$SOPRA_GIT_STATUS_ITEM_FORMAT" \
+        SOPRA_GIT_STATUS_FORMAT="$SOPRA_GIT_STATUS_FORMAT" \
+        SOPRA_GIT_STATUS_SEPARATOR="$SOPRA_GIT_STATUS_SEPARATOR" \
+        SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" \
+        SOPRA_WIDGET_DURATION="$_SOPRA_WIDGET_DURATION" \
+        SOPRA_WIDGET_USER="$USER" SOPRA_WIDGET_HOST="$HOST" \
+        SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" \
+        SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" \
+        "$SOPRA_BIN" "${editor_args[@]}" </dev/tty
+    ) || return 1
     _sopra_parse_result "$raw"
 }
 

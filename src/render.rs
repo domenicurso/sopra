@@ -55,13 +55,7 @@ impl Renderer {
             .as_ref()
             .map_or(Rect::default(), |frame| *frame.area());
         let mut output = Vec::new();
-        // The visible cursor is painted in the frame. Parking the hidden terminal cursor on
-        // the first prompt row keeps reflow from pushing that row into scrollback.
-        let parked = if self.redraw_prompt && next.cursor.row > 0 {
-            CursorPosition { row: 0, column: 0 }
-        } else {
-            next.cursor
-        };
+        let parked = self.terminal_cursor(next.cursor);
         let origin = self.position_origin(&next, resized, terminal, parked);
         let size = terminal.size()?;
         if terminal.resize_epoch() != resize_epoch
@@ -98,6 +92,15 @@ impl Renderer {
         self.previous_cursor = Some(parked);
         self.resize_epoch = Some(resize_epoch);
         Ok(changed)
+    }
+
+    fn terminal_cursor(&self, cursor: CursorPosition) -> CursorPosition {
+        // Keeping the hidden cursor on the first row prevents reflow into scrollback.
+        if self.redraw_prompt && cursor.row > 0 {
+            CursorPosition { row: 0, column: 0 }
+        } else {
+            cursor
+        }
     }
 
     fn position_origin(

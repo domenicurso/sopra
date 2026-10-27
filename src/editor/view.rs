@@ -157,12 +157,14 @@ impl EditorState {
             .last()
             .copied()
             .unwrap_or(0) as u16;
-        let column = self
-            .anchor
-            .column
-            .saturating_add(prompt_width)
-            .saturating_add(content_width)
-            .min(size.columns.saturating_sub(1));
+        let column = if row == self.anchor.row {
+            self.anchor.column
+        } else {
+            0
+        }
+        .saturating_add(prompt_width)
+        .saturating_add(content_width)
+        .min(size.columns.saturating_sub(1));
         CursorPosition { row, column }
     }
 }
