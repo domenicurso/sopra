@@ -67,14 +67,24 @@ The Zsh bridge accepts these runtime variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SOPRA_BIN` | Auto-detected | Development override for the private Sopra worker. |
-| `SOPRA_PROMPT` | Current `PROMPT` | Prompt rendered while editing. |
-| `SOPRA_RPROMPT` | Current `RPROMPT` | Right prompt rendered while editing. |
+| `SOPRA_PROMPT` | Colored `{path}` and Zsh prompt character | Prompt rendered while editing. |
+| `SOPRA_RPROMPT` | Colored `{git}` | Right prompt rendered while editing. |
 | `SOPRA_TRANSIENT_PROMPT` | `$ ` | Prompt shown after accepting or interrupting a line. |
 | `SOPRA_CURSOR_ANIMATION` | `1` | Enables the animated editing cursor. |
 | `SOPRA_SYNTAX_HIGHLIGHTING` | `1` | Enables live syntax highlighting. |
 | `SOPRA_COMPLETION_ENABLED` | `1` | Enables contextual completions. |
 
 `sopra settings` edits these values in a centered terminal modal, grouped into Prompts, Editor, and Completion tabs, and saves them to `~/.config/sopra/settings`. Explicit `SOPRA_*` values already present in the shell take precedence when the integration starts.
+
+Prompt templates accept Zsh prompt escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
+
+| Widget | Display |
+| --- | --- |
+| `{path}` | Current directory, abbreviated relative to your home directory. |
+| `{git}` | Current Git branch or detached commit; empty outside a repository. |
+| `{clock}` | Local time in `HH:MM:SS`, refreshed while editing. |
+
+Use a widget in either prompt, for example `SOPRA_RPROMPT='%F{magenta}{git}%f  {clock}'`. With `{path}` visible, press Ctrl-G to focus it, Tab to cycle through parent directories, and Enter to change directory while preserving the command being edited. Escape cancels selection. Explicitly set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
 
 ## How it works
 

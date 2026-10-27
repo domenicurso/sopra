@@ -36,19 +36,6 @@ impl Element for PromptElement {
     }
 }
 
-impl PromptElement {
-    pub(super) fn styled(text: &str, style: Style) -> Self {
-        Self {
-            column: 0,
-            row: 0,
-            spans: vec![PromptSpan {
-                text: text.to_string(),
-                style,
-            }],
-        }
-    }
-}
-
 pub(super) struct CommandElement {
     pub(super) column: u16,
     pub(super) row: u16,

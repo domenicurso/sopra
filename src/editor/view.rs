@@ -18,6 +18,14 @@ impl EditorState {
         &self.prompt
     }
 
+    pub(crate) fn set_transient_prompt(&mut self, prompt: String) {
+        self.transient_prompt = prompt;
+    }
+
+    pub(crate) fn transient_prompt(&self) -> &str {
+        &self.transient_prompt
+    }
+
     pub(crate) fn rprompt(&self) -> &str {
         &self.rprompt
     }
@@ -35,7 +43,7 @@ impl EditorState {
     }
 
     pub(crate) fn overlay_visible(&self) -> bool {
-        self.overlay_visible
+        self.overlay_visible && !self.widgets.active()
     }
 
     pub(crate) fn completion_query_for(&self, item: &CompletionItem) -> String {

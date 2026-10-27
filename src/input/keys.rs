@@ -15,6 +15,7 @@ impl Terminal {
             0x02 => Ok(Key::Left),
             0x05 => Ok(Key::End),
             0x06 => Ok(Key::Right),
+            0x07 => Ok(Key::PromptWidgets),
             0x0b => Ok(Key::KillToEnd),
             0x0c => Ok(Key::Clear),
             0x0e => Ok(Key::Down),

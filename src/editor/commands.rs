@@ -160,6 +160,7 @@ impl EditorState {
             buffer: self.buffer.clone(),
             cursor: self.buffer[..self.cursor].chars().count(),
             highlights: crate::syntax::highlight_without_cursor(&self.buffer, &self.cwd),
+            directory: None,
         }
     }
 }

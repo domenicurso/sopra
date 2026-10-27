@@ -1,3 +1,5 @@
+pub(crate) mod widgets;
+
 use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

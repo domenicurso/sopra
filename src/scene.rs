@@ -27,7 +27,6 @@ use crate::{
 use canvas::Canvas;
 
 pub(crate) const MAX_OVERLAY_ITEMS: usize = 12;
-pub(crate) const TRANSIENT_PROMPT: &str = "$ ";
 
 pub(crate) struct Frame {
     pub(crate) buffer: Buffer,

@@ -40,6 +40,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         cwd: args.cwd,
         palette: terminal.palette(),
     });
+    if let Ok(prompt) = std::env::var("SOPRA_EXPANDED_TRANSIENT_PROMPT") {
+        editor.set_transient_prompt(prompt);
+    }
     let result = editor.run(&mut terminal);
 
     if result.is_err() {
@@ -63,14 +66,25 @@ fn write_result(result: &RunResult) -> std::io::Result<()> {
         ExitReason::DelegateDown => "down",
         ExitReason::DelegateTab => "tab",
         ExitReason::DelegateEof => "eof",
+        ExitReason::ChangeDirectory => "directory",
     };
     let mut stdout = std::io::stdout().lock();
     writeln!(
         stdout,
-        "K1\t{action}\t{}\t{}\t{}",
+        "K1\t{action}\t{}\t{}\t{}\t{}",
         result.cursor,
-        hex_encode(result.buffer.as_bytes()),
-        encode_highlights(&result.buffer, &result.highlights)
+        nonempty_hex(result.buffer.as_bytes()),
+        match encode_highlights(&result.buffer, &result.highlights) {
+            value if value.is_empty() => "-".to_string(),
+            value => value,
+        },
+        result.directory.as_ref().map_or_else(
+            || "-".to_string(),
+            |path| {
+                use std::os::unix::ffi::OsStrExt;
+                nonempty_hex(path.as_os_str().as_bytes())
+            }
+        )
     )
 }
 
@@ -95,4 +109,12 @@ fn hex_encode(bytes: &[u8]) -> String {
         output.push(HEX[(byte & 0x0f) as usize] as char);
     }
     output
+}
+
+fn nonempty_hex(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        "-".to_string()
+    } else {
+        hex_encode(bytes)
+    }
 }

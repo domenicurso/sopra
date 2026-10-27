@@ -19,15 +19,8 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
 fi
 source "$script_dir/settings.zsh"
 _sopra_load_settings
-if [[ -z ${SOPRA_PROMPT+x} ]]; then
-    typeset -g SOPRA_PROMPT="${PROMPT:-%n in %~ $ }"
-fi
-if [[ -z ${SOPRA_RPROMPT+x} ]]; then
-    typeset -g SOPRA_RPROMPT="${RPROMPT:-}"
-fi
-if [[ -z ${SOPRA_TRANSIENT_PROMPT+x} ]]; then
-    typeset -g SOPRA_TRANSIENT_PROMPT='$ '
-fi
+source "$script_dir/prompt.zsh"
+_sopra_prompt_defaults
 if [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
     typeset -g SOPRA_CURSOR_ANIMATION=1
 fi
@@ -43,41 +36,11 @@ if [[ ! -x $SOPRA_BIN ]]; then
     return 1
 fi
 
-typeset -g _SOPRA_RESULT_ACTION=''
-typeset -g _SOPRA_RESULT_BUFFER=''
-typeset -g _SOPRA_RESULT_CURSOR=0
-typeset -g _SOPRA_RESULT_HIGHLIGHTS=''
-
-_sopra_hex_decode() {
-    emulate -L zsh
-    local hex=$1 escaped='' pair
-    (( ${#hex} % 2 == 0 )) || return 1
-    while [[ -n $hex ]]; do
-        pair=${hex[1,2]}
-        [[ $pair == [[:xdigit:]][[:xdigit:]] ]] || return 1
-        escaped+="\\x$pair"
-        hex=${hex[3,-1]}
-    done
-    typeset -g _SOPRA_RESULT_BUFFER
-    printf -v _SOPRA_RESULT_BUFFER '%b' "$escaped"
-}
-
-_sopra_parse_result() {
-    emulate -L zsh
-    local raw=$1
-    local -a fields
-    IFS=$'\t' read -rA fields <<< "$raw"
-    [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|interrupt|up|down|tab|eof) ]] || return 1
-    [[ ${fields[3]-} == <-> ]] || return 1
-    _sopra_hex_decode "${fields[4]-}" || return 1
-    typeset -g _SOPRA_RESULT_ACTION=${fields[2]}
-    typeset -g _SOPRA_RESULT_CURSOR=${fields[3]}
-    typeset -g _SOPRA_RESULT_HIGHLIGHTS=${fields[5]-}
-}
+source "$script_dir/protocol.zsh"
 
 _sopra_edit() {
     emulate -L zsh
-    local raw prompt rprompt
+    local raw expanded_prompt expanded_rprompt expanded_transient
     local -i arm_completion=${1:-0}
     local -i suppress_completion=${2:-0}
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
@@ -110,14 +73,15 @@ _sopra_edit() {
     done
     command_list+=("sopra"$'\t'"$SOPRA_BIN")
     printf -v SOPRA_COMMANDS '%s\n' "${command_list[@]}"
-    prompt=$(print -P -- "$SOPRA_PROMPT")
-    rprompt=$(print -P -- "$SOPRA_RPROMPT")
+    expanded_prompt=$(print -P -- "$PROMPT")
+    expanded_rprompt=$(print -P -- "$RPROMPT")
+    expanded_transient=$(print -P -- "$SOPRA_TRANSIENT_PROMPT")
     local -a editor_args
     editor_args=(
         --buffer "$BUFFER" \
         --cursor "$CURSOR" \
-        --prompt "$prompt" \
-        --rprompt "$rprompt" \
+        --prompt "$expanded_prompt" \
+        --rprompt "$expanded_rprompt" \
         --cwd "$PWD"
     )
     if (( arm_completion )); then
@@ -135,7 +99,7 @@ _sopra_edit() {
     if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
-    raw=$("$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
+    raw=$(SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
     _sopra_parse_result "$raw"
 }
 
@@ -177,6 +141,12 @@ _sopra_line_init() {
                 CURSOR=0
                 zle .accept-line
                 return 0
+                ;;
+            directory)
+                if builtin cd -- "$_SOPRA_RESULT_DIRECTORY"; then
+                    PROMPT=$SOPRA_PROMPT
+                    RPROMPT=$SOPRA_RPROMPT
+                fi
                 ;;
             up)
                 previous_buffer=$BUFFER

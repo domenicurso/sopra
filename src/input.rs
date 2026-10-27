@@ -48,5 +48,6 @@ pub(crate) enum Key {
     End,
     Cancel,
     Clear,
+    PromptWidgets,
     Eof,
 }
