@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from terminal_screen import VirtualTerminal
@@ -50,6 +52,63 @@ def test_session_keeps_shell_state() -> None:
         terminal.close()
 
 
+def test_sopra_resize_round_trip_and_submit() -> None:
+    root = Path(__file__).resolve().parent.parent
+    environment = {
+        "SOPRA_RPROMPT": "rprompt",
+        "SOPRA_COMPLETION_ENABLED": "0",
+        "SOPRA_CURSOR_ANIMATION": "0",
+        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
+    }
+    with TerminalSession(
+        (str(root / "scripts" / "start.sh"),),
+        rows=30,
+        columns=120,
+        cwd=str(root),
+        env=environment,
+    ) as terminal:
+        terminal.wait_for("rprompt", timeout=10)
+        first_prompt = _active_prompt(terminal.screen.lines())
+        assert "rprompt" in first_prompt
+
+        start = len(terminal.output)
+        for width in range(119, 39, -1):
+            terminal.resize(30, width)
+            terminal.read(0)
+            time.sleep(0.001)
+        for width in range(41, 121):
+            terminal.resize(30, width)
+            terminal.read(0)
+            time.sleep(0.001)
+        terminal.read(0.08)
+
+        active_prompt = _active_prompt(terminal.screen.lines())
+        assert active_prompt.index("rprompt") + len("rprompt") == terminal.screen.columns
+
+        terminal.send_text("echo resize-marker")
+        terminal.key("ENTER")
+        terminal.read(0.3)
+        resize_output = bytes(terminal.output[start:])
+        assert b"\x1b[6n" in resize_output
+        assert b"\x1b[J" in resize_output
+        assert b"\x1b]133;A;redraw=1;cl=line\x07" in resize_output
+        assert b"\x1b]133;B\x07" in resize_output
+        assert b"\x1b[?2026h" in resize_output
+        assert resize_output.count(b"\x1b[?2026h") == resize_output.count(b"\x1b[?2026l")
+        assert re.search(rb"\x1b\[[0-9]*S", resize_output) is None
+        lines = terminal.screen.lines()
+        transient = next(line.strip() for line in lines if "echo resize-marker" in line)
+        assert transient == "$ echo resize-marker"
+        assert "resize-marker" in "\n".join(lines)
+        assert "rprompt" in _active_prompt(lines)
+
+
+def _active_prompt(lines: list[str]) -> str:
+    matches = [line for line in lines if " in " in line and "$" in line]
+    assert len(matches) == 1, lines
+    return matches[0]
+
+
 def test_controller_output_is_opt_in() -> None:
     script = Path(__file__).with_name("terminal-session.py")
     process = subprocess.Popen(
@@ -81,6 +140,7 @@ def test_controller_output_is_opt_in() -> None:
 def main() -> int:
     test_screen_sequences()
     test_session_keeps_shell_state()
+    test_sopra_resize_round_trip_and_submit()
     test_controller_output_is_opt_in()
     print("terminal session: ok (persistent PTY, ANSI screen, key input, resize)")
     return 0

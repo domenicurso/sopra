@@ -1,4 +1,5 @@
 mod canvas;
+mod editor_layout;
 mod editor_scene;
 mod elements;
 mod overlay;
@@ -8,7 +9,11 @@ mod overlay_scrollbar;
 mod transient;
 
 #[cfg(test)]
+mod rprompt_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod transient_tests;
 
 use std::time::Instant;
 

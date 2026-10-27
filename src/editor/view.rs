@@ -18,6 +18,10 @@ impl EditorState {
         &self.prompt
     }
 
+    pub(crate) fn rprompt(&self) -> &str {
+        &self.rprompt
+    }
+
     pub(crate) const fn anchor(&self) -> CursorPosition {
         self.anchor
     }
@@ -73,11 +77,18 @@ impl EditorState {
     }
 
     pub(crate) fn transient_syntax(&self) -> Vec<crate::syntax::SyntaxSpan> {
+        if !self.syntax_enabled {
+            return Vec::new();
+        }
         crate::syntax::highlight_without_cursor(&self.buffer, &self.cwd)
     }
 
     pub(crate) fn cursor_display_width(&self) -> u16 {
         UnicodeWidthStr::width(&self.buffer[..self.cursor]) as u16
+    }
+
+    pub(crate) fn buffer_display_width(&self) -> u16 {
+        UnicodeWidthStr::width(self.buffer.as_str()) as u16
     }
 
     pub(crate) fn cursor_cell_width(&self) -> u16 {
@@ -102,6 +113,10 @@ impl EditorState {
         now.saturating_duration_since(self.animation_started)
     }
 
+    pub(crate) fn cursor_animation_enabled(&self) -> bool {
+        self.cursor_animation
+    }
+
     pub(super) fn restore_position(&self, size: TerminalSize) -> CursorPosition {
         self.position_for(size, self.prompt(), self.cursor_display_width())
     }
@@ -116,9 +131,11 @@ impl EditorState {
 
     pub(crate) fn cursor_style(&self, now: Instant) -> Style {
         self.palette
-            .cursor_style(crate::animation::cursor_opacity(
-                self.animation_elapsed(now),
-            ))
+            .cursor_style(if self.cursor_animation {
+                crate::animation::cursor_opacity(self.animation_elapsed(now))
+            } else {
+                1.0
+            })
             .add_modifier(Modifier::BOLD)
     }
 

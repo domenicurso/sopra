@@ -208,5 +208,12 @@ Run the focused session smoke test with:
 python3 scripts/terminal-session-test.py
 ```
 
+To exercise prompt resizing with primary-screen reflow and scrollback, run:
+
+```sh
+npm ci --prefix scripts
+npm --prefix scripts run test:reflow
+```
+
 The session tool uses only the Python standard library and is not part of the
 normal CI harness path.

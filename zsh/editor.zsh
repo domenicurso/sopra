@@ -9,17 +9,34 @@ fi
 
 typeset -r script_dir=${${(%):-%N}:A:h}
 if [[ -z ${SOPRA_BIN:-} ]]; then
-    if (( ${+commands[sopra]} )); then
-        typeset -g SOPRA_BIN=$commands[sopra]
-    elif [[ -x $script_dir/../target/debug/sopra ]]; then
-        typeset -g SOPRA_BIN=$script_dir/../target/debug/sopra
+    if [[ -x $script_dir/../target/debug/sopra-worker ]]; then
+        typeset -g SOPRA_BIN=$script_dir/../target/debug/sopra-worker
+    elif [[ -x $script_dir/../../libexec/sopra-worker ]]; then
+        typeset -g SOPRA_BIN=$script_dir/../../libexec/sopra-worker
     else
-        typeset -g SOPRA_BIN=$script_dir/../../bin/sopra
+        typeset -g SOPRA_BIN=$script_dir/../../libexec/sopra-worker
     fi
 fi
-: "${SOPRA_PROMPT:=${PROMPT:-%n in %~ $ }}"
-: "${SOPRA_RPROMPT:=${RPROMPT:-}}"
-: "${SOPRA_TRANSIENT_PROMPT:=$ }"
+source "$script_dir/settings.zsh"
+_sopra_load_settings
+if [[ -z ${SOPRA_PROMPT+x} ]]; then
+    typeset -g SOPRA_PROMPT="${PROMPT:-%n in %~ $ }"
+fi
+if [[ -z ${SOPRA_RPROMPT+x} ]]; then
+    typeset -g SOPRA_RPROMPT="${RPROMPT:-}"
+fi
+if [[ -z ${SOPRA_TRANSIENT_PROMPT+x} ]]; then
+    typeset -g SOPRA_TRANSIENT_PROMPT='$ '
+fi
+if [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
+    typeset -g SOPRA_CURSOR_ANIMATION=1
+fi
+if [[ -z ${SOPRA_SYNTAX_HIGHLIGHTING+x} ]]; then
+    typeset -g SOPRA_SYNTAX_HIGHLIGHTING=1
+fi
+if [[ -z ${SOPRA_COMPLETION_ENABLED+x} ]]; then
+    typeset -g SOPRA_COMPLETION_ENABLED=1
+fi
 
 if [[ ! -x $SOPRA_BIN ]]; then
     print -u2 "sopra: executable not found at $SOPRA_BIN"
@@ -60,12 +77,22 @@ _sopra_parse_result() {
 
 _sopra_edit() {
     emulate -L zsh
-    local raw prompt
+    local raw prompt rprompt
     local -i arm_completion=${1:-0}
     local -i suppress_completion=${2:-0}
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
-    printf -v SOPRA_ALIASES '%s\n' "${(@k)aliases}"
-    printf -v SOPRA_FUNCTIONS '%s\n' "${(@k)functions}"
+    local -a alias_list
+    local alias_name
+    for alias_name in ${(k)aliases}; do
+        [[ $alias_name == sopra ]] || alias_list+=($alias_name)
+    done
+    printf -v SOPRA_ALIASES '%s\n' "${alias_list[@]}"
+    local -a function_list
+    local function_name
+    for function_name in ${(k)functions}; do
+        [[ $function_name == sopra ]] || function_list+=($function_name)
+    done
+    printf -v SOPRA_FUNCTIONS '%s\n' "${function_list[@]}"
     printf -v SOPRA_VARIABLES '%s\n' "${(@k)parameters}"
     local -a arrays
     local variable
@@ -78,15 +105,19 @@ _sopra_edit() {
     local -a command_list
     local command_name
     for command_name in ${(k)commands}; do
+        [[ $command_name == sopra ]] && continue
         command_list+=("$command_name"$'\t'"${commands[$command_name]}")
     done
+    command_list+=("sopra"$'\t'"$SOPRA_BIN")
     printf -v SOPRA_COMMANDS '%s\n' "${command_list[@]}"
     prompt=$(print -P -- "$SOPRA_PROMPT")
+    rprompt=$(print -P -- "$SOPRA_RPROMPT")
     local -a editor_args
     editor_args=(
         --buffer "$BUFFER" \
         --cursor "$CURSOR" \
         --prompt "$prompt" \
+        --rprompt "$rprompt" \
         --cwd "$PWD"
     )
     if (( arm_completion )); then
@@ -95,6 +126,15 @@ _sopra_edit() {
     if (( suppress_completion )); then
         editor_args+=(--suppress-completion)
     fi
+    if [[ ${(L)SOPRA_COMPLETION_ENABLED} == (0|false|off|no) ]]; then
+        editor_args+=(--disable-completion)
+    fi
+    if [[ ${(L)SOPRA_SYNTAX_HIGHLIGHTING} == (0|false|off|no) ]]; then
+        editor_args+=(--disable-syntax-highlighting)
+    fi
+    if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
+        editor_args+=(--disable-cursor-animation)
+    fi
     raw=$("$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
     _sopra_parse_result "$raw"
 }
@@ -102,6 +142,8 @@ _sopra_edit() {
 _sopra_prepare_transient() {
     PROMPT=$SOPRA_TRANSIENT_PROMPT
     RPROMPT=''
+    # A pending resize can make ZLE redraw its cached full prompt on accept.
+    zle .reset-prompt
 }
 
 _sopra_clear_highlights() {

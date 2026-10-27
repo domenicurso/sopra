@@ -23,12 +23,11 @@ The installer needs Zsh, Bash, Rust and Cargo, `curl`, `tar`, and the `install` 
 curl -fsSL https://raw.githubusercontent.com/domenicurso/sopra/main/install.sh | bash
 ```
 
-The installer builds the ref named by `SOPRA_REF` (which defaults to `main`) and installs the binary and Zsh bridge under `~/.local`. It does not edit shell startup files.
+The installer builds the ref named by `SOPRA_REF` (which defaults to `main`) and installs the private worker and Zsh bridge under `~/.local`. It does not edit shell startup files or add a public executable to `PATH`.
 
 From an interactive Zsh, enable Sopra in the current shell with:
 
 ```sh
-export PATH="$HOME/.local/bin:$PATH"
 source "$HOME/.local/share/sopra/editor.zsh"
 ```
 
@@ -39,8 +38,8 @@ Add the `source` line to `~/.zshrc` if Sopra should load in future interactive s
 ```sh
 git clone https://github.com/domenicurso/sopra.git
 cd sopra
-cargo build --release --locked --bin sopra
-export SOPRA_BIN="$PWD/target/release/sopra"
+cargo build --release --locked --bin sopra-worker
+export SOPRA_BIN="$PWD/target/release/sopra-worker"
 source "$PWD/zsh/editor.zsh"
 ```
 
@@ -51,6 +50,7 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 - Unicode-safe editing with history, word movement, kill/yank operations, and transient command lines.
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
+- `sopra settings` opens an interactive settings modal when the Sopra Zsh integration is loaded.
 
 ## Configuration
 
@@ -66,14 +66,19 @@ The Zsh bridge accepts these runtime variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SOPRA_BIN` | Auto-detected | Path to the Sopra executable. |
+| `SOPRA_BIN` | Auto-detected | Development override for the private Sopra worker. |
 | `SOPRA_PROMPT` | Current `PROMPT` | Prompt rendered while editing. |
 | `SOPRA_RPROMPT` | Current `RPROMPT` | Right prompt rendered while editing. |
 | `SOPRA_TRANSIENT_PROMPT` | `$ ` | Prompt shown after accepting or interrupting a line. |
+| `SOPRA_CURSOR_ANIMATION` | `1` | Enables the animated editing cursor. |
+| `SOPRA_SYNTAX_HIGHLIGHTING` | `1` | Enables live syntax highlighting. |
+| `SOPRA_COMPLETION_ENABLED` | `1` | Enables contextual completions. |
+
+`sopra settings` edits these values in a centered terminal modal, grouped into Prompts, Editor, and Completion tabs, and saves them to `~/.config/sopra/settings`. Explicit `SOPRA_*` values already present in the shell take precedence when the integration starts.
 
 ## How it works
 
-Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. The Zsh bridge passes the current buffer, cursor, prompt, working directory, and completion context to the Rust binary; Sopra returns the edited buffer and the action Zsh should perform. Zsh then accepts the command and executes it using the existing shell environment.
+Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. The Zsh bridge passes the current buffer, cursor, prompt, working directory, and completion context to the private Rust worker; Sopra returns the edited buffer and the action Zsh should perform. The bridge also defines the shell-native `sopra` function, whose `settings` subcommand opens the worker's settings mode. Zsh then accepts the command and executes it using the existing shell environment.
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 

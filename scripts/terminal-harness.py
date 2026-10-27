@@ -5,7 +5,9 @@ import os
 import select
 import subprocess
 import time
+from terminal_harness_shell import exercise_history_suspension, exercise_settings
 from terminal_harness_support import (
+    FRAME_MARKER,
     COLUMNS,
     ROOT,
     ROWS,
@@ -20,22 +22,25 @@ from terminal_harness_support import (
     wait_for_plain,
     wait_for_plain_after,
 )
+
+RESIZE_MARKER = b"\x1b[6n"
+
+
 def check_initial(session: tuple[int, int], output: bytearray) -> int:
-    wait_for(session, output, b"\x1b[s", 10)
+    wait_for(session, output, FRAME_MARKER, 10)
     wait_for_plain(session, output, b" in ~/", 10)
+    initial_bytes = len(output)
     read_for(session[0], output, 0.20)
-    initial_moves = output.count(b"\x1b[u")
-    read_for(session[0], output, 0.25)
-    if output.count(b"\x1b[u") <= initial_moves:
+    if len(output) <= initial_bytes:
         fail("cursor did not trigger another repaint", *session)
-    if b"\x1b[1;1H" in output:
-        fail("renderer used an absolute row-zero cursor move", *session)
     if b"\x1b[38;2;0;0;0m" not in output or b"\x1b[48;2;0;" not in output:
         fail("cursor did not use the terminal palette response", *session)
     rendered = plain(output)
     if b" in ~/" not in rendered or b"$" not in rendered or b"sopra-demo" in rendered or b"ready" in rendered:
         fail("product scene was not rendered", *session)
-    return output.count(b"\x1b[s")
+    return output.count(FRAME_MARKER)
+
+
 def exercise_command_completion(session: tuple[int, int], output: bytearray, origins: int) -> int:
     command_start = len(output)
     send(session[0], b"ech")
@@ -46,21 +51,23 @@ def exercise_command_completion(session: tuple[int, int], output: bytearray, ori
     send(session[0], b"\t")
     wait_for_count(session, output, b"\x1b[32me", green_count + 1)
     send(session[0], b"\x03")
-    origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
+    origins += 1; wait_for_count(session, output, FRAME_MARKER, origins)
     history_start = len(output)
     send(session[0], b"git ")
     wait_for_plain_after(session, output, b"0/", history_start, 3)
     send(session[0], b"\x1b[A")
     wait_for_plain_after(session, output, b"1/", history_start, 3)
     send(session[0], b"\x03")
-    origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
+    origins += 1; wait_for_count(session, output, FRAME_MARKER, origins)
     option_start = len(output); send(session[0], b"git --vrsn")
     wait_for_plain(session, output, b"version", 3)
     if b"version" not in plain(output[option_start:]):
         fail("option completion did not fuzzy-match git flags", *session)
     send(session[0], b"\x03")
-    origins += 1; wait_for_count(session, output, b"\x1b[s", origins)
+    origins += 1; wait_for_count(session, output, FRAME_MARKER, origins)
     return origins
+
+
 def exercise_path_completion(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
     send(session[0], b"cd ")
@@ -68,25 +75,24 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     if b"ms" not in plain(output[start:]) or b"0.0ms" in plain(output[start:]):
         fail("completion overlay was not rendered", *session)
     start = len(output)
-    repaint_start = output.count(b"\x1b[s")
+    repaint_start = output.count(RESIZE_MARKER)
     resize(session[0], 30, 80)
-    wait_for_count(session, output, b"\x1b[s", repaint_start + 1)
-    origins = output.count(b"\x1b[s")
-    if output[start:].count(b"\x1b[2K") < 30:
-        fail("resize did not clear the visible terminal rows", *session)
+    wait_for_count(session, output, RESIZE_MARKER, repaint_start + 1)
+    read_for(session[0], output, 0.10)
+    if b"\x1b[10;1H\x1b[J" not in output[start:] or b"\x1b[2J" in output[start:]:
+        fail("resize cleared outside the active completion scene", *session)
     start = len(output)
-    repaint_start = output.count(b"\x1b[s")
+    repaint_start = output.count(RESIZE_MARKER)
     resize(session[0], ROWS, COLUMNS)
-    wait_for_count(session, output, b"\x1b[s", repaint_start + 1)
-    origins = output.count(b"\x1b[s")
-    if output[start:].count(b"\x1b[2K") < ROWS:
-        fail("resize did not clear the expanded terminal rows", *session)
+    wait_for_count(session, output, RESIZE_MARKER, repaint_start + 1)
+    read_for(session[0], output, 0.10)
+    if b"\x1b[10;1H\x1b[J" not in output[start:] or b"\x1b[2J" in output[start:]:
+        fail("resize cleared outside the expanded completion scene", *session)
     send(session[0], b"\t")
     read_for(session[0], output, 0.10)
     send(session[0], b"\x03")
-    repaint_start = output.count(b"\x1b[s")
-    wait_for_count(session, output, b"\x1b[s", repaint_start + 1)
-    origins = output.count(b"\x1b[s")
+    origins += 1
+    wait_for_count(session, output, FRAME_MARKER, origins)
     interrupted = plain(output[start:])
     if b"$" not in interrupted or b"Cargo.lock" not in interrupted:
         fail("Ctrl-C did not keep the completed transient command", *session)
@@ -98,7 +104,7 @@ def exercise_nested_help(session: tuple[int, int], output: bytearray, origins: i
     wait_for_plain_after(session, output, b"--profile", start, 3)
     send(session[0], b"\x03")
     origins += 1
-    wait_for_count(session, output, b"\x1b[s", origins)
+    wait_for_count(session, output, FRAME_MARKER, origins)
     return origins
 def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
@@ -118,36 +124,9 @@ def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -
     wait_for(session, output, b"\x1b[2J", 3)
     if b"\x1b[2J" not in output[clear_start:]:
         fail("clear did not reach the shell", *session)
-    wait_for_count(session, output, b"\x1b[s", origins)
+    wait_for_count(session, output, FRAME_MARKER, origins)
     read_for(session[0], output, 0.20)
-    return output.count(b"\x1b[s")
-
-
-def exercise_history_suspension(
-    session: tuple[int, int], output: bytearray, origins: int
-) -> int:
-    command_start = len(output)
-    for byte in b"git st\r":
-        send(session[0], bytes([byte]))
-        read_for(session[0], output, 0.01)
-    wait_for_plain_after(session, output, b"gitst", command_start, 3)
-    read_for(session[0], output, 0.25)
-    origins = output.count(b"\x1b[s")
-
-    history_start = len(output)
-    send(session[0], b"\x1b[A")
-    wait_for_plain_after(session, output, b"gitst", history_start, 3)
-    read_for(session[0], output, 0.15)
-    history_output = plain(output[history_start:])
-    if any(marker.encode() in history_output for marker in ("╭", "╮", "╰", "╯")):
-        fail("history navigation reopened the completion overlay", *session)
-
-    send(session[0], b"\x1b[D")
-    wait_for_plain_after(session, output, b"status", history_start, 3)
-    repaint_start = output.count(b"\x1b[s")
-    send(session[0], b"\x03")
-    wait_for_count(session, output, b"\x1b[s", repaint_start + 1)
-    return output.count(b"\x1b[s")
+    return output.count(FRAME_MARKER)
 
 
 def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -> None:
@@ -159,7 +138,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     start = len(output)
     send(session[0], b"\x1b")
     read_for(session[0], output, 0.10)
-    if output.count(b"\x1b[s") != origins:
+    if output.count(FRAME_MARKER) != origins:
         fail("Escape relaunched the editor loop", *session)
     start = len(output)
     send(session[0], b"\x15cd ")
@@ -168,7 +147,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     start = len(output)
     send(session[0], b"\x1b")
     read_for(session[0], output, 0.10)
-    if output.count(b"\x1b[s") != origins:
+    if output.count(FRAME_MARKER) != origins:
         fail("Escape relaunched the editor loop", *session)
     if any(marker.encode() in plain(output[start:]) for marker in ("╭", "╮", "─")):
         fail("Escape did not hide the completion overlay", *session)
@@ -177,7 +156,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     wait_for_plain_after(session, output, b"Cargo.toml", start, 3)
     send(session[0], b"\x03")
     origins += 1
-    wait_for_count(session, output, b"\x1b[s", origins)
+    wait_for_count(session, output, FRAME_MARKER, origins)
     send(session[0], b"exit 0\r")
 def wait_for_exit(session: tuple[int, int], output: bytearray) -> None:
     master, pid = session
@@ -206,6 +185,7 @@ def main() -> int:
         origins = exercise_path_completion(session, output, origins)
         origins = exercise_accept(session, output, origins)
         origins = exercise_history_suspension(session, output, origins)
+        origins = exercise_settings(session, output)
         exercise_escape(session, output, origins)
         wait_for_exit(session, output)
     except (OSError, select.error) as error:

@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 START = ROOT / "scripts" / "start.sh"
 ROWS, COLUMNS = 40, 100
 ASYNC_COMPLETION_TIMEOUT = 10
+FRAME_MARKER = b"\x1b[?25l"
 
 
 def fail(message: str, pid: int | None = None, master: int | None = None) -> NoReturn:
@@ -54,6 +55,9 @@ def read_available(master: int, output: bytearray) -> None:
             if not chunk:
                 return
             output.extend(chunk)
+            # This protocol harness has no screen; keep the prompt anchored at row 10.
+            if b"\x1b[6n" in chunk:
+                os.write(master, b"\x1b[10;1R" * chunk.count(b"\x1b[6n"))
             if b"\x1b]11;?\x1b\\" in chunk:
                 os.write(
                     master,
@@ -153,7 +157,14 @@ def has_plain(output: bytes, needle: bytes) -> bool:
 
 def start_session() -> tuple[tuple[int, int], bytearray]:
     env = os.environ.copy()
-    env.update({"TERM": "xterm-256color", "COLUMNS": str(COLUMNS), "LINES": str(ROWS)})
+    env.update(
+        {
+            "TERM": "xterm-256color",
+            "COLUMNS": str(COLUMNS),
+            "LINES": str(ROWS),
+            "SOPRA_RPROMPT": "RIGHT",
+        }
+    )
     pid, master = pty.fork()
     if pid == 0:
         os.environ.update(env)

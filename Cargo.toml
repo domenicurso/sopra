@@ -6,14 +6,14 @@ license = "GPL-3.0-only"
 description = "A Rust-owned line editor for stock Zsh"
 repository = "https://github.com/domenicurso/sopra"
 readme = "README.md"
-default-run = "sopra"
+default-run = "sopra-worker"
 
 [workspace]
 members = ["crates/completion"]
 resolver = "3"
 
 [[bin]]
-name = "sopra"
+name = "sopra-worker"
 path = "src/main.rs"
 
 [dependencies]

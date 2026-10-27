@@ -38,6 +38,9 @@ fn public_sopra_runtime_settings_remain_visible() {
         "SOPRA_PROMPT",
         "SOPRA_RPROMPT",
         "SOPRA_TRANSIENT_PROMPT",
+        "SOPRA_CURSOR_ANIMATION",
+        "SOPRA_SYNTAX_HIGHLIGHTING",
+        "SOPRA_COMPLETION_ENABLED",
     ] {
         assert!(visible_shell_variable(name), "{name} should be visible");
     }

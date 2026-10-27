@@ -1,0 +1,10 @@
+{
+  "name": "sopra-terminal-checks",
+  "private": true,
+  "scripts": {
+    "test:reflow": "python3 terminal-reflow-test.py"
+  },
+  "devDependencies": {
+    "@xterm/headless": "6.0.0"
+  }
+}

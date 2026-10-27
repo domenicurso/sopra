@@ -1,81 +1,40 @@
 mod animation;
+mod arguments;
 mod editor;
 mod input;
 mod palette;
 mod prompt;
 mod render;
 mod scene;
+mod settings;
 mod syntax;
 
-use std::{env, error::Error, ffi::OsString, path::PathBuf};
+use std::error::Error;
 
+use arguments::Args;
 use editor::{EditorConfig, EditorState, ExitReason, RunResult};
 use input::{CursorPosition, Terminal};
 
-#[derive(Debug)]
-struct Args {
-    buffer: String,
-    cursor: usize,
-    arm_completion: bool,
-    suppress_completion: bool,
-    prompt: String,
-    cwd: PathBuf,
-}
-
-impl Args {
-    fn parse() -> Result<Self, String> {
-        let mut buffer = String::new();
-        let mut cursor = 0;
-        let mut arm_completion = false;
-        let mut suppress_completion = false;
-        let mut prompt = "$ ".to_string();
-        let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let mut arguments = env::args_os().skip(1);
-
-        while let Some(argument) = arguments.next() {
-            match argument.to_string_lossy().as_ref() {
-                "--buffer" => buffer = next_value(&mut arguments, "--buffer")?,
-                "--cursor" => {
-                    cursor = next_value(&mut arguments, "--cursor")?
-                        .parse()
-                        .map_err(|_| "--cursor must be a character index".to_string())?;
-                }
-                "--arm-completion" => arm_completion = true,
-                "--suppress-completion" => suppress_completion = true,
-                "--prompt" => prompt = next_value(&mut arguments, "--prompt")?,
-                "--cwd" => cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?),
-                "--help" | "-h" => {
-                    print_usage();
-                    std::process::exit(0);
-                }
-                unknown => return Err(format!("unknown argument: {unknown}")),
-            }
-        }
-
-        Ok(Self {
-            buffer,
-            cursor,
-            arm_completion,
-            suppress_completion,
-            prompt,
-            cwd,
-        })
-    }
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
+    if args.settings {
+        return settings::run().map_err(Into::into);
+    }
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
-    // ZLE has already positioned the terminal on the active line. The renderer saves that
-    // position and treats it as row zero, so Sopra does not need terminal cursor queries.
+    // ZLE has already positioned the terminal on the active line. The renderer treats that
+    // position as logical row zero and resolves its physical row when a resize needs it.
     let anchor = CursorPosition { row: 0, column: 0 };
     let mut editor = EditorState::new(EditorConfig {
         buffer: args.buffer,
         cursor_chars: args.cursor,
         arm_completion: args.arm_completion,
         suppress_completion: args.suppress_completion,
+        completion_enabled: args.completion_enabled,
+        syntax_highlighting: args.syntax_highlighting,
+        cursor_animation: args.cursor_animation,
         prompt: args.prompt,
+        rprompt: args.rprompt,
         anchor,
         size,
         cwd: args.cwd,
@@ -84,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let result = editor.run(&mut terminal);
 
     if result.is_err() {
-        let _ = terminal.write_all(b"\x1b[0m\x1b[?25h");
+        let _ = terminal.write_all(b"\x1b[0m\x1b[?7h\x1b[?2026l\x1b[?25h");
         let _ = terminal.flush();
     }
     terminal.restore()?;
@@ -92,16 +51,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let result = result?;
     write_result(&result)?;
     Ok(())
-}
-
-fn next_value(
-    arguments: &mut impl Iterator<Item = OsString>,
-    flag: &str,
-) -> Result<String, String> {
-    arguments
-        .next()
-        .map(|value| value.to_string_lossy().into_owned())
-        .ok_or_else(|| format!("{flag} needs a value"))
 }
 
 fn write_result(result: &RunResult) -> std::io::Result<()> {
@@ -136,12 +85,6 @@ fn encode_highlights(buffer: &str, spans: &[crate::syntax::SyntaxSpan]) -> Strin
         })
         .collect::<Vec<_>>()
         .join(";")
-}
-
-fn print_usage() {
-    println!(
-        "sopra\n\nA Rust-owned line editor for stock Zsh.\n\nUsage:\n  sopra [--buffer TEXT] [--cursor N] [--prompt TEXT] [--cwd PATH] [--arm-completion] [--suppress-completion]"
-    );
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

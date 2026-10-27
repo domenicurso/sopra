@@ -1,4 +1,7 @@
 mod ansi;
+mod diff;
+mod finish;
+mod resize;
 
 pub(crate) use self::ansi::region_highlight_style;
 
@@ -7,89 +10,163 @@ mod tests;
 
 use std::io;
 
-use ratatui::{
-    buffer::{Buffer, Cell},
-    layout::Rect,
-};
+use ratatui::{buffer::Buffer, layout::Rect};
 
 use crate::{
     input::{CursorPosition, Terminal},
     scene::Frame,
 };
 
-use self::ansi::{cell_at, move_to, paint_cell};
+use self::ansi::{mark_prompt_start, move_to, with_terminal_modes};
+use self::resize::{clear_rows, clear_viewport};
 
 #[derive(Debug, Default)]
 pub(crate) struct Renderer {
     previous: Option<Buffer>,
     cursor_hidden: bool,
-    origin_saved: bool,
     origin_row: Option<u16>,
+    preserve_background: bool,
+    resize_epoch: Option<usize>,
+    redraw_prompt: bool,
+    previous_cursor: Option<CursorPosition>,
 }
 
 impl Renderer {
+    pub(crate) fn overlay() -> Self {
+        Self {
+            preserve_background: true,
+            origin_row: Some(0),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn editor() -> Self {
+        Self {
+            redraw_prompt: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn render(&mut self, next: Frame, terminal: &mut Terminal) -> io::Result<usize> {
-        let resized = self
-            .previous
-            .as_ref()
-            .is_some_and(|previous| previous.area != next.buffer.area);
-        let Frame {
-            buffer: next,
-            clear_rows: next_rows,
-            repaint_cells,
-            cursor,
-            required_height,
-        } = next;
+        let resize_epoch = terminal.resize_epoch();
+        let resized = self.resize_detected(next.buffer.area, resize_epoch);
         let old_area = self
             .previous
             .as_ref()
             .map_or(Rect::default(), |frame| *frame.area());
         let mut output = Vec::new();
-        if resized {
-            self.origin_row = None;
+        let origin = self.position_origin(&next, resized, terminal);
+        let size = terminal.size()?;
+        if terminal.resize_epoch() != resize_epoch
+            || size.columns != next.buffer.area.width
+            || size.rows != next.buffer.area.height
+        {
+            return Ok(0);
         }
-        if required_height > 1 && self.origin_row.is_none() {
-            self.origin_row = terminal.cursor_row().or(Some(0));
-        }
-        self.begin_frame(&mut output);
+        self.origin_row = origin;
         if resized {
-            // The terminal may reflow the active line during SIGWINCH. The frame leaves the
-            // cursor there, so use its current visual row as the new scene origin before repaint.
-            output.extend_from_slice(b"\r\x1b[s");
             self.previous = None;
         }
-        self.ensure_space(required_height, next.area.height, &mut output);
-        if resized {
-            let visible_rows = next
-                .area
-                .height
-                .saturating_sub(self.origin_row.unwrap_or_default());
-            clear_rows(&mut output, &(0..visible_rows).collect::<Vec<_>>());
-        } else if self.previous.is_none() {
-            clear_rows(&mut output, &next_rows);
+        self.clear_before_paint(&next, resized, &mut output);
+        let mark_prompt = self.redraw_prompt && (resized || self.previous.is_none());
+        if mark_prompt {
+            mark_prompt_start(&mut output, self.origin_row.unwrap_or_default());
         }
-        let changed = self.paint_diff(&next, old_area, &repaint_cells, &mut output);
+        let changed = self.paint_diff(&next.buffer, old_area, &next.repaint_cells, &mut output);
         if changed > 0 || !output.is_empty() {
-            move_to(&mut output, cursor.column, cursor.row);
+            move_to(
+                &mut output,
+                next.cursor.column,
+                self.origin_row
+                    .unwrap_or_default()
+                    .saturating_add(next.cursor.row),
+            );
+            if mark_prompt {
+                output.extend_from_slice(b"\x1b]133;B\x07");
+            }
             output.extend_from_slice(b"\x1b[0m");
-            terminal.write_all(&output)?;
-            terminal.flush()?;
+            self.write_frame(output, terminal)?;
         }
-        self.previous = Some(next);
+        self.previous = Some(next.buffer);
+        self.previous_cursor = Some(next.cursor);
+        self.resize_epoch = Some(resize_epoch);
         Ok(changed)
     }
 
-    fn begin_frame(&mut self, output: &mut Vec<u8>) {
+    fn position_origin(&self, next: &Frame, resized: bool, terminal: &mut Terminal) -> Option<u16> {
+        let origin =
+            if resized && self.preserve_background {
+                Some(0)
+            } else if resized {
+                Some(terminal.cursor_position().map_or(
+                    self.origin_row.unwrap_or_default(),
+                    |position| {
+                        self.resize_origin(position, next.cursor.row, next.buffer.area.width)
+                    },
+                ))
+            } else if self.origin_row.is_none() {
+                terminal.cursor_position().map(|position| position.row)
+            } else {
+                self.origin_row
+            };
+        origin.or((next.required_height > 1).then_some(0))
+    }
+
+    fn clear_before_paint(&mut self, next: &Frame, resized: bool, output: &mut Vec<u8>) {
+        self.ensure_space(next.required_height, next.buffer.area.height, output);
+        if resized && !self.preserve_background {
+            // The editor owns the viewport from its prompt down, including reflowed rows missed
+            // between frames; clearing it leaves the shell history above the prompt untouched.
+            clear_viewport(output, self.origin_row.unwrap_or_default());
+        } else if self.previous.is_none() {
+            clear_rows(
+                output,
+                self.origin_row.unwrap_or_default(),
+                &next.clear_rows,
+            );
+        }
+    }
+
+    fn write_frame(&mut self, output: Vec<u8>, terminal: &mut Terminal) -> io::Result<()> {
+        let mut frame = Vec::with_capacity(output.len().saturating_add(32));
         if !self.cursor_hidden {
-            output.extend_from_slice(b"\x1b[?25l");
-            self.cursor_hidden = true;
+            frame.extend_from_slice(b"\x1b[?25l");
         }
-        if !self.origin_saved {
-            // ZLE has already placed the cursor on the active line, so this saved point is the
-            // scene origin even when the shell prompt is below terminal row zero.
-            output.extend_from_slice(b"\r\x1b[s");
-            self.origin_saved = true;
-        }
+        frame.extend_from_slice(&output);
+        terminal.write_all(&with_terminal_modes(&frame))?;
+        terminal.flush()?;
+        self.cursor_hidden = true;
+        Ok(())
+    }
+
+    fn resize_detected(&self, next_area: Rect, resize_epoch: usize) -> bool {
+        self.previous
+            .as_ref()
+            .is_some_and(|previous| previous.area != next_area)
+            || self
+                .resize_epoch
+                .is_some_and(|previous| previous != resize_epoch)
+    }
+
+    pub(super) fn resize_origin(
+        &self,
+        position: CursorPosition,
+        cursor_row_in_frame: u16,
+        columns: u16,
+    ) -> u16 {
+        let columns = columns.max(1);
+        let reflowed_rows = self.previous_cursor.map_or(0, |cursor| {
+            if position.column == cursor.column % columns && position.column < columns - 1 {
+                cursor.column / columns
+            } else {
+                0
+            }
+        });
+        // Terminals can clamp the cursor to the edge instead of wrapping it on resize.
+        position
+            .row
+            .saturating_sub(cursor_row_in_frame)
+            .saturating_sub(reflowed_rows)
     }
 
     fn ensure_space(&mut self, required_height: u16, terminal_rows: u16, output: &mut Vec<u8>) {
@@ -100,58 +177,9 @@ impl Renderer {
         if rows == 0 {
             return;
         }
-        output.extend_from_slice(b"\x1b[u");
-        output.extend_from_slice(format!("\x1b[{rows}S\x1b[{rows}A\r\x1b[s").as_bytes());
+        output.extend_from_slice(format!("\x1b[{rows}S").as_bytes());
         self.origin_row = Some(origin_row - rows);
         self.previous = None;
-    }
-
-    fn paint_diff(
-        &self,
-        next: &Buffer,
-        old_area: Rect,
-        repaint_cells: &[(u16, u16)],
-        output: &mut Vec<u8>,
-    ) -> usize {
-        let width = next.area.width.max(old_area.width);
-        let height = next.area.height.max(old_area.height);
-        let mut changed = 0;
-        for row in 0..height {
-            for column in 0..width {
-                let next_cell = cell_at(next, column, row);
-                let previous_cell = self
-                    .previous
-                    .as_ref()
-                    .map_or(Cell::EMPTY, |frame| cell_at(frame, column, row));
-                if next_cell != previous_cell || repaint_cells.contains(&(column, row)) {
-                    paint_cell(output, column, row, &next_cell);
-                    changed += 1;
-                }
-            }
-        }
-        changed
-    }
-
-    pub(crate) fn finish(
-        &mut self,
-        terminal: &mut Terminal,
-        restore_position: CursorPosition,
-        replacement: Option<Frame>,
-    ) -> io::Result<()> {
-        let Some(previous) = self.previous.take() else {
-            return Ok(());
-        };
-        let replacement = replacement.map(|frame| frame.buffer);
-        let mut output = Vec::new();
-        paint_finish(&previous, replacement.as_ref(), &mut output);
-        move_to(&mut output, restore_position.column, restore_position.row);
-        output.extend_from_slice(b"\x1b[0m\x1b[?25h");
-        terminal.write_all(&output)?;
-        terminal.flush()?;
-        self.cursor_hidden = false;
-        self.origin_saved = false;
-        self.origin_row = None;
-        Ok(())
     }
 }
 
@@ -160,40 +188,4 @@ fn rows_to_scroll(origin_row: u16, required_height: u16, terminal_rows: u16) -> 
         .saturating_add(required_height)
         .saturating_sub(terminal_rows)
         .min(origin_row)
-}
-
-fn clear_rows(output: &mut Vec<u8>, rows: &[u16]) {
-    for &row in rows {
-        move_to(output, 0, row);
-        output.extend_from_slice(b"\x1b[2K");
-    }
-}
-
-fn paint_finish(previous: &Buffer, replacement: Option<&Buffer>, output: &mut Vec<u8>) {
-    let width = previous
-        .area
-        .width
-        .max(replacement.map_or(0, |frame| frame.area.width));
-    let height = previous
-        .area
-        .height
-        .max(replacement.map_or(0, |frame| frame.area.height));
-    for row in 0..height {
-        for column in 0..width {
-            let previous_cell = cell_at(previous, column, row);
-            let next_cell = replacement.map_or(Cell::EMPTY, |frame| cell_at(frame, column, row));
-            if next_cell != previous_cell {
-                paint_replacement_cell(output, column, row, &next_cell);
-            }
-        }
-    }
-}
-
-fn paint_replacement_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cell) {
-    if cell == &Cell::EMPTY {
-        move_to(output, column, row);
-        output.extend_from_slice(b"\x1b[0m ");
-    } else {
-        paint_cell(output, column, row, cell);
-    }
 }

@@ -46,7 +46,11 @@ pub(crate) struct EditorConfig {
     pub(crate) cursor_chars: usize,
     pub(crate) arm_completion: bool,
     pub(crate) suppress_completion: bool,
+    pub(crate) completion_enabled: bool,
+    pub(crate) syntax_highlighting: bool,
+    pub(crate) cursor_animation: bool,
     pub(crate) prompt: String,
+    pub(crate) rprompt: String,
     pub(crate) anchor: CursorPosition,
     pub(crate) size: TerminalSize,
     pub(crate) cwd: PathBuf,
@@ -57,6 +61,7 @@ pub(crate) struct EditorState {
     buffer: String,
     cursor: usize,
     prompt: String,
+    rprompt: String,
     anchor: CursorPosition,
     selected: Option<usize>,
     completion_armed: bool,
@@ -73,6 +78,8 @@ pub(crate) struct EditorState {
     cwd: PathBuf,
     palette: TerminalPalette,
     syntax: Vec<SyntaxSpan>,
+    syntax_enabled: bool,
+    cursor_animation: bool,
     yank: String,
     animation_started: Instant,
     last_size: TerminalSize,
@@ -81,26 +88,33 @@ pub(crate) struct EditorState {
 impl EditorState {
     pub(crate) fn new(config: EditorConfig) -> Self {
         let cursor = navigation::char_index_to_byte(&config.buffer, config.cursor_chars);
+        let completion_active = config.completion_enabled && !config.suppress_completion;
         let mut state = Self {
             buffer: config.buffer,
             cursor,
             prompt: config.prompt,
+            rprompt: config.rprompt,
             anchor: config.anchor,
-            selected: (config.arm_completion && !config.suppress_completion).then_some(0),
-            completion_armed: config.arm_completion && !config.suppress_completion,
-            completion_suspended: config.suppress_completion,
+            selected: (config.arm_completion && completion_active).then_some(0),
+            completion_armed: config.arm_completion && completion_active,
+            completion_suspended: config.suppress_completion || !config.completion_enabled,
             suggestion_scroll: 0,
-            overlay_visible: !config.suppress_completion,
+            overlay_visible: config.completion_enabled && !config.suppress_completion,
             completion_source: Vec::new(),
             suggestions: Vec::new(),
             completion_key: String::new(),
             latest_local_generation: 0,
-            completion: CompletionEngine::new(),
+            completion: config
+                .completion_enabled
+                .then(CompletionEngine::new)
+                .flatten(),
             completion_elapsed: Duration::ZERO,
             completion_latency_generation: 0,
             cwd: config.cwd,
             palette: config.palette,
             syntax: Vec::new(),
+            syntax_enabled: config.syntax_highlighting,
+            cursor_animation: config.cursor_animation,
             yank: String::new(),
             animation_started: Instant::now(),
             last_size: config.size,
@@ -110,7 +124,8 @@ impl EditorState {
     }
 
     pub(crate) fn run(&mut self, terminal: &mut Terminal) -> io::Result<RunResult> {
-        let mut renderer = Renderer::default();
+        let mut renderer = Renderer::editor();
+        let mut resize_epoch = terminal.resize_epoch();
         let mut next_frame = Instant::now();
         loop {
             self.poll_completion();
@@ -126,13 +141,18 @@ impl EditorState {
                     if result.reason == ExitReason::Interrupted {
                         self.finish(&mut renderer, terminal, result.reason)?;
                         self.start_fresh_line(terminal)?;
-                        renderer = Renderer::default();
+                        renderer = Renderer::editor();
                         next_frame = Instant::now();
                         continue;
                     }
                     self.finish(&mut renderer, terminal, result.reason)?;
                     return Ok(result);
                 }
+                next_frame = Instant::now();
+            }
+            let latest_resize_epoch = terminal.resize_epoch();
+            if latest_resize_epoch != resize_epoch {
+                resize_epoch = latest_resize_epoch;
                 next_frame = Instant::now();
             }
         }
@@ -167,8 +187,8 @@ impl EditorState {
         self.cursor = 0;
         self.selected = None;
         self.completion_armed = false;
-        self.completion_suspended = false;
-        self.overlay_visible = true;
+        self.completion_suspended = self.completion.is_none();
+        self.overlay_visible = self.completion.is_some();
         self.suggestion_scroll = 0;
         self.completion_source.clear();
         self.suggestions.clear();

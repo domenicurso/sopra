@@ -1,12 +1,15 @@
 use std::{
+    io,
     os::fd::RawFd,
     time::{Duration, Instant},
 };
 
+use super::CursorPosition;
+
 const RESPONSE_TIMEOUT: Duration = Duration::from_millis(100);
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 
-pub(super) fn read(fd: RawFd) -> (Option<u16>, Vec<u8>) {
+pub(super) fn read(fd: RawFd) -> (Option<CursorPosition>, Vec<u8>) {
     // fcntl reads flags from this live terminal descriptor without retaining its pointer.
     let original_flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if original_flags < 0 {
@@ -33,6 +36,9 @@ fn write_query(fd: RawFd) -> bool {
         let remaining = &CURSOR_QUERY[written..];
         // The query slice remains alive for the duration of this synchronous libc call.
         let count = unsafe { libc::write(fd, remaining.as_ptr().cast(), remaining.len()) };
+        if count < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
         if count <= 0 {
             return false;
         }
@@ -57,6 +63,9 @@ fn read_response(fd: RawFd) -> Vec<u8> {
         };
         // poll writes only the revents field of this valid, stack-owned descriptor.
         let ready = unsafe { libc::poll(&mut descriptor, 1, milliseconds) };
+        if ready < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
         if ready <= 0 {
             break;
         }
@@ -64,7 +73,10 @@ fn read_response(fd: RawFd) -> Vec<u8> {
         // The buffer is valid for the requested length and is read only during this call.
         let count = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
         if count < 0 {
-            if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock {
+            if matches!(
+                io::Error::last_os_error().kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+            ) {
                 continue;
             }
             break;
@@ -80,17 +92,17 @@ fn read_response(fd: RawFd) -> Vec<u8> {
     bytes
 }
 
-fn parse_response(bytes: &[u8]) -> (Option<u16>, Vec<u8>) {
-    let Some((start, end, row)) = find_response(bytes) else {
+fn parse_response(bytes: &[u8]) -> (Option<CursorPosition>, Vec<u8>) {
+    let Some((start, end, position)) = find_response(bytes) else {
         return (None, bytes.to_vec());
     };
     let mut pending = Vec::with_capacity(bytes.len().saturating_sub(end - start));
     pending.extend_from_slice(&bytes[..start]);
     pending.extend_from_slice(&bytes[end..]);
-    (row.checked_sub(1), pending)
+    (Some(position), pending)
 }
 
-fn find_response(bytes: &[u8]) -> Option<(usize, usize, u16)> {
+fn find_response(bytes: &[u8]) -> Option<(usize, usize, CursorPosition)> {
     for start in bytes
         .windows(2)
         .enumerate()
@@ -113,23 +125,37 @@ fn find_response(bytes: &[u8]) -> Option<(usize, usize, u16)> {
         if cursor == column_start || bytes.get(cursor) != Some(&b'R') {
             continue;
         }
-        let row = std::str::from_utf8(&bytes[row_start..row_end])
+        let row: u16 = std::str::from_utf8(&bytes[row_start..row_end])
             .ok()?
             .parse()
             .ok()?;
-        return Some((start, cursor + 1, row));
+        let column: u16 = std::str::from_utf8(&bytes[column_start..cursor])
+            .ok()?
+            .parse()
+            .ok()?;
+        let position = CursorPosition {
+            row: row.checked_sub(1)?,
+            column: column.checked_sub(1)?,
+        };
+        return Some((start, cursor + 1, position));
     }
     None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_response;
+    use super::{CursorPosition, parse_response};
 
     #[test]
     fn extracts_cursor_response_and_preserves_other_input() {
-        let (row, pending) = parse_response(b"x\x1b[12;34Ry");
-        assert_eq!(row, Some(11));
+        let (position, pending) = parse_response(b"x\x1b[12;34Ry");
+        assert_eq!(
+            position,
+            Some(CursorPosition {
+                row: 11,
+                column: 33
+            })
+        );
         assert_eq!(pending, b"xy");
     }
 

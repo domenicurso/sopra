@@ -54,11 +54,17 @@ pub(super) struct CommandElement {
     pub(super) row: u16,
     pub(super) buffer: String,
     pub(super) spans: Vec<SyntaxSpan>,
+    pub(super) max_width: u16,
 }
 
 impl Element for CommandElement {
     fn paint(&self, canvas: &mut Canvas) {
-        let width = canvas.buffer.area.width.saturating_sub(self.column);
+        let width = canvas
+            .buffer
+            .area
+            .width
+            .saturating_sub(self.column)
+            .min(self.max_width);
         let mut offset = 0_u16;
         for (byte, grapheme) in self.buffer.grapheme_indices(true) {
             if grapheme.chars().any(char::is_control) {

@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
 };
 
 use crate::{
@@ -19,9 +19,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
         Box::new({
             let mut prompt = PromptElement::styled(
                 TRANSIENT_PROMPT,
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::DIM),
+                Style::default().add_modifier(Modifier::DIM),
             );
             prompt.column = 0;
             prompt.row = 0;
@@ -32,6 +30,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
             row: 0,
             buffer: editor.buffer().to_string(),
             spans: editor.transient_syntax(),
+            max_width: size.columns.saturating_sub(2),
         }),
     ];
     Scene::new(

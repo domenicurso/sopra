@@ -34,13 +34,13 @@ printf 'Downloading Sopra from %s...\n' "$archive_url"
 curl -fsSL "$archive_url" | tar -xzf - --strip-components=1 -C "$source_dir"
 
 printf 'Building Sopra...\n'
-(cd "$source_dir" && cargo build --release --locked --bin sopra)
+(cd "$source_dir" && cargo build --release --locked --bin sopra-worker)
 
-mkdir -p "$SOPRA_PREFIX/bin" "$SOPRA_PREFIX/share/sopra"
-install -m 0755 "$source_dir/target/release/sopra" "$SOPRA_PREFIX/bin/sopra"
+mkdir -p "$SOPRA_PREFIX/libexec" "$SOPRA_PREFIX/share/sopra"
+install -m 0755 "$source_dir/target/release/sopra-worker" "$SOPRA_PREFIX/libexec/sopra-worker"
 install -m 0644 "$source_dir/zsh/editor.zsh" "$SOPRA_PREFIX/share/sopra/editor.zsh"
+install -m 0644 "$source_dir/zsh/settings.zsh" "$SOPRA_PREFIX/share/sopra/settings.zsh"
 
-printf '\nSopra was installed to %s/bin/sopra\n' "$SOPRA_PREFIX"
+printf '\nSopra was installed under %s\n' "$SOPRA_PREFIX"
 printf 'Add %s/share/sopra/editor.zsh to your interactive Zsh configuration:\n' "$SOPRA_PREFIX"
 printf '  source %s/share/sopra/editor.zsh\n' "$SOPRA_PREFIX"
-printf 'Make sure %s/bin is on PATH before starting Zsh.\n' "$SOPRA_PREFIX"

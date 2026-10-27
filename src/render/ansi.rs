@@ -36,11 +36,20 @@ pub(super) fn cell_at(buffer: &Buffer, column: u16, row: u16) -> Cell {
 }
 
 pub(super) fn move_to(output: &mut Vec<u8>, column: u16, row: u16) {
-    output.extend_from_slice(b"\x1b[u");
-    if row > 0 {
-        output.extend_from_slice(format!("\x1b[{}B", row).as_bytes());
-    }
-    output.extend_from_slice(format!("\x1b[{}G", column + 1).as_bytes());
+    output.extend_from_slice(format!("\x1b[{};{}H", row + 1, column + 1).as_bytes());
+}
+
+pub(super) fn mark_prompt_start(output: &mut Vec<u8>, origin_row: u16) {
+    move_to(output, 0, origin_row);
+    output.extend_from_slice(b"\x1b]133;A;redraw=1;cl=line\x07");
+}
+
+pub(super) fn with_terminal_modes(output: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(output.len().saturating_add(24));
+    frame.extend_from_slice(b"\x1b[?2026h\x1b[?7l");
+    frame.extend_from_slice(output);
+    frame.extend_from_slice(b"\x1b[?7h\x1b[?2026l");
+    frame
 }
 
 pub(super) fn paint_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cell) {
@@ -127,4 +136,26 @@ fn paint_basic_color(output: &mut Vec<u8>, prefix: u8, color: u8) {
         base + 10 + offset
     };
     output.extend_from_slice(format!("\x1b[{}m", code).as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{mark_prompt_start, with_terminal_modes};
+
+    #[test]
+    fn frame_output_is_synchronized_and_restores_terminal_modes() {
+        assert_eq!(
+            with_terminal_modes(b"paint"),
+            b"\x1b[?2026h\x1b[?7lpaint\x1b[?7h\x1b[?2026l"
+        );
+    }
+
+    #[test]
+    fn redrawable_prompt_is_marked_at_its_stable_origin() {
+        let mut output = Vec::new();
+
+        mark_prompt_start(&mut output, 7);
+
+        assert_eq!(output, b"\x1b[8;1H\x1b]133;A;redraw=1;cl=line\x07");
+    }
 }

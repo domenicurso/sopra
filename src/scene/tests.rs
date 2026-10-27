@@ -15,7 +15,11 @@ fn editor(buffer: &str, size: TerminalSize) -> EditorState {
         cursor_chars: buffer.chars().count(),
         arm_completion: false,
         suppress_completion: false,
+        completion_enabled: true,
+        syntax_highlighting: true,
+        cursor_animation: true,
         prompt: "$ ".to_string(),
+        rprompt: String::new(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),
@@ -83,58 +87,10 @@ fn overlay_cells_keep_the_terminal_background() {
 }
 
 #[test]
-fn normal_prompt_text_uses_the_prompt_color() {
+fn normal_prompt_text_uses_terminal_default_color() {
     let size = TerminalSize::new(80, 24);
     let frame = Scene::for_editor(&editor("", size), size, Instant::now()).render();
-    assert_eq!(frame.buffer[(0, 0)].fg, Color::LightBlue);
-}
-
-#[test]
-fn transient_scene_keeps_the_command_and_its_style() {
-    let size = TerminalSize::new(80, 24);
-    let editor = editor("print -r -- hi", size);
-    let frame = Scene::for_transient(&editor, size).render();
-    let live = Scene::for_editor(&editor, size, Instant::now()).render();
-    assert_eq!(frame.buffer[(0, 0)].symbol(), "$");
-    assert_eq!(frame.buffer[(2, 0)].symbol(), "p");
-    assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
-    assert_eq!(frame.buffer[(2, 0)].fg, live.buffer[(2, 0)].fg);
-    assert_eq!(frame.buffer[(2, 0)].modifier, live.buffer[(2, 0)].modifier);
-    assert_eq!(frame.buffer[(30, 0)], ratatui::buffer::Cell::EMPTY);
-}
-
-#[test]
-fn transient_scene_keeps_partial_syntax_highlighting() {
-    let size = TerminalSize::new(80, 24);
-    let editor = editor("echo \"", size);
-    let frame = Scene::for_transient(&editor, size).render();
-    assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
-    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightRed);
-    assert!(frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
-}
-
-#[test]
-fn transient_scene_does_not_keep_cursor_pair_highlighting() {
-    let size = TerminalSize::new(80, 24);
-    let editor = EditorState::new(EditorConfig {
-        buffer: "echo \"hi\"".to_string(),
-        cursor_chars: 6,
-        arm_completion: false,
-        suppress_completion: false,
-        prompt: "$ ".to_string(),
-        anchor: CursorPosition { row: 0, column: 0 },
-        size,
-        cwd: std::path::PathBuf::from("."),
-        palette: crate::palette::TerminalPalette::default(),
-    });
-    let frame = Scene::for_transient(&editor, size).render();
-    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightMagenta);
-    assert!(!frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
-    assert!(
-        !frame.buffer[(10, 0)]
-            .modifier
-            .contains(Modifier::UNDERLINED)
-    );
+    assert_eq!(frame.buffer[(0, 0)].fg, Color::Reset);
 }
 
 #[test]
@@ -145,7 +101,11 @@ fn cursor_repaint_covers_a_wide_grapheme() {
         cursor_chars: 0,
         arm_completion: false,
         suppress_completion: false,
+        completion_enabled: true,
+        syntax_highlighting: true,
+        cursor_animation: true,
         prompt: "$ ".to_string(),
+        rprompt: String::new(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),
@@ -156,6 +116,28 @@ fn cursor_repaint_covers_a_wide_grapheme() {
 }
 
 #[test]
+fn disabled_cursor_animation_does_not_force_repaints() {
+    let size = TerminalSize::new(80, 24);
+    let editor = EditorState::new(EditorConfig {
+        buffer: "echo".to_string(),
+        cursor_chars: 4,
+        arm_completion: false,
+        suppress_completion: false,
+        completion_enabled: true,
+        syntax_highlighting: true,
+        cursor_animation: false,
+        prompt: "$ ".to_string(),
+        rprompt: String::new(),
+        anchor: CursorPosition { row: 0, column: 0 },
+        size,
+        cwd: std::path::PathBuf::from("."),
+        palette: crate::palette::TerminalPalette::default(),
+    });
+    let frame = Scene::for_editor(&editor, size, Instant::now()).render();
+    assert!(frame.repaint_cells.is_empty());
+}
+
+#[test]
 fn cursor_repaints_the_character_under_it() {
     let size = TerminalSize::new(80, 24);
     let editor = EditorState::new(EditorConfig {
@@ -163,7 +145,11 @@ fn cursor_repaints_the_character_under_it() {
         cursor_chars: 1,
         arm_completion: false,
         suppress_completion: false,
+        completion_enabled: true,
+        syntax_highlighting: true,
+        cursor_animation: true,
         prompt: "$ ".to_string(),
+        rprompt: String::new(),
         anchor: CursorPosition { row: 0, column: 0 },
         size,
         cwd: std::path::PathBuf::from("."),

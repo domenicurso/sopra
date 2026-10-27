@@ -4,7 +4,11 @@ use super::EditorState;
 
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
-        self.syntax = crate::syntax::highlight_at(&self.buffer, &self.cwd, self.cursor);
+        self.syntax = if self.syntax_enabled {
+            crate::syntax::highlight_at(&self.buffer, &self.cwd, self.cursor)
+        } else {
+            Vec::new()
+        };
         if self.buffer.trim().is_empty() || self.completion_suspended {
             self.clear_completion_state();
             return;
@@ -98,7 +102,7 @@ impl EditorState {
     }
 
     pub(super) fn resume_completion(&mut self) {
-        if !self.completion_suspended {
+        if self.completion.is_none() || !self.completion_suspended {
             return;
         }
         self.completion_suspended = false;
