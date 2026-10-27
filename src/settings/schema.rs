@@ -9,16 +9,18 @@ pub(super) enum SettingKey {
     Prompt,
     RightPrompt,
     TransientPrompt,
+    ClockFormat,
     CursorAnimation,
     SyntaxHighlighting,
     CompletionEnabled,
 }
 
 impl SettingKey {
-    pub(super) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 7] = [
         Self::Prompt,
         Self::RightPrompt,
         Self::TransientPrompt,
+        Self::ClockFormat,
         Self::CursorAnimation,
         Self::SyntaxHighlighting,
         Self::CompletionEnabled,
@@ -29,6 +31,7 @@ impl SettingKey {
             Self::Prompt => "prompt",
             Self::RightPrompt => "rprompt",
             Self::TransientPrompt => "transient_prompt",
+            Self::ClockFormat => "clock_format",
             Self::CursorAnimation => "cursor_animation",
             Self::SyntaxHighlighting => "syntax_highlighting",
             Self::CompletionEnabled => "completion_enabled",
@@ -40,6 +43,7 @@ impl SettingKey {
             Self::Prompt => "SOPRA_PROMPT",
             Self::RightPrompt => "SOPRA_RPROMPT",
             Self::TransientPrompt => "SOPRA_TRANSIENT_PROMPT",
+            Self::ClockFormat => "SOPRA_CLOCK_FORMAT",
             Self::CursorAnimation => "SOPRA_CURSOR_ANIMATION",
             Self::SyntaxHighlighting => "SOPRA_SYNTAX_HIGHLIGHTING",
             Self::CompletionEnabled => "SOPRA_COMPLETION_ENABLED",
@@ -79,6 +83,12 @@ const PROMPT_SETTINGS: &[SettingDefinition] = &[
         key: SettingKey::TransientPrompt,
         label: "Transient prompt",
         description: "Prompt left after a line is accepted or interrupted.",
+        kind: SettingKind::Text,
+    },
+    SettingDefinition {
+        key: SettingKey::ClockFormat,
+        label: "Clock format",
+        description: "Time format for the {clock} widget; supports inline styles.",
         kind: SettingKind::Text,
     },
 ];

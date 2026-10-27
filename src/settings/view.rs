@@ -90,11 +90,28 @@ mod tests {
             TerminalSize::new(100, 40),
             TerminalPalette::default(),
         );
-        assert_eq!(frame.buffer[(9, 13)].symbol(), "╭");
-        assert_eq!(frame.buffer[(36, 18)].symbol(), "g");
-        assert_eq!(frame.buffer[(36, 18)].fg, Color::Green);
-        assert_eq!(frame.buffer[(10, 14)].symbol(), "P");
-        assert_eq!(frame.buffer[(10, 17)].symbol(), "─");
+        assert_eq!(frame.buffer[(9, 12)].symbol(), "╭");
+        assert_eq!(frame.buffer[(36, 17)].symbol(), "g");
+        assert_eq!(frame.buffer[(36, 17)].fg, Color::Green);
+        assert_eq!(frame.buffer[(10, 13)].symbol(), "P");
+        assert_eq!(frame.buffer[(10, 16)].symbol(), "─");
+    }
+
+    #[test]
+    fn settings_show_the_literal_format_string() {
+        let state = SettingsState::test(Settings {
+            prompt: "[dim]{path}[/]".to_string(),
+            ..Settings::default()
+        });
+        let frame = build(
+            &state,
+            TerminalSize::new(100, 40),
+            TerminalPalette::default(),
+        );
+        let text = (36..65)
+            .map(|column| frame.buffer[(column, 17)].symbol())
+            .collect::<String>();
+        assert!(text.contains("[dim]{path}[/]"));
     }
 
     #[test]

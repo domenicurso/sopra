@@ -34,6 +34,11 @@ _sopra_load_settings() {
                     typeset -g SOPRA_TRANSIENT_PROMPT=$value
                 fi
                 ;;
+            clock_format)
+                if (( force )) || [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
+                    typeset -g SOPRA_CLOCK_FORMAT=$value
+                fi
+                ;;
             cursor_animation)
                 if (( force )) || [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
                     typeset -g SOPRA_CURSOR_ANIMATION=$value
@@ -58,6 +63,7 @@ _sopra_settings() {
     SOPRA_PROMPT="$SOPRA_PROMPT" \
         SOPRA_RPROMPT="$SOPRA_RPROMPT" \
         SOPRA_TRANSIENT_PROMPT="$SOPRA_TRANSIENT_PROMPT" \
+        SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" \
         SOPRA_CURSOR_ANIMATION="${SOPRA_CURSOR_ANIMATION:-1}" \
         SOPRA_SYNTAX_HIGHLIGHTING="${SOPRA_SYNTAX_HIGHLIGHTING:-1}" \
         SOPRA_COMPLETION_ENABLED="${SOPRA_COMPLETION_ENABLED:-1}" \

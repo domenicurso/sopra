@@ -33,7 +33,7 @@ pub(super) fn draw_prompt_value(
 ) {
     let selection = palette.cursor_style(1.0).add_modifier(Modifier::BOLD);
     let mut offset: u16 = 0;
-    for span in prompt::parse(value) {
+    for span in prompt::parse_literal(value) {
         let style = span_style(&span, selected, selection);
         offset += draw_text(
             buffer,
@@ -103,7 +103,7 @@ pub(super) fn paint_editing_cursor(
     let prefix = &value[..state.cursor()];
     let column = layout
         .value_column
-        .saturating_add(prompt::width(&prompt::parse(prefix)) as u16)
+        .saturating_add(prompt::width(&prompt::parse_literal(prefix)) as u16)
         .min(layout.inner.right().saturating_sub(1));
     if let Some(cell) = buffer.cell_mut((column, row)) {
         cell.set_symbol(" ")

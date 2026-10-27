@@ -1,4 +1,5 @@
 mod clock;
+mod format;
 mod git;
 mod path;
 
@@ -15,6 +16,9 @@ pub(crate) enum WidgetAction {
 trait Widget {
     fn token(&self) -> &'static str;
     fn render(&self) -> String;
+    fn markup(&self) -> bool {
+        false
+    }
     fn active(&self) -> bool {
         false
     }
@@ -31,13 +35,16 @@ pub(crate) struct Widgets {
 
 impl Widgets {
     pub(crate) fn new(prompt: String, right: String, cwd: PathBuf) -> Self {
-        let git_enabled = prompt.contains("{git}") || right.contains("{git}");
+        let git_enabled = prompt.contains("{git}")
+            || right.contains("{git}")
+            || prompt.contains("[if git]")
+            || right.contains("[if git]");
         let git = git::Git::new(&cwd, git_enabled);
         Self {
             prompt_template: prompt,
             right_template: right,
             widgets: vec![
-                Box::new(clock::Clock),
+                Box::new(clock::Clock::new()),
                 Box::new(git),
                 Box::new(path::Path::new(cwd)),
             ],
@@ -52,22 +59,7 @@ impl Widgets {
     }
 
     fn render_template(&self, template: &str) -> String {
-        let mut output = String::new();
-        let mut remaining = template;
-        while !remaining.is_empty() {
-            if let Some(widget) = self
-                .widgets
-                .iter()
-                .find(|widget| remaining.starts_with(widget.token()))
-            {
-                output.push_str(&widget.render());
-                remaining = &remaining[widget.token().len()..];
-            } else if let Some(character) = remaining.chars().next() {
-                output.push(character);
-                remaining = &remaining[character.len_utf8()..];
-            }
-        }
-        output
+        format::render(template, &self.widgets)
     }
 
     pub(crate) fn active(&self) -> bool {
@@ -103,9 +95,17 @@ mod tests {
             widgets.handle(Key::PromptWidgets),
             WidgetAction::Consumed
         ));
-        assert!(widgets.render().0.starts_with("[/one/two]"));
+        assert!(
+            crate::prompt::parse(&widgets.render().0)[0]
+                .text
+                .starts_with("[/one/two]")
+        );
         widgets.handle(Key::Tab);
-        assert!(widgets.render().0.starts_with("[/one]"));
+        assert!(
+            crate::prompt::parse(&widgets.render().0)[0]
+                .text
+                .starts_with("[/one]")
+        );
         assert!(
             matches!(widgets.handle(Key::Enter), WidgetAction::ChangeDirectory(path) if path == std::path::Path::new("/one"))
         );

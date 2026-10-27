@@ -10,6 +10,7 @@ pub(super) struct Settings {
     pub(super) prompt: String,
     pub(super) rprompt: String,
     pub(super) transient_prompt: String,
+    pub(super) clock_format: String,
     pub(super) cursor_animation: bool,
     pub(super) syntax_highlighting: bool,
     pub(super) completion_enabled: bool,
@@ -21,6 +22,7 @@ impl Default for Settings {
             prompt: "$ ".to_string(),
             rprompt: String::new(),
             transient_prompt: "$ ".to_string(),
+            clock_format: "%H:%M:%S".to_string(),
             cursor_animation: true,
             syntax_highlighting: true,
             completion_enabled: true,
@@ -58,6 +60,7 @@ impl Settings {
             SettingKey::Prompt => self.prompt.clone(),
             SettingKey::RightPrompt => self.rprompt.clone(),
             SettingKey::TransientPrompt => self.transient_prompt.clone(),
+            SettingKey::ClockFormat => self.clock_format.clone(),
             SettingKey::CursorAnimation => toggle_value(self.cursor_animation),
             SettingKey::SyntaxHighlighting => toggle_value(self.syntax_highlighting),
             SettingKey::CompletionEnabled => toggle_value(self.completion_enabled),
@@ -69,6 +72,7 @@ impl Settings {
             SettingKey::Prompt => self.prompt = value,
             SettingKey::RightPrompt => self.rprompt = value,
             SettingKey::TransientPrompt => self.transient_prompt = value,
+            SettingKey::ClockFormat => self.clock_format = value,
             SettingKey::CursorAnimation
             | SettingKey::SyntaxHighlighting
             | SettingKey::CompletionEnabled => {}
@@ -80,7 +84,10 @@ impl Settings {
             SettingKey::CursorAnimation => self.cursor_animation = !self.cursor_animation,
             SettingKey::SyntaxHighlighting => self.syntax_highlighting = !self.syntax_highlighting,
             SettingKey::CompletionEnabled => self.completion_enabled = !self.completion_enabled,
-            SettingKey::Prompt | SettingKey::RightPrompt | SettingKey::TransientPrompt => {}
+            SettingKey::Prompt
+            | SettingKey::RightPrompt
+            | SettingKey::TransientPrompt
+            | SettingKey::ClockFormat => {}
         }
     }
 
@@ -103,6 +110,7 @@ impl Settings {
             "prompt" => self.prompt = value.to_string(),
             "rprompt" => self.rprompt = value.to_string(),
             "transient_prompt" => self.transient_prompt = value.to_string(),
+            "clock_format" => self.clock_format = value.to_string(),
             "cursor_animation" => self.cursor_animation = parse_bool(value, self.cursor_animation),
             "syntax_highlighting" => {
                 self.syntax_highlighting = parse_bool(value, self.syntax_highlighting)
@@ -147,6 +155,7 @@ mod tests {
             prompt: "%n in %~ $ ".to_string(),
             rprompt: "right".to_string(),
             transient_prompt: "done $ ".to_string(),
+            clock_format: "%H[dim]:[/]%M".to_string(),
             cursor_animation: false,
             syntax_highlighting: false,
             completion_enabled: true,

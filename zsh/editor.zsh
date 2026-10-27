@@ -99,12 +99,13 @@ _sopra_edit() {
     if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
-    raw=$(SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
+    raw=$(SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" "$SOPRA_BIN" "${editor_args[@]}" </dev/tty) || return 1
     _sopra_parse_result "$raw"
 }
 
 _sopra_prepare_transient() {
-    PROMPT=$SOPRA_TRANSIENT_PROMPT
+    _sopra_shell_prompt "$SOPRA_TRANSIENT_PROMPT"
+    PROMPT=$REPLY
     RPROMPT=''
     # A pending resize can make ZLE redraw its cached full prompt on accept.
     zle .reset-prompt

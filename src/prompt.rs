@@ -1,3 +1,4 @@
+mod markup;
 pub(crate) mod widgets;
 
 use ratatui::style::{Color, Modifier, Style};
@@ -9,9 +10,18 @@ pub(crate) struct PromptSpan {
 }
 
 pub(crate) fn parse(prompt: &str) -> Vec<PromptSpan> {
+    parse_text(prompt, true)
+}
+
+pub(crate) fn parse_literal(prompt: &str) -> Vec<PromptSpan> {
+    parse_text(prompt, false)
+}
+
+fn parse_text(prompt: &str, markup_enabled: bool) -> Vec<PromptSpan> {
     let mut spans = Vec::new();
     let mut style = Style::default();
     let mut text = String::new();
+    let mut style_stack = Vec::new();
     let bytes = prompt.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -19,6 +29,19 @@ pub(crate) fn parse(prompt: &str) -> Vec<PromptSpan> {
             push_span(&mut spans, &mut text, style);
             index = consume_escape(prompt, index, &mut style);
             continue;
+        }
+        if markup_enabled && bytes[index] == b'[' {
+            if prompt[index..].starts_with("[[") {
+                text.push('[');
+                index += 2;
+                continue;
+            }
+            let previous = style;
+            if let Some(length) = markup::apply(&prompt[index..], &mut style, &mut style_stack) {
+                push_span(&mut spans, &mut text, previous);
+                index += length;
+                continue;
+            }
         }
         let character = prompt[index..].chars().next().unwrap_or_default();
         if !character.is_control() {
@@ -160,22 +183,4 @@ fn ansi_color(code: u16) -> Option<Color> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{parse, width};
-    use ratatui::style::{Color, Modifier};
-
-    #[test]
-    fn strips_terminal_sequences_from_prompt_width() {
-        let spans = parse("\x1b[32muser\x1b[0m in ~/repo $ ");
-        assert_eq!(width(&spans), 17);
-        assert_eq!(spans[0].style.fg, Some(Color::Green));
-        assert_eq!(spans[1].style.fg, None);
-    }
-
-    #[test]
-    fn keeps_prompt_modifiers() {
-        let spans = parse("\x1b[1;4mprompt\x1b[0m");
-        assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
-        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
-    }
-}
+mod tests;

@@ -1,12 +1,29 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    ffi::{CStr, CString},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use super::Widget;
 
-pub(super) struct Clock;
+pub(super) struct Clock {
+    format: CString,
+}
+
+impl Clock {
+    pub(super) fn new() -> Self {
+        let configured = std::env::var("SOPRA_CLOCK_FORMAT").unwrap_or_else(|_| "%H:%M:%S".into());
+        Self {
+            format: CString::new(configured).unwrap_or_default(),
+        }
+    }
+}
 
 impl Widget for Clock {
     fn token(&self) -> &'static str {
         "{clock}"
+    }
+    fn markup(&self) -> bool {
+        true
     }
 
     fn render(&self) -> String {
@@ -19,15 +36,27 @@ impl Widget for Clock {
         };
         let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();
         // localtime_r initializes the provided tm on success and retains no pointers.
-        let result = unsafe { libc::localtime_r(&seconds, local.as_mut_ptr()) };
-        if result.is_null() {
+        if unsafe { libc::localtime_r(&seconds, local.as_mut_ptr()) }.is_null() {
             return String::new();
         }
-        // A non-null result guarantees localtime_r initialized the tm above.
+        // The successful localtime_r call initialized this value.
         let local = unsafe { local.assume_init() };
-        format!(
-            "{:02}:{:02}:{:02}",
-            local.tm_hour, local.tm_min, local.tm_sec
-        )
+        let mut output = [0 as libc::c_char; 4096];
+        // The format and tm are valid and strftime writes at most output.len() bytes.
+        let len = unsafe {
+            libc::strftime(
+                output.as_mut_ptr(),
+                output.len(),
+                self.format.as_ptr(),
+                &local,
+            )
+        };
+        if len == 0 {
+            return String::new();
+        }
+        // A successful strftime call writes a terminating NUL within the output buffer.
+        unsafe { CStr::from_ptr(output.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
     }
 }

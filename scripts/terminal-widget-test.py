@@ -16,8 +16,9 @@ def exercise_widgets(root: Path, directory: Path) -> None:
         "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
         "ZDOTDIR": str(root / "examples/isolated"),
         "SOPRA_PROMPT": "{path} $ ",
-        "SOPRA_RPROMPT": "{git} {clock}",
-        "SOPRA_TRANSIENT_PROMPT": "done> ",
+        "SOPRA_RPROMPT": "[if git]{git}[dim] : [/][/]{clock}",
+        "SOPRA_TRANSIENT_PROMPT": "[dim]done>[/] ",
+        "SOPRA_CLOCK_FORMAT": "%H[dim]:[/]%M[dim]:[/]%S",
         "SOPRA_COMPLETION_ENABLED": "0",
         "SOPRA_CURSOR_ANIMATION": "0",
         "SOPRA_SYNTAX_HIGHLIGHTING": "0",
@@ -25,7 +26,7 @@ def exercise_widgets(root: Path, directory: Path) -> None:
     with TerminalSession(("zsh", "-di"), rows=20, columns=100, cwd=str(directory), env=environment) as terminal:
         terminal.wait_for(" $ ", timeout=20)
         terminal.read(0.5)
-        assert "feature%clock" in terminal.screen.text(), terminal.screen.lines()
+        assert "feature%clock : " in terminal.screen.text(), terminal.screen.lines()
         first = re.search(r"\b\d\d:\d\d:\d\d\b", terminal.screen.text())
         assert first, terminal.screen.lines()
         terminal.read(1.5)
@@ -44,6 +45,7 @@ def exercise_widgets(root: Path, directory: Path) -> None:
         terminal.read(1)
         text = terminal.screen.text()
         assert str(directory.parent) in text and "echo preserved" in text, text
+        assert "[dim]" not in text and " : " not in text, text
         terminal.key("ENTER")
         terminal.read(0.5)
         assert "done> echo preserved" in terminal.screen.text()

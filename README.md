@@ -70,6 +70,7 @@ The Zsh bridge accepts these runtime variables:
 | `SOPRA_PROMPT` | Colored `{path}` and Zsh prompt character | Prompt rendered while editing. |
 | `SOPRA_RPROMPT` | Colored `{git}` | Right prompt rendered while editing. |
 | `SOPRA_TRANSIENT_PROMPT` | `$ ` | Prompt shown after accepting or interrupting a line. |
+| `SOPRA_CLOCK_FORMAT` | `%H:%M:%S` | Local time format for `{clock}`. |
 | `SOPRA_CURSOR_ANIMATION` | `1` | Enables the animated editing cursor. |
 | `SOPRA_SYNTAX_HIGHLIGHTING` | `1` | Enables live syntax highlighting. |
 | `SOPRA_COMPLETION_ENABLED` | `1` | Enables contextual completions. |
@@ -85,6 +86,15 @@ Prompt templates accept Zsh prompt escapes such as `%F{cyan}`, `%f`, `%~`, and `
 | `{clock}` | Local time in `HH:MM:SS`, refreshed while editing. |
 
 Use a widget in either prompt, for example `SOPRA_RPROMPT='%F{magenta}{git}%f  {clock}'`. With `{path}` visible, press Ctrl-G to focus it, Tab to cycle through parent directories, and Enter to change directory while preserving the command being edited. Escape cancels selection. Explicitly set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
+
+Style text inline with `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color tag such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. Use `[if git]...[/]` to show a section only when its widget has content. For example:
+
+```zsh
+SOPRA_RPROMPT='[if git]{git}[dim] : [/][/]{clock}'
+SOPRA_CLOCK_FORMAT='%H[dim]:[/]%M'
+```
+
+The separator before the clock disappears outside a Git repository. Clock formats use the system's `strftime` directives, and the clock updates while you edit. Set these variables before sourcing Sopra, or edit the prompt and clock format in `sopra settings`.
 
 ## How it works
 
