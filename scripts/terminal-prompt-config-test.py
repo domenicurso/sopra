@@ -2,6 +2,7 @@
 """Exercise TOML prompt configuration and shell context in an interactive Zsh."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import tempfile
@@ -62,8 +63,42 @@ def exercise_default_colors(root: Path, config_root: Path) -> None:
         terminal.read(0.5)
         output = bytes(terminal.output)
         assert b"\x1b[31m" in output and b"\x1b[36m" in output, output
-        assert b"\x1b[32m" in output and b"\x1b[2m" in output, output
+        assert b"\x1b[1m\x1b[36m" in output and b"\x1b[2m" in output, output
         assert " on " in terminal.screen.text(), terminal.screen.lines()
+
+
+def exercise_git_format(root: Path, config_root: Path) -> None:
+    directory = config_root / "custom-git"
+    directory.mkdir()
+    config = directory / "config" / "sopra"
+    config.mkdir(parents=True)
+    (config / "prompt.toml").write_text("[prompt]\nleft = '{git_status} $ '\n[widgets.git_status]\nformat = '<{items}>'\nitem_format = '[cyan]{item}[/]'\nseparator = ' + '\n")
+    subprocess.run(("git", "init", "--quiet", str(directory)), check=True)
+    (directory / "staged").write_text("staged")
+    (directory / "untracked").write_text("untracked")
+    subprocess.run(("git", "-C", str(directory), "add", "staged"), check=True)
+    env = {
+        "XDG_CONFIG_HOME": str(directory / "config"), "SOPRA_REPO_ROOT": str(root),
+        "SOPRA_BIN": str(root / "target/debug/sopra-worker"), "ZDOTDIR": str(root / "examples/isolated"),
+        "SOPRA_COMPLETION_ENABLED": "0", "SOPRA_CURSOR_ANIMATION": "0", "SOPRA_RPROMPT": "",
+    }
+    command = ("env", "-u", "SOPRA_PROMPT", "-u", "SOPRA_GIT_STATUS_FORMAT", "-u", "SOPRA_GIT_STATUS_SEPARATOR", "-u", "SOPRA_GIT_STATUS_ITEM_FORMAT", "zsh", "-di")
+    with TerminalSession(command, rows=12, columns=100, cwd=str(directory), env=env) as terminal:
+        terminal.wait_for("<1! + 2?>", timeout=20)
+        assert b"\x1b[36m" in terminal.output, terminal.output
+
+
+def exercise_saved_multiline(root: Path, config_root: Path) -> None:
+    prompt = "[cyan]path[/]\n$ "
+    (config_root / "sopra" / "settings").write_text(f"prompt_hex={prompt.encode().hex()}\n")
+    script = (
+        'source "$SOPRA_REPO_ROOT/zsh/protocol.zsh"; '
+        'source "$SOPRA_REPO_ROOT/zsh/settings.zsh"; '
+        '_sopra_load_settings 1; print -rn -- "$SOPRA_PROMPT"'
+    )
+    environment = dict(os.environ, XDG_CONFIG_HOME=str(config_root), SOPRA_REPO_ROOT=str(root))
+    result = subprocess.run(("zsh", "-f", "-c", script), env=environment, text=True, capture_output=True, check=True)
+    assert result.stdout == prompt, result.stdout
 
 
 def exercise_environment_override(root: Path, config_root: Path) -> None:
@@ -88,6 +123,8 @@ def main() -> None:
         exercise_default_colors(root, Path(temporary))
         exercise_config(root, Path(temporary))
         exercise_environment_override(root, Path(temporary))
+        exercise_saved_multiline(root, Path(temporary))
+        exercise_git_format(root, Path(temporary))
     print("prompt config: ok (TOML, status, duration, transient prompt)")
 
 

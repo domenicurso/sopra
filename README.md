@@ -79,12 +79,21 @@ The Zsh bridge accepts these runtime variables:
 
 ```toml
 [prompt]
-left = "[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/] %# "
+left = """\
+    [bold][red]{user}[/][/] \
+    [dim]in[/] \
+    [bold][cyan]{path}[/][/]\n\
+    [dim]$[/] """
 right = "[if git]{git}[dim] : [/][/]{clock}"
 transient = "$ "
 
 [widgets.clock]
 format = "%H[dim]:[/]%M"
+
+[widgets.git_status]
+format = "[dim][[[/]{items}[dim]][/]"
+item_format = "[bold][magenta]{item}[/][/]"
+separator = "[dim]|[/]"
 ```
 
 Explicit `SOPRA_*` variables take precedence over the corresponding TOML values; TOML takes precedence over saved settings. Restart the shell after editing the file directly. When you change a prompt setting in `sopra settings`, Sopra updates that field in an existing TOML file and preserves its other content and comments.
@@ -101,7 +110,9 @@ Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, pl
 | `{duration}` | Duration of the last command. |
 | `{user}`, `{host}`, `{shell}` | Current user, host, and shell name. |
 
-Style text with `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives.
+Use `\n` in a TOML string to start another prompt row. The right prompt stays on the first row, and the command starts after the last row.
+
+Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags.
 
 With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
 

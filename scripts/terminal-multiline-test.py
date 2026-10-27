@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Exercise multi-line prompts and path focus with terminal reflow."""
+from __future__ import annotations
+
+import importlib.util
+import subprocess
+import tempfile
+import time
+from itertools import chain
+from pathlib import Path
+
+from terminal_session import TerminalSession
+
+ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location("reflow_test", ROOT / "scripts/terminal-reflow-test.py")
+assert spec and spec.loader
+reflow = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(reflow)
+
+
+def exercise(screen: reflow.ReflowScreen, directory: Path) -> None:
+    env = {
+        "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
+        "ZDOTDIR": str(ROOT / "examples/isolated"), "SOPRA_PROMPT": "{path}\n$ ",
+        "SOPRA_RPROMPT": "RIGHT", "SOPRA_TRANSIENT_PROMPT": "$ ",
+        "SOPRA_COMPLETION_ENABLED": "0", "SOPRA_CURSOR_ANIMATION": "0",
+        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
+    }
+    with TerminalSession(("zsh", "-di"), rows=12, columns=120, cwd=str(directory), env=env) as terminal:
+        terminal.screen = screen
+        terminal.wait_for("RIGHT", timeout=20)
+        terminal.read(0.3)
+        terminal.send_text("for n in {1..15}; do echo history-$n; done")
+        terminal.key("ENTER")
+        terminal.wait_for("history-15", timeout=10)
+        terminal.read(0.3)
+        before = screen.snapshot()
+        for number in range(1, 16):
+            assert before["lines"].count(f"history-{number}") == 1, before
+        lines = before["lines"]
+        path_rows = [i for i, line in enumerate(lines) if str(directory) in line and line.endswith("RIGHT")]
+        assert len(path_rows) == 1, before
+        row = path_rows[0]
+        assert lines[row + 1].rstrip() == "$", before
+        terminal.send_text("echo kept")
+        terminal.read(0.2)
+        terminal.send(b"\x07")
+        terminal.read(0.2)
+        focused = screen.snapshot()
+        assert focused["lines"][row].startswith(str(directory)), focused
+        assert focused["lines"][row + 1].startswith("$ echo kept"), focused
+        terminal.send(b"\t\x1b[Z")
+        terminal.read(0.2)
+        assert screen.snapshot()["lines"][row].startswith(str(directory))
+        terminal.send(b"\x1b")
+        terminal.read(0.2)
+        exercise_resize(terminal, screen, directory)
+        terminal.key("ENTER")
+        terminal.read(0.6)
+        state = screen.snapshot()
+        assert "$ echo kept" in state["lines"] and "kept" in state["lines"], state
+        assert sum(str(directory) in line for line in state["lines"]) == 1, state
+        terminal.send_text("echo interrupted")
+        terminal.key("CTRL-C")
+        terminal.read(0.4)
+        state = screen.snapshot()
+        assert "$ echo interrupted" in state["lines"], state
+        assert sum(str(directory) in line for line in state["lines"]) == 1, state
+
+
+def exercise_resize(terminal: TerminalSession, screen: reflow.ReflowScreen, directory: Path) -> None:
+    viewport_before = screen.snapshot()["base"]
+    for width in chain(range(119, 39, -1), range(41, 121)):
+        terminal.resize(12, width)
+        terminal.read(0)
+        time.sleep(0.001)
+    terminal.read(0.4)
+    state = screen.snapshot()
+    assert state["base"] == viewport_before, state
+    assert sum(str(directory) in line for line in state["lines"]) == 1, state
+    for number in range(1, 16):
+        assert state["lines"].count(f"history-{number}") == 1, state
+    assert any(line.rstrip() == "$ echo kept" for line in state["lines"]), state
+    for width in (40, 120):
+        terminal.resize(12, width)
+        terminal.read(0.3)
+    state = screen.snapshot()
+    assert state["base"] == viewport_before, state
+    assert sum(str(directory) in line for line in state["lines"]) == 1, state
+
+
+def main() -> None:
+    subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=ROOT, check=True)
+    with tempfile.TemporaryDirectory(prefix="sm-", dir="/tmp") as temporary:
+        directory = Path(temporary).resolve() / "a" / "b"
+        directory.mkdir(parents=True)
+        with subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
+            exercise(reflow.ReflowScreen(process), directory)
+    print("multiline prompt: ok")
+
+
+if __name__ == "__main__":
+    main()

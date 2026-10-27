@@ -93,8 +93,9 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     send(session[0], b"\x03")
     origins += 1
     wait_for_count(session, output, FRAME_MARKER, origins)
+    read_for(session[0], output, 0.4)
     interrupted = plain(output[start:])
-    if b"$" not in interrupted or b"Cargo.lock" not in interrupted:
+    if b"$" not in interrupted or b"AGENTS.md" not in interrupted:
         fail("Ctrl-C did not keep the completed transient command", *session)
     return origins
 

@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "test:reflow": "python3 terminal-reflow-test.py",
+    "test:multiline": "python3 terminal-multiline-test.py",
     "test:widgets": "python3 terminal-widget-test.py",
     "test:prompt-config": "python3 terminal-prompt-config-test.py"
   },

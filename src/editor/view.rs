@@ -148,8 +148,15 @@ impl EditorState {
     }
 
     fn position_for(&self, size: TerminalSize, prompt: &str, content_width: u16) -> CursorPosition {
-        let row = self.anchor.row.min(size.rows.saturating_sub(1));
-        let prompt_width = crate::prompt::width(&crate::prompt::parse(prompt)) as u16;
+        let row = self
+            .anchor
+            .row
+            .saturating_add(prompt.bytes().filter(|byte| *byte == b'\n').count() as u16)
+            .min(size.rows.saturating_sub(1));
+        let prompt_width = crate::prompt::lines::widths(&crate::prompt::parse(prompt))
+            .last()
+            .copied()
+            .unwrap_or(0) as u16;
         let column = self
             .anchor
             .column

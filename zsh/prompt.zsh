@@ -1,9 +1,18 @@
 _sopra_prompt_defaults() {
     if [[ -z ${SOPRA_PROMPT+x} ]]; then
-        typeset -g SOPRA_PROMPT='[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/] %# '
+        typeset -g SOPRA_PROMPT=$'[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/]\n[dim]$[/] '
     fi
     if [[ -z ${SOPRA_RPROMPT+x} ]]; then
-        typeset -g SOPRA_RPROMPT='[if git][dim]on [/][bold][green]{git}[/][/][if git_status] [magenta]{git_status}[/][/][/]'
+        typeset -g SOPRA_RPROMPT='[if git][dim]on [/][bold][cyan]{git}[/][/][if git_status] {git_status}[/][/]'
+    fi
+    if [[ -z ${SOPRA_GIT_STATUS_FORMAT+x} ]]; then
+        typeset -g SOPRA_GIT_STATUS_FORMAT='[dim][[[/]{items}[dim]][/]'
+    fi
+    if [[ -z ${SOPRA_GIT_STATUS_SEPARATOR+x} ]]; then
+        typeset -g SOPRA_GIT_STATUS_SEPARATOR='[dim]|[/]'
+    fi
+    if [[ -z ${SOPRA_GIT_STATUS_ITEM_FORMAT+x} ]]; then
+        typeset -g SOPRA_GIT_STATUS_ITEM_FORMAT='[bold][magenta]{item}[/][/]'
     fi
     if [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
         typeset -g SOPRA_CLOCK_FORMAT='%H:%M:%S'
@@ -52,7 +61,7 @@ _sopra_style_code() {
     case $1 in
         dim) REPLY=2 ;; bold) REPLY=1 ;;
         italic) REPLY=3 ;; underline) REPLY=4 ;;
-        black) REPLY=30 ;; red) REPLY=31 ;;
+        default) REPLY=39 ;; black) REPLY=30 ;; red) REPLY=31 ;;
         green) REPLY=32 ;; yellow) REPLY=33 ;;
         blue) REPLY=34 ;; magenta) REPLY=35 ;;
         cyan) REPLY=36 ;; white) REPLY=37 ;;

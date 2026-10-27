@@ -27,6 +27,9 @@ _sopra_load_prompt_config() {
             rprompt) name=SOPRA_RPROMPT ;;
             transient_prompt) name=SOPRA_TRANSIENT_PROMPT ;;
             clock_format) name=SOPRA_CLOCK_FORMAT ;;
+            git_status_format) name=SOPRA_GIT_STATUS_FORMAT ;;
+            git_status_separator) name=SOPRA_GIT_STATUS_SEPARATOR ;;
+            git_status_item_format) name=SOPRA_GIT_STATUS_ITEM_FORMAT ;;
             *) continue ;;
         esac
         if (( ! ${+parameters[$name]} )); then

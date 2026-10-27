@@ -104,7 +104,7 @@ def test_sopra_resize_round_trip_and_submit() -> None:
 
 
 def _active_prompt(lines: list[str]) -> str:
-    matches = [line for line in lines if " in " in line and "$" in line]
+    matches = [line for line in lines if " in " in line and "rprompt" in line]
     assert len(matches) == 1, lines
     return matches[0]
 

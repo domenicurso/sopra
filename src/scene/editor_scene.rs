@@ -22,7 +22,10 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> S
     let mut layout = EditorLayout::new(
         editor,
         size,
-        crate::prompt::width(&prompt),
+        crate::prompt::lines::widths(&prompt)
+            .last()
+            .copied()
+            .unwrap_or(0),
         crate::prompt::width(&rprompt),
     );
     layout.footer = editor.completion_footer();
@@ -62,7 +65,7 @@ fn editor_elements(
     let mut elements: Vec<Box<dyn Element>> = vec![
         Box::new(PromptElement {
             column: layout.column,
-            row: layout.row,
+            row: layout.prompt_row,
             spans: prompt,
         }),
         Box::new(CommandElement {
@@ -70,13 +73,18 @@ fn editor_elements(
             row: layout.row,
             buffer: editor.buffer().to_string(),
             spans: editor.syntax().to_vec(),
-            max_width: layout.rprompt_column.saturating_sub(layout.line_column),
+            max_width: if layout.row == layout.prompt_row {
+                layout.rprompt_column
+            } else {
+                layout.area.width
+            }
+            .saturating_sub(layout.line_column),
         }),
     ];
     if !rprompt.is_empty() && layout.rprompt_column < layout.area.width {
         elements.push(Box::new(PromptElement {
             column: layout.rprompt_column,
-            row: layout.row,
+            row: layout.prompt_row,
             spans: rprompt,
         }));
     }
@@ -109,7 +117,7 @@ fn editor_elements(
 }
 
 fn clear_rows(layout: &EditorLayout) -> Vec<u16> {
-    let mut rows = vec![layout.row];
+    let mut rows: Vec<u16> = (layout.prompt_row..=layout.row).collect();
     if layout.overlay_height > 0 {
         rows.extend(
             (0..layout.overlay_height)

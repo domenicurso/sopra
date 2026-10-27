@@ -7,6 +7,7 @@ use super::overlay_layout;
 pub(super) struct EditorLayout {
     pub(super) area: Rect,
     pub(super) row: u16,
+    pub(super) prompt_row: u16,
     pub(super) column: u16,
     pub(super) line_column: u16,
     pub(super) cursor_column: u16,
@@ -28,7 +29,16 @@ impl EditorLayout {
         rprompt_width: usize,
     ) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
-        let row = editor.anchor().row.min(size.rows.saturating_sub(1));
+        let prompt_row = editor.anchor().row.min(size.rows.saturating_sub(1));
+        let row = prompt_row
+            .saturating_add(
+                editor
+                    .prompt()
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count() as u16,
+            )
+            .min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
         let line_column = column
             .saturating_add(prompt_width as u16)
@@ -38,8 +48,12 @@ impl EditorLayout {
             .min(size.columns.saturating_sub(1));
         let buffer_end = line_column.saturating_add(editor.buffer_display_width());
         let cursor_end = cursor_column.saturating_add(editor.cursor_cell_width());
-        let rprompt_column =
-            rprompt_column(size.columns, buffer_end.max(cursor_end), rprompt_width);
+        let occupied = if row == prompt_row {
+            buffer_end.max(cursor_end)
+        } else {
+            crate::prompt::lines::widths(&crate::prompt::parse(editor.prompt()))[0] as u16
+        };
+        let rprompt_column = rprompt_column(size.columns, occupied, rprompt_width);
         let completion_token_width = editor.completion_token_width();
         let placement = overlay_layout::for_editor(editor, size, row);
         let overlay_row = placement.as_ref().map_or(0, |value| value.row);
@@ -47,6 +61,7 @@ impl EditorLayout {
         Self {
             area,
             row,
+            prompt_row,
             column,
             line_column,
             cursor_column,

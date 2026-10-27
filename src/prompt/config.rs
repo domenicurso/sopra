@@ -8,6 +8,9 @@ pub(crate) struct PromptConfig {
     pub(crate) right: Option<String>,
     pub(crate) transient: Option<String>,
     pub(crate) clock_format: Option<String>,
+    pub(crate) git_status_format: Option<String>,
+    pub(crate) git_status_separator: Option<String>,
+    pub(crate) git_status_item_format: Option<String>,
 }
 
 impl PromptConfig {
@@ -19,6 +22,9 @@ impl PromptConfig {
             right: read_string(&doc, &["prompt", "right"])?,
             transient: read_string(&doc, &["prompt", "transient"])?,
             clock_format: read_string(&doc, &["widgets", "clock", "format"])?,
+            git_status_format: read_string(&doc, &["widgets", "git_status", "format"])?,
+            git_status_separator: read_string(&doc, &["widgets", "git_status", "separator"])?,
+            git_status_item_format: read_string(&doc, &["widgets", "git_status", "item_format"])?,
         })
     }
 
@@ -28,6 +34,9 @@ impl PromptConfig {
             ("rprompt", &self.right),
             ("transient_prompt", &self.transient),
             ("clock_format", &self.clock_format),
+            ("git_status_format", &self.git_status_format),
+            ("git_status_separator", &self.git_status_separator),
+            ("git_status_item_format", &self.git_status_item_format),
         ] {
             if let Some(value) = value {
                 let encoded = value
@@ -135,10 +144,12 @@ mod tests {
         let file = std::env::temp_dir().join(format!("sopra-prompt-{}.toml", std::process::id()));
         fs::write(
             &file,
-            "# keep me\n[prompt]\nright = '[dim]{clock}[/]' # inline comment\n[widgets.clock]\nformat = '%H:%M'\n",
+            "# keep me\n[prompt]\nright = '[dim]{clock}[/]' # inline comment\n[widgets.clock]\nformat = '%H:%M'\n[widgets.git_status]\nformat = '<{items}>'\nseparator = ' / '\n",
         )?;
         let mut config = PromptConfig::read(&file)?;
         assert_eq!(config.right.as_deref(), Some("[dim]{clock}[/]"));
+        assert_eq!(config.git_status_format.as_deref(), Some("<{items}>"));
+        assert_eq!(config.git_status_separator.as_deref(), Some(" / "));
         config.right = Some("{git}".into());
         update(&file, &config)?;
         let text = fs::read_to_string(&file)?;

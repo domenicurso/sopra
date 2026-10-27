@@ -7,7 +7,7 @@ use super::{
     canvas::{Canvas, TextRun},
 };
 use crate::{
-    prompt::{self, PromptSpan},
+    prompt::PromptSpan,
     syntax::{self, SyntaxSpan},
 };
 
@@ -19,19 +19,25 @@ pub(super) struct PromptElement {
 
 impl Element for PromptElement {
     fn paint(&self, canvas: &mut Canvas) {
-        let mut offset = 0_u16;
+        let mut row = self.row;
+        let mut column = self.column;
         for span in &self.spans {
-            canvas.text(TextRun {
-                position: (self.column.saturating_add(offset), self.row),
-                text: &span.text,
-                style: span.style,
-                max_width: canvas
-                    .buffer
-                    .area
-                    .width
-                    .saturating_sub(self.column + offset),
-            });
-            offset = offset.saturating_add(prompt::width(std::slice::from_ref(span)) as u16);
+            for (index, text) in span.text.split('\n').enumerate() {
+                if index > 0 {
+                    row = row.saturating_add(1);
+                    column = 0;
+                }
+                if row >= canvas.buffer.area.height {
+                    return;
+                }
+                canvas.text(TextRun {
+                    position: (column, row),
+                    text,
+                    style: span.style,
+                    max_width: canvas.buffer.area.width.saturating_sub(column),
+                });
+                column = column.saturating_add(unicode_width::UnicodeWidthStr::width(text) as u16);
+            }
         }
     }
 }

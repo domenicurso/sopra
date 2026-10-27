@@ -64,5 +64,6 @@ jobs:
         run: |
           npm ci --prefix scripts
           npm --prefix scripts run test:reflow
+          npm --prefix scripts run test:multiline
           npm --prefix scripts run test:widgets
           npm --prefix scripts run test:prompt-config

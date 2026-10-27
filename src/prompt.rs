@@ -1,4 +1,5 @@
 pub(crate) mod config;
+pub(crate) mod lines;
 mod markup;
 pub(crate) mod widgets;
 
@@ -45,7 +46,7 @@ fn parse_text(prompt: &str, markup_enabled: bool) -> Vec<PromptSpan> {
             }
         }
         let character = prompt[index..].chars().next().unwrap_or_default();
-        if !character.is_control() {
+        if character == '\n' || !character.is_control() {
             text.push(character);
         }
         index += character.len_utf8();

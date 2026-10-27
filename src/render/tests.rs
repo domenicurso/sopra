@@ -71,7 +71,10 @@ fn scrolling_updates_the_absolute_origin_after_moving_the_viewport() {
     let mut output = Vec::new();
     renderer.ensure_space(15, 40, &mut output);
     assert_eq!(renderer.origin_row, Some(25));
-    assert_eq!(output, b"\x1b[10S".to_vec());
+    assert_eq!(
+        output,
+        [b"\x1b[40;1H".as_slice(), &b"\r\n".repeat(10)].concat()
+    );
 }
 
 #[test]

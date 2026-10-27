@@ -2,7 +2,12 @@ use std::{path::Path, process::Command};
 
 use super::Widget;
 
-pub(super) struct GitStatus(String);
+pub(super) struct GitStatus {
+    text: String,
+    format: String,
+    separator: String,
+    item_format: String,
+}
 
 impl GitStatus {
     pub(super) fn new(cwd: &Path, enabled: bool) -> Self {
@@ -23,7 +28,14 @@ impl GitStatus {
         } else {
             String::new()
         };
-        Self(text)
+        Self {
+            text,
+            format: std::env::var("SOPRA_GIT_STATUS_FORMAT")
+                .unwrap_or_else(|_| "[[{items}]".into()),
+            separator: std::env::var("SOPRA_GIT_STATUS_SEPARATOR").unwrap_or_else(|_| "|".into()),
+            item_format: std::env::var("SOPRA_GIT_STATUS_ITEM_FORMAT")
+                .unwrap_or_else(|_| "{item}".into()),
+        }
     }
 }
 
@@ -35,18 +47,15 @@ impl Widget for GitStatus {
         true
     }
     fn render(&self) -> String {
-        if self.0.is_empty() {
+        if self.text.is_empty() {
             return String::new();
         }
-        let parts = self.0[1..self.0.len() - 1].split('|');
-        let separator = "[default][dim]|[/][/]";
-        format!(
-            "[default][dim][[[/][/]{}[default][dim]][/][/]",
-            parts
-                .map(|part| format!("[bold]{part}[/]"))
-                .collect::<Vec<_>>()
-                .join(separator)
-        )
+        let parts = self.text[1..self.text.len() - 1].split('|');
+        let items = parts
+            .map(|part| self.item_format.replace("{item}", part))
+            .collect::<Vec<_>>()
+            .join(&self.separator);
+        self.format.replace("{items}", &items)
     }
 }
 
@@ -96,11 +105,16 @@ fn summarize(output: &str) -> String {
 mod tests {
     use super::summarize;
     #[test]
-    fn status_keeps_values_bold_and_punctuation_dim() {
+    fn status_formats_values_and_separators_from_configuration() {
         use super::Widget;
         use ratatui::style::{Color, Modifier};
-        let text = super::GitStatus("[13!|2?|6↑]".to_string()).render();
-        let spans = crate::prompt::parse(&format!("[magenta]{text}[/]"));
+        let status = super::GitStatus {
+            text: "[13!|2?|6↑]".into(),
+            format: "[dim][[[/]{items}[dim]][/]".into(),
+            item_format: "[bold][magenta]{item}[/][/]".into(),
+            separator: "[dim]|[/]".into(),
+        };
+        let spans = crate::prompt::parse(&status.render());
         assert_eq!(
             spans
                 .iter()
@@ -108,15 +122,27 @@ mod tests {
                 .collect::<String>(),
             "[13!|2?|6↑]"
         );
-        for span in spans {
-            if span.text.chars().all(|ch| "[]|".contains(ch)) {
-                assert_eq!(span.style.fg, Some(Color::Reset));
-                assert!(span.style.add_modifier.contains(Modifier::DIM));
-            } else {
-                assert_eq!(span.style.fg, Some(Color::Magenta));
-                assert!(span.style.add_modifier.contains(Modifier::BOLD));
-            }
-        }
+        assert!(
+            spans.iter().filter(|span| span.text == "|").all(|span| span
+                .style
+                .add_modifier
+                .contains(Modifier::DIM)
+                && !span.style.add_modifier.contains(Modifier::BOLD))
+        );
+        assert!(
+            spans
+                .iter()
+                .filter(|span| span.text.contains('!'))
+                .all(|span| span.style.fg == Some(Color::Magenta)
+                    && span.style.add_modifier.contains(Modifier::BOLD))
+        );
+        let plain = super::GitStatus {
+            format: "{items}".into(),
+            item_format: "{item}".into(),
+            separator: " / ".into(),
+            ..status
+        };
+        assert_eq!(plain.render(), "13! / 2? / 6↑");
     }
     #[test]
     fn summarizes_changes_and_upstream_counts() {

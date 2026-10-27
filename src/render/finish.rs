@@ -24,7 +24,7 @@ impl Renderer {
         let Some(previous_area) = self.previous.as_ref().map(|previous| previous.area) else {
             return Ok(());
         };
-        let origin_row = self.finish_origin(previous_area, restore_position, terminal);
+        let origin_row = self.finish_origin(previous_area, terminal);
         let Some(previous) = self.previous.take() else {
             return Ok(());
         };
@@ -56,23 +56,23 @@ impl Renderer {
         Ok(())
     }
 
-    fn finish_origin(
-        &self,
-        previous_area: Rect,
-        restore_position: CursorPosition,
-        terminal: &mut Terminal,
-    ) -> u16 {
+    fn finish_origin(&self, previous_area: Rect, terminal: &mut Terminal) -> u16 {
         let size = terminal
             .size()
             .unwrap_or(TerminalSize::new(previous_area.width, previous_area.height));
         let area = Rect::new(0, 0, size.columns, size.rows);
         let resized = self.resize_detected(area, terminal.resize_epoch());
         if resized && !self.preserve_background {
-            return terminal
-                .cursor_position()
-                .map_or(self.origin_row.unwrap_or_default(), |position| {
-                    self.resize_origin(position, restore_position.row, size.columns)
-                });
+            return terminal.cursor_position().map_or(
+                self.origin_row.unwrap_or_default(),
+                |position| {
+                    self.resize_origin(
+                        position,
+                        self.previous_cursor.map_or(0, |cursor| cursor.row),
+                        size.columns,
+                    )
+                },
+            );
         }
         self.origin_row.unwrap_or_default()
     }

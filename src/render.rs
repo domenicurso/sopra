@@ -55,7 +55,14 @@ impl Renderer {
             .as_ref()
             .map_or(Rect::default(), |frame| *frame.area());
         let mut output = Vec::new();
-        let origin = self.position_origin(&next, resized, terminal);
+        // The visible cursor is painted in the frame. Parking the hidden terminal cursor on
+        // the first prompt row keeps reflow from pushing that row into scrollback.
+        let parked = if self.redraw_prompt && next.cursor.row > 0 {
+            CursorPosition { row: 0, column: 0 }
+        } else {
+            next.cursor
+        };
+        let origin = self.position_origin(&next, resized, terminal, parked);
         let size = terminal.size()?;
         if terminal.resize_epoch() != resize_epoch
             || size.columns != next.buffer.area.width
@@ -76,10 +83,10 @@ impl Renderer {
         if changed > 0 || !output.is_empty() {
             move_to(
                 &mut output,
-                next.cursor.column,
+                parked.column,
                 self.origin_row
                     .unwrap_or_default()
-                    .saturating_add(next.cursor.row),
+                    .saturating_add(parked.row),
             );
             if mark_prompt {
                 output.extend_from_slice(b"\x1b]133;B\x07");
@@ -88,27 +95,33 @@ impl Renderer {
             self.write_frame(output, terminal)?;
         }
         self.previous = Some(next.buffer);
-        self.previous_cursor = Some(next.cursor);
+        self.previous_cursor = Some(parked);
         self.resize_epoch = Some(resize_epoch);
         Ok(changed)
     }
 
-    fn position_origin(&self, next: &Frame, resized: bool, terminal: &mut Terminal) -> Option<u16> {
-        let origin =
-            if resized && self.preserve_background {
-                Some(0)
-            } else if resized {
-                Some(terminal.cursor_position().map_or(
-                    self.origin_row.unwrap_or_default(),
-                    |position| {
-                        self.resize_origin(position, next.cursor.row, next.buffer.area.width)
-                    },
-                ))
-            } else if self.origin_row.is_none() {
-                terminal.cursor_position().map(|position| position.row)
-            } else {
-                self.origin_row
-            };
+    fn position_origin(
+        &self,
+        next: &Frame,
+        resized: bool,
+        terminal: &mut Terminal,
+        parked: CursorPosition,
+    ) -> Option<u16> {
+        let origin = if resized && self.preserve_background {
+            Some(0)
+        } else if resized {
+            Some(
+                terminal
+                    .cursor_position()
+                    .map_or(self.origin_row.unwrap_or_default(), |position| {
+                        self.resize_origin(position, parked.row, next.buffer.area.width)
+                    }),
+            )
+        } else if self.origin_row.is_none() {
+            terminal.cursor_position().map(|position| position.row)
+        } else {
+            self.origin_row
+        };
         origin.or((next.required_height > 1).then_some(0))
     }
 
@@ -148,27 +161,6 @@ impl Renderer {
                 .is_some_and(|previous| previous != resize_epoch)
     }
 
-    pub(super) fn resize_origin(
-        &self,
-        position: CursorPosition,
-        cursor_row_in_frame: u16,
-        columns: u16,
-    ) -> u16 {
-        let columns = columns.max(1);
-        let reflowed_rows = self.previous_cursor.map_or(0, |cursor| {
-            if position.column == cursor.column % columns && position.column < columns - 1 {
-                cursor.column / columns
-            } else {
-                0
-            }
-        });
-        // Terminals can clamp the cursor to the edge instead of wrapping it on resize.
-        position
-            .row
-            .saturating_sub(cursor_row_in_frame)
-            .saturating_sub(reflowed_rows)
-    }
-
     fn ensure_space(&mut self, required_height: u16, terminal_rows: u16, output: &mut Vec<u8>) {
         let Some(origin_row) = self.origin_row else {
             return;
@@ -177,7 +169,10 @@ impl Renderer {
         if rows == 0 {
             return;
         }
-        output.extend_from_slice(format!("\x1b[{rows}S").as_bytes());
+        move_to(output, 0, terminal_rows.saturating_sub(1));
+        for _ in 0..rows {
+            output.extend_from_slice(b"\r\n");
+        }
         self.origin_row = Some(origin_row - rows);
         self.previous = None;
     }
