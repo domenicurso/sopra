@@ -3,12 +3,7 @@ use ratatui::style::{Color, Modifier, Style};
 pub(super) fn style_tag(tag: &str) -> Option<Style> {
     let style = Style::default();
     Some(match tag {
-        "path-left" => style.fg(Color::Cyan).remove_modifier(Modifier::DIM),
-        "path-selected" => style
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::REVERSED)
-            .remove_modifier(Modifier::DIM),
-        "path-right" => style.fg(Color::Cyan).add_modifier(Modifier::DIM),
+        "reverse" => style.add_modifier(Modifier::REVERSED),
         "default" => style.fg(Color::Reset),
         "dim" => style.add_modifier(Modifier::DIM),
         "bold" => style.add_modifier(Modifier::BOLD),

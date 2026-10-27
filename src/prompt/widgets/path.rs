@@ -6,6 +6,7 @@ use crate::input::Key;
 pub(super) struct Path {
     ancestors: Vec<PathBuf>,
     selected: Option<usize>,
+    styles: PathStyles,
 }
 
 impl Path {
@@ -19,6 +20,24 @@ impl Path {
                 .map(FsPath::to_path_buf)
                 .collect(),
             selected: None,
+            styles: PathStyles::from_environment(),
+        }
+    }
+}
+
+struct PathStyles {
+    before: String,
+    selected: String,
+    after: String,
+}
+
+impl PathStyles {
+    fn from_environment() -> Self {
+        Self {
+            before: std::env::var("SOPRA_PATH_BEFORE").unwrap_or_else(|_| "{text}".into()),
+            selected: std::env::var("SOPRA_PATH_SELECTED")
+                .unwrap_or_else(|_| "[reverse]{text}[/]".into()),
+            after: std::env::var("SOPRA_PATH_AFTER").unwrap_or_else(|_| "[dim]{text}[/]".into()),
         }
     }
 }
@@ -47,12 +66,18 @@ impl Widget for Path {
         let end = prefix.len().min(label.len());
         let start = prefix.rfind('/').map_or(0, |position| position + 1);
         let start = if start == end { 0 } else { start };
-        format!(
-            "[path-left]{}[/][path-selected]{}[/][path-right]{}[/]",
-            label[..start].replace('[', "[["),
-            label[start..end].replace('[', "[["),
-            label[end..].replace('[', "[[")
-        )
+        [
+            self.styles
+                .before
+                .replace("{text}", &label[..start].replace('[', "[[")),
+            self.styles
+                .selected
+                .replace("{text}", &label[start..end].replace('[', "[[")),
+            self.styles
+                .after
+                .replace("{text}", &label[end..].replace('[', "[[")),
+        ]
+        .concat()
     }
 
     fn handle(&mut self, key: Key) -> WidgetAction {
@@ -103,49 +128,5 @@ fn display_path(path: &FsPath) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Path, Widget};
-    use crate::{input::Key, prompt::parse};
-    use ratatui::style::{Color, Modifier};
-    use std::path::PathBuf;
-
-    #[test]
-    fn focus_styles_segments_without_changing_path_text() {
-        let mut path = Path::new(PathBuf::from("/tmp/alpha/beta"));
-        let before = path.render();
-        path.handle(Key::PromptWidgets);
-        let selected = parse(&path.render());
-        assert_eq!(
-            selected
-                .iter()
-                .map(|span| span.text.as_str())
-                .collect::<String>(),
-            before
-        );
-        assert_eq!(selected.last().map(|span| span.text.as_str()), Some("beta"));
-        assert_eq!(
-            selected.last().and_then(|span| span.style.fg),
-            Some(Color::Cyan)
-        );
-        assert!(
-            selected
-                .last()
-                .is_some_and(|span| span.style.add_modifier.contains(Modifier::REVERSED))
-        );
-        path.handle(Key::Tab);
-        let parent = parse(&path.render());
-        assert_eq!(
-            parent
-                .iter()
-                .map(|span| span.text.as_str())
-                .collect::<String>(),
-            before
-        );
-        assert!(parent.iter().any(
-            |span| span.text == "alpha" && span.style.add_modifier.contains(Modifier::REVERSED)
-        ));
-        assert!(parent.iter().any(|span| span.text == "/beta" && span.style.add_modifier.contains(Modifier::DIM)));
-        path.handle(Key::BackTab);
-        assert_eq!(parse(&path.render()), selected);
-    }
-}
+#[path = "path_tests.rs"]
+mod tests;

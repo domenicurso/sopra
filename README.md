@@ -90,6 +90,11 @@ transient = "$ "
 [widgets.clock]
 format = "%H[dim]:[/]%M"
 
+[widgets.path]
+before = "{text}"
+selected = "[reverse]{text}[/]"
+after = "[dim]{text}[/]"
+
 [widgets.git_status]
 format = "[dim][[[/]{items}[dim]][/]"
 item_format = "[bold][magenta]{item}[/][/]"
@@ -112,7 +117,7 @@ Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, pl
 
 Use `\n` in a TOML string to start another prompt row. The right prompt stays on the first row, and the command starts after the last row.
 
-Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags.
+Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
 
 With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
 

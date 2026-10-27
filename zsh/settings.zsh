@@ -30,6 +30,9 @@ _sopra_load_prompt_config() {
             git_status_format) name=SOPRA_GIT_STATUS_FORMAT ;;
             git_status_separator) name=SOPRA_GIT_STATUS_SEPARATOR ;;
             git_status_item_format) name=SOPRA_GIT_STATUS_ITEM_FORMAT ;;
+            path_before) name=SOPRA_PATH_BEFORE ;;
+            path_selected) name=SOPRA_PATH_SELECTED ;;
+            path_after) name=SOPRA_PATH_AFTER ;;
             *) continue ;;
         esac
         if (( ! ${+parameters[$name]} )); then

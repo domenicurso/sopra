@@ -11,6 +11,9 @@ pub(crate) struct PromptConfig {
     pub(crate) git_status_format: Option<String>,
     pub(crate) git_status_separator: Option<String>,
     pub(crate) git_status_item_format: Option<String>,
+    pub(crate) path_before: Option<String>,
+    pub(crate) path_selected: Option<String>,
+    pub(crate) path_after: Option<String>,
 }
 
 impl PromptConfig {
@@ -25,6 +28,9 @@ impl PromptConfig {
             git_status_format: read_string(&doc, &["widgets", "git_status", "format"])?,
             git_status_separator: read_string(&doc, &["widgets", "git_status", "separator"])?,
             git_status_item_format: read_string(&doc, &["widgets", "git_status", "item_format"])?,
+            path_before: read_string(&doc, &["widgets", "path", "before"])?,
+            path_selected: read_string(&doc, &["widgets", "path", "selected"])?,
+            path_after: read_string(&doc, &["widgets", "path", "after"])?,
         })
     }
 
@@ -37,6 +43,9 @@ impl PromptConfig {
             ("git_status_format", &self.git_status_format),
             ("git_status_separator", &self.git_status_separator),
             ("git_status_item_format", &self.git_status_item_format),
+            ("path_before", &self.path_before),
+            ("path_selected", &self.path_selected),
+            ("path_after", &self.path_after),
         ] {
             if let Some(value) = value {
                 let encoded = value

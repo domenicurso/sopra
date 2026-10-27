@@ -61,6 +61,44 @@ def exercise_widgets(root: Path, directory: Path) -> None:
         assert str(directory.parent.parent) in terminal.screen.lines(), terminal.screen.lines()
 
 
+def exercise_multiline_directory(root: Path, directory: Path) -> None:
+    config = directory.parent / "path-config" / "sopra"
+    config.mkdir(parents=True)
+    (config / "prompt.toml").write_text(
+        "[widgets.path]\nbefore = '[green]{text}[/]'\n"
+        "selected = '[yellow][reverse]{text}[/][/]'\nafter = '[red][dim]{text}[/]'\n"
+    )
+    environment = {
+        "XDG_CONFIG_HOME": str(config.parent),
+        "SOPRA_REPO_ROOT": str(root), "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
+        "ZDOTDIR": str(root / "examples/isolated"), "SOPRA_PROMPT": "{path}\n$ ",
+        "SOPRA_RPROMPT": "", "SOPRA_TRANSIENT_PROMPT": "$ ",
+        "SOPRA_COMPLETION_ENABLED": "0", "SOPRA_CURSOR_ANIMATION": "0",
+    }
+    command = ("env", "-u", "SOPRA_PATH_BEFORE", "-u", "SOPRA_PATH_SELECTED", "-u", "SOPRA_PATH_AFTER", "zsh", "-di")
+    with TerminalSession(command, rows=20, columns=100, cwd=str(directory), env=environment) as terminal:
+        terminal.wait_for(str(directory), timeout=20)
+        terminal.send_text("echo hello")
+        terminal.key("ENTER")
+        terminal.wait_for("hello", timeout=10)
+        terminal.read(0.4)
+        terminal.send_text("echo preserved")
+        terminal.read(0.1)
+        terminal.send(b"\x07\t")
+        terminal.read(0.2)
+        output = bytes(terminal.output)
+        assert b"\x1b[32m" in output and b"\x1b[33m" in output and b"\x1b[31m" in output, output
+        terminal.key("ENTER")
+        terminal.read(0.8)
+        lines = terminal.screen.lines()
+        output_row = lines.index("hello")
+        assert lines[output_row + 1] == str(directory.parent), lines
+        assert lines[output_row + 2].startswith("$ echo preserved"), lines
+        terminal.key("ENTER")
+        terminal.read(0.4)
+        assert "$ echo preserved" in terminal.screen.lines(), terminal.screen.lines()
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
@@ -70,6 +108,7 @@ def main() -> None:
         subprocess.run(["git", "init", "--quiet", str(directory)], check=True)
         subprocess.run(["git", "-C", str(directory), "symbolic-ref", "HEAD", "refs/heads/feature%clock"], check=True)
         exercise_widgets(root, directory)
+        exercise_multiline_directory(root, directory)
     print("prompt widgets: ok (live clock, parent selection, preserved input)")
 
 

@@ -99,11 +99,13 @@ impl EditorState {
                 self.restore_prompt_position(size, self.transient_prompt()),
                 Some(Scene::for_transient(self, size).render()),
             ),
+            ExitReason::ChangeDirectory => {
+                (crate::input::CursorPosition { row: 0, column: 0 }, None)
+            }
             ExitReason::DelegateUp
             | ExitReason::DelegateDown
             | ExitReason::DelegateTab
-            | ExitReason::DelegateEof
-            | ExitReason::ChangeDirectory => (self.restore_position(size), None),
+            | ExitReason::DelegateEof => (self.restore_position(size), None),
         };
         renderer.finish(terminal, restore_position, replacement)
     }

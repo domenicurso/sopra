@@ -14,6 +14,15 @@ _sopra_prompt_defaults() {
     if [[ -z ${SOPRA_GIT_STATUS_ITEM_FORMAT+x} ]]; then
         typeset -g SOPRA_GIT_STATUS_ITEM_FORMAT='[bold][magenta]{item}[/][/]'
     fi
+    if [[ -z ${SOPRA_PATH_BEFORE+x} ]]; then
+        typeset -g SOPRA_PATH_BEFORE='{text}'
+    fi
+    if [[ -z ${SOPRA_PATH_SELECTED+x} ]]; then
+        typeset -g SOPRA_PATH_SELECTED='[reverse]{text}[/]'
+    fi
+    if [[ -z ${SOPRA_PATH_AFTER+x} ]]; then
+        typeset -g SOPRA_PATH_AFTER='[dim]{text}[/]'
+    fi
     if [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
         typeset -g SOPRA_CLOCK_FORMAT='%H:%M:%S'
     fi
@@ -59,7 +68,7 @@ _sopra_shell_prompt() {
 _sopra_style_code() {
     REPLY=''
     case $1 in
-        dim) REPLY=2 ;; bold) REPLY=1 ;;
+        dim) REPLY=2 ;; bold) REPLY=1 ;; reverse) REPLY=7 ;;
         italic) REPLY=3 ;; underline) REPLY=4 ;;
         default) REPLY=39 ;; black) REPLY=30 ;; red) REPLY=31 ;;
         green) REPLY=32 ;; yellow) REPLY=33 ;;
