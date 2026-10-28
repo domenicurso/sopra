@@ -1,8 +1,10 @@
 mod cursor;
 mod keys;
+mod mouse;
 mod resize_signal;
 mod terminal;
 
+pub(crate) use self::mouse::{MouseEvent, MouseKind};
 pub(crate) use self::terminal::Terminal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +31,8 @@ pub(crate) struct CursorPosition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Key {
     Character(char),
+    Mouse(MouseEvent),
+    Ignore,
     Enter,
     Tab,
     BackTab,

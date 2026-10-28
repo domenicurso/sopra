@@ -73,6 +73,7 @@ fn editor_elements(
             row: layout.row,
             buffer: editor.buffer().to_string(),
             spans: editor.syntax().to_vec(),
+            selection: editor.text_selection(),
             max_width: if layout.row == layout.prompt_row {
                 layout.rprompt_column
             } else {

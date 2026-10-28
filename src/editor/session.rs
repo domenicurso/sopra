@@ -5,7 +5,7 @@ use std::{
 
 use super::{EditorState, ExitReason, RunResult};
 use crate::{
-    input::{Terminal, TerminalSize},
+    input::{Key, Terminal, TerminalSize},
     render::Renderer,
     scene::Scene,
 };
@@ -26,19 +26,22 @@ impl EditorState {
             }
 
             let wait = next_frame.saturating_duration_since(Instant::now());
-            if terminal.poll(wait)? {
-                if let Some(result) = self.handle_key(terminal.read_key()?) {
-                    if result.reason == ExitReason::Interrupted {
-                        self.finish(&mut renderer, terminal, result.reason)?;
-                        self.start_fresh_line(terminal)?;
-                        renderer = Renderer::editor();
-                        next_frame = Instant::now();
-                        continue;
-                    }
-                    self.finish(&mut renderer, terminal, result.reason)?;
-                    return Ok(result);
-                }
+            let result = if terminal.poll(wait)? {
+                let key = terminal.read_key()?;
                 next_frame = Instant::now();
+                self.handle_input(key, terminal, &mut renderer, &mut resize_epoch)?
+            } else {
+                None
+            };
+            if let Some(result) = result {
+                self.finish(&mut renderer, terminal, result.reason)?;
+                if result.reason == ExitReason::Interrupted {
+                    self.start_fresh_line(terminal)?;
+                    renderer = Renderer::editor();
+                    next_frame = Instant::now();
+                    continue;
+                }
+                return Ok(result);
             }
             let latest_resize_epoch = terminal.resize_epoch();
             if latest_resize_epoch != resize_epoch {
@@ -46,6 +49,28 @@ impl EditorState {
                 next_frame = Instant::now();
             }
         }
+    }
+
+    fn handle_input(
+        &mut self,
+        key: Key,
+        terminal: &mut Terminal,
+        renderer: &mut Renderer,
+        resize_epoch: &mut usize,
+    ) -> io::Result<Option<RunResult>> {
+        if key == Key::Cancel && self.copy_selection(terminal)? {
+            return Ok(None);
+        }
+        if let Key::Mouse(event) = key {
+            let latest = terminal.resize_epoch();
+            if latest != *resize_epoch {
+                *resize_epoch = latest;
+                self.paint_editor(Instant::now(), terminal, renderer)?;
+            }
+            self.handle_mouse(event, renderer.origin_row());
+            return Ok(None);
+        }
+        Ok(self.handle_key(key))
     }
 
     fn paint_editor(
@@ -71,6 +96,7 @@ impl EditorState {
         terminal.write_all(b"\r\n")?;
         terminal.flush()?;
         self.buffer.clear();
+        self.text_selection.clear();
         self.cursor = 0;
         self.selected = None;
         self.completion_armed = false;

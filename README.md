@@ -48,6 +48,7 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 ## Features
 
 - Unicode-safe editing with history, word movement, kill/yank operations, and transient command lines.
+- Mouse selection in the command line: drag to select, double-click a word, or triple-click the whole line. Ctrl-C copies selected text when the terminal supports clipboard writes; without a selection it interrupts the command.
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
 
@@ -103,6 +104,8 @@ Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, pl
 Use `\n` in a TOML string to start another prompt row. The right prompt stays on the first row, and the command starts after the last row.
 
 Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
+
+When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.
 
 With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
 

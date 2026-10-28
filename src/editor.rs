@@ -1,11 +1,16 @@
+mod clipboard;
 mod commands;
 mod completions;
 mod editing;
+mod mouse;
 mod navigation;
 mod pairs;
 mod session;
 #[cfg(test)]
 mod tests;
+mod text_selection;
+#[cfg(test)]
+mod text_selection_tests;
 mod view;
 
 use std::{
@@ -65,6 +70,7 @@ pub(crate) struct EditorState {
     widgets: crate::prompt::widgets::Widgets,
     anchor: CursorPosition,
     selected: Option<usize>,
+    text_selection: text_selection::TextSelection,
     completion_armed: bool,
     completion_suspended: bool,
     suggestion_scroll: usize,
@@ -104,6 +110,7 @@ impl EditorState {
             transient_prompt: "$ ".to_string(),
             widgets,
             anchor: config.anchor,
+            text_selection: text_selection::TextSelection::default(),
             selected: (config.arm_completion && completion_active).then_some(0),
             completion_armed: config.arm_completion && completion_active,
             completion_suspended: config.suppress_completion || !config.completion_enabled,

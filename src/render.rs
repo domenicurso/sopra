@@ -31,6 +31,10 @@ pub(crate) struct Renderer {
 }
 
 impl Renderer {
+    pub(crate) fn origin_row(&self) -> Option<u16> {
+        self.origin_row
+    }
+
     pub(crate) fn editor() -> Self {
         Self {
             redraw_prompt: true,

@@ -10,6 +10,10 @@ use sopra_completion::CompletionItem;
 use super::EditorState;
 
 impl EditorState {
+    pub(crate) fn text_selection(&self) -> Option<std::ops::Range<usize>> {
+        self.text_selection.range()
+    }
+
     pub(crate) fn buffer(&self) -> &str {
         &self.buffer
     }

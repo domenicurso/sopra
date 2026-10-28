@@ -5,7 +5,8 @@
     "test:reflow": "python3 terminal-reflow-test.py",
     "test:multiline": "python3 terminal-multiline-test.py",
     "test:widgets": "python3 terminal-widget-test.py",
-    "test:prompt-config": "python3 terminal-prompt-config-test.py"
+    "test:prompt-config": "python3 terminal-prompt-config-test.py",
+    "test:mouse": "python3 terminal-mouse-test.py"
   },
   "devDependencies": {
     "@xterm/headless": "6.0.0"

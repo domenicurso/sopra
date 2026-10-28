@@ -4,6 +4,9 @@ use super::{EditorState, ExitReason, RunResult};
 
 impl EditorState {
     pub(super) fn handle_key(&mut self, key: Key) -> Option<RunResult> {
+        if key == Key::Ignore {
+            return None;
+        }
         match self.widgets.handle(key) {
             crate::prompt::widgets::WidgetAction::Consumed => return None,
             crate::prompt::widgets::WidgetAction::ChangeDirectory(directory) => {
@@ -12,6 +15,11 @@ impl EditorState {
                 return Some(result);
             }
             crate::prompt::widgets::WidgetAction::Ignored => {}
+        }
+        if self.prepare_text_selection(key) {
+            self.note_activity();
+            self.request_completion();
+            return None;
         }
         self.resume_completion_for(key);
         let reveal_overlay = !matches!(key, Key::Escape | Key::Clear);
@@ -50,6 +58,7 @@ impl EditorState {
     fn dispatch_key(&mut self, key: Key) -> Option<RunResult> {
         match key {
             Key::Character(character) => self.insert_character(character),
+            Key::Mouse(_) | Key::Ignore => {}
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
             Key::Tab => {
                 if self.selected.is_none() {

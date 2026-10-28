@@ -47,6 +47,7 @@ pub(super) struct CommandElement {
     pub(super) row: u16,
     pub(super) buffer: String,
     pub(super) spans: Vec<SyntaxSpan>,
+    pub(super) selection: Option<std::ops::Range<usize>>,
     pub(super) max_width: u16,
 }
 
@@ -70,7 +71,16 @@ impl Element for CommandElement {
             canvas.text(TextRun {
                 position: (self.column.saturating_add(offset), self.row),
                 text: grapheme,
-                style: syntax::style_at(&self.spans, byte),
+                style: if self
+                    .selection
+                    .as_ref()
+                    .is_some_and(|selection| selection.contains(&byte))
+                {
+                    syntax::style_at(&self.spans, byte)
+                        .add_modifier(ratatui::style::Modifier::REVERSED)
+                } else {
+                    syntax::style_at(&self.spans, byte)
+                },
                 max_width: width.saturating_sub(offset),
             });
             offset = offset.saturating_add(grapheme_width);

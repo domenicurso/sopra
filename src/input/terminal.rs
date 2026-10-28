@@ -19,6 +19,7 @@ pub(crate) struct Terminal {
     pub(super) tty: std::fs::File,
     saved_mode: termios,
     raw_mode: bool,
+    mouse_enabled: bool,
     resize_signal: Option<resize_signal::ResizeSignal>,
     palette: TerminalPalette,
     pub(super) pending_input: VecDeque<u8>,
@@ -39,14 +40,19 @@ impl Terminal {
         raw_mode.c_cc[libc::VTIME] = 0;
         set_termios(tty.as_raw_fd(), &raw_mode)?;
         let (palette, pending) = TerminalPalette::query(tty.as_raw_fd());
-        Ok(Self {
+        let mut terminal = Self {
             tty,
             saved_mode,
             raw_mode: true,
+            mouse_enabled: false,
             resize_signal: Some(resize_signal),
             palette,
             pending_input: pending.into(),
-        })
+        };
+        terminal.mouse_enabled = true;
+        terminal.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h")?;
+        terminal.flush()?;
+        Ok(terminal)
     }
 
     pub(crate) fn palette(&self) -> TerminalPalette {
@@ -126,12 +132,24 @@ impl Terminal {
     }
 
     pub(crate) fn restore(&mut self) -> io::Result<()> {
-        if self.raw_mode {
-            set_termios(self.tty.as_raw_fd(), &self.saved_mode)?;
-            self.raw_mode = false;
-        }
+        let mouse_result = if self.mouse_enabled {
+            self.mouse_enabled = false;
+            self.write_all(b"\x1b[?1006l\x1b[?1002l\x1b[?1000l")
+                .and_then(|()| self.flush())
+        } else {
+            Ok(())
+        };
+        let mode_result = if self.raw_mode {
+            let result = set_termios(self.tty.as_raw_fd(), &self.saved_mode);
+            if result.is_ok() {
+                self.raw_mode = false;
+            }
+            result
+        } else {
+            Ok(())
+        };
         self.resize_signal.take();
-        Ok(())
+        mouse_result.and(mode_result)
     }
 }
 

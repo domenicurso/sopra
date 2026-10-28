@@ -29,6 +29,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
             row: 0,
             buffer: editor.buffer().to_string(),
             spans: editor.transient_syntax(),
+            selection: None,
             max_width: size.columns.saturating_sub(width),
         }),
     ];

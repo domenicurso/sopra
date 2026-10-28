@@ -53,6 +53,13 @@ impl Terminal {
                 _ => Key::Escape,
             });
         }
+        if prefix == b'[' && self.poll(Duration::from_millis(4))? {
+            let first = self.read_byte()?;
+            if first == b'<' {
+                return self.read_mouse_sequence();
+            }
+            self.pending_input.push_front(first);
+        }
         let mut sequence = Vec::with_capacity(8);
         for _ in 0..8 {
             if !self.poll(Duration::from_millis(4))? {
@@ -75,6 +82,21 @@ impl Terminal {
             Some(b'~') if sequence.starts_with(b"3") => Key::Delete,
             _ => Key::Escape,
         })
+    }
+
+    fn read_mouse_sequence(&mut self) -> io::Result<Key> {
+        let mut sequence = Vec::with_capacity(16);
+        for _ in 0..32 {
+            if !self.poll(Duration::from_millis(8))? {
+                return Ok(Key::Ignore);
+            }
+            let byte = self.read_byte()?;
+            sequence.push(byte);
+            if byte == b'M' || byte == b'm' {
+                return Ok(super::mouse::parse_sgr(&sequence).map_or(Key::Ignore, Key::Mouse));
+            }
+        }
+        Ok(Key::Ignore)
     }
 
     fn read_utf8(&mut self, first: u8) -> io::Result<Key> {
