@@ -124,6 +124,25 @@ impl EditorState {
         })
     }
 
+    pub(crate) fn autosuggestion_metadata(&self) -> Vec<PromptSpan> {
+        let Some(suffix) = self.history_suffix() else {
+            return Vec::new();
+        };
+        let entry = self
+            .history
+            .entries
+            .iter()
+            .find(|entry| entry.command.strip_prefix(&self.buffer) == Some(suffix));
+        entry.map_or_else(Vec::new, |entry| {
+            crate::prompt::parse(
+                &self
+                    .history
+                    .format
+                    .replace("{text}", &snapshot::description(entry)),
+            )
+        })
+    }
+
     pub(super) fn accept_history(&mut self, key: Key) -> bool {
         if !matches!(key, Key::Right | Key::End | Key::WordRight | Key::Tab) {
             return false;

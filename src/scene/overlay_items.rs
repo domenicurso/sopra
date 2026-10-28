@@ -19,17 +19,6 @@ impl ItemRow<'_> {
         let available = inner.width;
         let label_width = UnicodeWidthStr::width(self.item.display.as_str()) as u16;
         let detail = item_detail(self.item);
-        let history = self.item.kind == CompletionKind::History;
-        let metadata_width = if history && available > 12 {
-            (UnicodeWidthStr::width(detail.as_str()) as u16).min(available / 2)
-        } else {
-            0
-        };
-        let reserve = if metadata_width > 0 {
-            metadata_width + 2
-        } else {
-            0
-        };
         super::overlay_label::paint(
             canvas,
             self.item,
@@ -38,16 +27,14 @@ impl ItemRow<'_> {
                 position: (inner.left(), row),
                 text: &self.item.display,
                 style: base,
-                max_width: label_width.min(available.saturating_sub(reserve)),
+                max_width: label_width.min(available),
             },
         );
-        let (column, width) = if history {
-            (inner.right().saturating_sub(metadata_width), metadata_width)
-        } else if label_width.saturating_add(2) < available {
-            (inner.left() + label_width + 2, available - label_width - 2)
-        } else {
+        if label_width.saturating_add(2) >= available {
             return;
-        };
+        }
+        let column = inner.left() + label_width + 2;
+        let width = available - label_width - 2;
         if !detail.is_empty() {
             paint_detail(
                 canvas,
@@ -131,19 +118,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn history_age_stays_at_the_right_edge_when_the_command_is_truncated() {
-        let area = Rect::new(0, 0, 30, 1);
+    fn history_age_follows_its_label_in_a_wide_menu() {
+        let area = Rect::new(0, 0, 80, 1);
         let mut canvas = Canvas::new(area);
-        let item = CompletionItem::new(
-            "echo a very long command that must be clipped",
-            "5m ago",
-            "ignored",
-            CompletionKind::History,
-        );
+        let item = CompletionItem::new("echo", "just now", "echo", CompletionKind::History);
         ItemRow {
             item: &item,
             selected: true,
-            query: "echo",
+            query: "e",
         }
         .paint(&mut canvas, area, 0);
         let text = canvas
@@ -152,8 +134,33 @@ mod tests {
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(text.ends_with("5m ago"), "{text}");
-        assert!(text.contains('…'), "{text}");
-        assert!(canvas.buffer[(24, 0)].modifier.contains(Modifier::DIM));
+        assert_eq!(text.trim_end(), "echo  just now");
+        assert!(canvas.buffer[(6, 0)].modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn clipped_commands_do_not_leave_detached_metadata() {
+        let area = Rect::new(0, 0, 12, 1);
+        let mut canvas = Canvas::new(area);
+        let item = CompletionItem::new(
+            "echo a very long command",
+            "5m ago",
+            "echo",
+            CompletionKind::History,
+        );
+        ItemRow {
+            item: &item,
+            selected: false,
+            query: "e",
+        }
+        .paint(&mut canvas, area, 0);
+        let text = canvas
+            .buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.ends_with('…'), "{text}");
+        assert!(!text.contains("ago"));
     }
 }

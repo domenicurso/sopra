@@ -121,5 +121,46 @@ fn configured_styling_does_not_interpret_history_as_markup() {
     assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
 }
 
+#[test]
+fn inline_metadata_follows_the_hint_without_entering_the_command() {
+    let mut editor = editor("echo caf");
+    editor.rprompt.clear();
+    editor.hide_overlay();
+    let frame = Scene::for_editor(
+        &editor,
+        TerminalSize::new(40, 12),
+        std::time::Instant::now(),
+    )
+    .render();
+    let line = (0..40)
+        .map(|column| frame.buffer[(column, 0)].symbol())
+        .collect::<String>();
+    assert!(line.starts_with("$ echo café"), "{line}");
+    assert_eq!(frame.buffer[(12, 0)].symbol(), "世");
+    assert_eq!(frame.buffer[(14, 0)].symbol(), "界");
+    assert_eq!(line["$ echo café 世 界   ".len()..].trim_end(), "History");
+    assert_eq!(frame.required_height, 1);
+    editor.handle_key(Key::Right);
+    assert_eq!(editor.buffer(), "echo café 世界");
+    assert!(editor.autosuggestion_metadata().is_empty());
+}
+
+#[test]
+fn inline_metadata_disappears_before_overlapping_the_right_prompt() {
+    let mut editor = editor("echo caf");
+    editor.hide_overlay();
+    let frame = Scene::for_editor(
+        &editor,
+        TerminalSize::new(25, 12),
+        std::time::Instant::now(),
+    )
+    .render();
+    let line = (0..25)
+        .map(|column| frame.buffer[(column, 0)].symbol())
+        .collect::<String>();
+    assert!(line.ends_with("RIGHT"), "{line}");
+    assert!(!line.contains("History"), "{line}");
+}
+
 #[path = "history_navigation_tests.rs"]
 mod navigation;
