@@ -62,7 +62,6 @@ pub(super) struct SettingDefinition {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TabDefinition {
     pub(super) label: &'static str,
-    pub(super) description: &'static str,
     pub(super) settings: &'static [SettingDefinition],
 }
 
@@ -118,17 +117,14 @@ const COMPLETION_SETTINGS: &[SettingDefinition] = &[SettingDefinition {
 pub(super) const TABS: &[TabDefinition] = &[
     TabDefinition {
         label: "Prompts",
-        description: "Control the prompts used by the Sopra shell bridge.",
         settings: PROMPT_SETTINGS,
     },
     TabDefinition {
         label: "Editor",
-        description: "Tune the live line editor presentation.",
         settings: EDITOR_SETTINGS,
     },
     TabDefinition {
         label: "Completion",
-        description: "Choose whether Sopra offers contextual suggestions.",
         settings: COMPLETION_SETTINGS,
     },
 ];

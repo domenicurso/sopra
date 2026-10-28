@@ -4,197 +4,114 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::palette::TerminalPalette;
-
 use super::{
-    drawing::{SETTING_ROW_START, SettingsLayout, draw_prompt_value, draw_text, fill_row},
-    schema::{SettingKind, TABS, TabDefinition},
+    controls::{SettingDisplay, draw_setting},
+    drawing::{draw_text, fill},
+    schema::TABS,
     state::SettingsState,
 };
+use crate::{input::CursorPosition, palette::TerminalPalette};
 
-pub(super) fn fill_dialog(buffer: &mut Buffer, dialog: Rect) {
-    let style = Style::default().add_modifier(Modifier::DIM);
-    for row in dialog.top()..dialog.bottom() {
-        for column in dialog.left()..dialog.right() {
-            if let Some(cell) = buffer.cell_mut((column, row)) {
-                cell.set_symbol(" ").set_style(style);
-            }
-        }
-    }
-}
-pub(super) fn draw_tabs(buffer: &mut Buffer, selected: usize, inner: Rect, selection: Style) {
-    let mut column = inner.left();
+pub(super) fn draw_sidebar(
+    buffer: &mut Buffer,
+    area: Rect,
+    state: &SettingsState,
+    palette: TerminalPalette,
+) {
     for (index, tab) in TABS.iter().enumerate() {
-        let style = if index == selected {
-            selection
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
-        };
-        column = column.saturating_add(draw_text(
-            buffer,
-            column,
-            inner.top(),
-            tab.label,
-            inner.right().saturating_sub(column),
-            style,
-        ));
-        if index + 1 < TABS.len() {
-            column = column.saturating_add(draw_text(
-                buffer,
-                column,
-                inner.top(),
-                "   ",
-                inner.right().saturating_sub(column),
-                Style::default().add_modifier(Modifier::DIM),
-            ));
+        let row = area.top().saturating_add(1 + index as u16 * 2);
+        if row >= area.bottom() {
+            break;
         }
-    }
-}
-pub(super) fn draw_tab_description(buffer: &mut Buffer, tab: &TabDefinition, inner: Rect) {
-    draw_text(
-        buffer,
-        inner.left(),
-        inner.top().saturating_add(2),
-        tab.description,
-        inner.width,
-        Style::default().add_modifier(Modifier::DIM),
-    );
-}
-
-pub(super) fn draw_rule(buffer: &mut Buffer, inner: Rect, offset: u16) {
-    let row = inner.top().saturating_add(offset);
-    let style = Style::default().add_modifier(Modifier::DIM);
-    for column in inner.left()..inner.right() {
-        buffer.set_string(column, row, "─", style);
+        let style = if index == state.tab_index() {
+            palette.cursor_style(1.0)
+        } else {
+            Style::default()
+        };
+        fill(buffer, Rect::new(area.left(), row, area.width, 1), style);
+        draw_text(
+            buffer,
+            area.left().saturating_add(1),
+            row,
+            tab.label,
+            area.width.saturating_sub(2),
+            style,
+        );
     }
 }
 
 pub(super) fn draw_settings(
     buffer: &mut Buffer,
+    area: Rect,
     state: &SettingsState,
-    layout: &SettingsLayout,
-    selection: Style,
-) {
-    for (index, definition) in state.current_tab().settings.iter().enumerate() {
-        let row = layout
-            .inner
-            .top()
-            .saturating_add(SETTING_ROW_START + index as u16);
-        if row >= layout.inner.bottom() {
-            continue;
-        }
-        let selected = state.selected_index() == index;
-        if selected {
-            fill_row(buffer, layout.inner, row, selection);
-        }
-        let label_style = if selected {
-            selection
-        } else {
-            Style::default()
-        };
-        draw_text(
-            buffer,
-            layout.inner.left(),
-            row,
-            definition.label,
-            24,
-            label_style,
-        );
-        draw_value(
-            buffer,
-            layout.value_column,
-            row,
-            ValueDisplay {
-                text: state.value(definition.key),
-                max_width: layout.inner.right().saturating_sub(layout.value_column),
-                selected,
-                kind: definition.kind,
-                palette: layout.palette,
-            },
-        );
-    }
-}
-
-pub(super) fn draw_selected_description(buffer: &mut Buffer, state: &SettingsState, inner: Rect) {
-    let row = inner
-        .top()
-        .saturating_add(SETTING_ROW_START + state.current_tab().settings.len() as u16 + 2);
-    let description = format!("↳ {}", state.selected_definition().description);
-    draw_text(
-        buffer,
-        inner.left(),
-        row,
-        &description,
-        inner.width,
-        Style::default().add_modifier(Modifier::DIM),
-    );
-}
-
-fn draw_value(buffer: &mut Buffer, column: u16, row: u16, display: ValueDisplay) {
-    if display.kind == SettingKind::Text {
-        draw_prompt_value(
-            buffer,
-            column,
-            row,
-            &display.text,
-            display.max_width,
-            display.selected,
-            display.palette,
-        );
-        return;
-    }
-    let style = if display.selected {
-        display
-            .palette
-            .cursor_style(1.0)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    };
-    draw_text(buffer, column, row, &display.text, display.max_width, style);
-}
-
-struct ValueDisplay {
-    text: String,
-    max_width: u16,
-    selected: bool,
-    kind: SettingKind,
     palette: TerminalPalette,
+) -> CursorPosition {
+    let visible = (area.height / 5).max(1) as usize;
+    let first = state
+        .selected_index()
+        .saturating_add(1)
+        .saturating_sub(visible);
+    let mut cursor = CursorPosition { column: 0, row: 0 };
+    for (index, definition) in state
+        .current_tab()
+        .settings
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(visible)
+    {
+        let top = area.top().saturating_add((index - first) as u16 * 5);
+        if top.saturating_add(3) >= area.bottom() {
+            break;
+        }
+        let row = Rect::new(area.left(), top, area.width, 5);
+        let selected = index == state.selected_index();
+        if let Some(position) = draw_setting(
+            buffer,
+            row,
+            state,
+            SettingDisplay {
+                definition: *definition,
+                selected,
+                palette,
+            },
+        ) {
+            cursor = position;
+        }
+    }
+    cursor
 }
 
-pub(super) fn draw_footer(buffer: &mut Buffer, state: &SettingsState, inner: Rect) {
-    if inner.height < 3 {
+pub(super) fn draw_footer(buffer: &mut Buffer, area: Rect, state: &SettingsState) {
+    let style = Style::default().add_modifier(Modifier::DIM);
+    if area.height == 0 {
         return;
     }
-    let status_row = inner.bottom().saturating_sub(2);
-    let footer_row = inner.bottom().saturating_sub(1);
-    let status_style = if state.error().is_some() {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().add_modifier(Modifier::DIM)
-    };
-    let status = state
+    let message = state
         .error()
         .map_or_else(|| state.config_label(), ToString::to_string);
     draw_text(
         buffer,
-        inner.left(),
-        status_row,
-        &status,
-        inner.width,
-        status_style,
+        area.left().saturating_add(1),
+        area.top(),
+        &message,
+        area.width.saturating_sub(2),
+        style,
     );
-    let footer = if state.is_editing() {
+    if area.height < 2 {
+        return;
+    }
+    let help = if state.is_editing() {
         "Enter save   Esc cancel"
     } else {
-        "←→ tabs   ↑↓ select   Enter edit   Esc close"
+        "←/→ section   Tab/Shift-Tab select   Enter edit/toggle   Esc close"
     };
     draw_text(
         buffer,
-        inner.left(),
-        footer_row,
-        footer,
-        inner.width,
-        Style::default().add_modifier(Modifier::DIM),
+        area.left().saturating_add(1),
+        area.top() + 1,
+        help,
+        area.width.saturating_sub(2),
+        style,
     );
 }

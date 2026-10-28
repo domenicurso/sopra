@@ -19,7 +19,16 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
 fi
 source "$script_dir/settings.zsh"
 source "$script_dir/protocol.zsh"
-_sopra_load_prompt_config
+typeset -gA _SOPRA_ENV_OVERRIDES
+for _sopra_name in SOPRA_PROMPT SOPRA_RPROMPT SOPRA_TRANSIENT_PROMPT SOPRA_CLOCK_FORMAT \
+    SOPRA_CURSOR_ANIMATION SOPRA_SYNTAX_HIGHLIGHTING SOPRA_COMPLETION_ENABLED \
+    SOPRA_GIT_STATUS_FORMAT SOPRA_GIT_STATUS_SEPARATOR SOPRA_GIT_STATUS_ITEM_FORMAT \
+    SOPRA_PATH_BEFORE SOPRA_PATH_SELECTED SOPRA_PATH_AFTER; do
+    (( ${+parameters[$_sopra_name]} )) && _SOPRA_ENV_OVERRIDES[$_sopra_name]=1
+done
+unset _sopra_name
+_sopra_load_prompt_config "$(_sopra_config_path)"
+_sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"
 _sopra_load_settings
 source "$script_dir/context.zsh"
 source "$script_dir/prompt.zsh"

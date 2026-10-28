@@ -15,10 +15,6 @@ pub(crate) fn parse(prompt: &str) -> Vec<PromptSpan> {
     parse_text(prompt, true)
 }
 
-pub(crate) fn parse_literal(prompt: &str) -> Vec<PromptSpan> {
-    parse_text(prompt, false)
-}
-
 fn parse_text(prompt: &str, markup_enabled: bool) -> Vec<PromptSpan> {
     let mut spans = Vec::new();
     let mut style = Style::default();

@@ -54,30 +54,14 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 
 ## Configuration
 
-The installer accepts these environment variables:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SOPRA_REPOSITORY` | `domenicurso/sopra` | GitHub repository to download. |
-| `SOPRA_REF` | `main` | Branch, tag, or commit archive to build. |
-| `SOPRA_PREFIX` | `$HOME/.local` | Installation prefix for the binary and Zsh bridge. |
-
-The Zsh bridge accepts these runtime variables:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SOPRA_BIN` | Auto-detected | Development override for the private Sopra worker. |
-| `SOPRA_PROMPT` | Colored user, path, and prompt character | Prompt rendered while editing. |
-| `SOPRA_RPROMPT` | Colored Git branch and status | Right prompt rendered while editing. |
-| `SOPRA_TRANSIENT_PROMPT` | `$ ` | Prompt shown after accepting or interrupting a line. |
-| `SOPRA_CLOCK_FORMAT` | `%H:%M:%S` | Local time format for `{clock}`. |
-| `SOPRA_CURSOR_ANIMATION` | `1` | Enables the animated editing cursor. |
-| `SOPRA_SYNTAX_HIGHLIGHTING` | `1` | Enables live syntax highlighting. |
-| `SOPRA_COMPLETION_ENABLED` | `1` | Enables contextual completions. |
-
-`sopra settings` edits these values in a terminal modal and saves them to `~/.config/sopra/settings`. You can also create `~/.config/sopra/prompt.toml` (or `$XDG_CONFIG_HOME/sopra/prompt.toml`) with format strings:
+Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Run `sopra settings` to change these options interactively; it saves to the same file and preserves other settings and comments.
 
 ```toml
+[editor]
+cursor_animation = true
+syntax_highlighting = true
+completion = true
+
 [prompt]
 left = """\
     [bold][red]{user}[/][/] \
@@ -101,7 +85,9 @@ item_format = "[bold][magenta]{item}[/][/]"
 separator = "[dim]|[/]"
 ```
 
-Explicit `SOPRA_*` variables take precedence over the corresponding TOML values; TOML takes precedence over saved settings. Restart the shell after editing the file directly. When you change a prompt setting in `sopra settings`, Sopra updates that field in an existing TOML file and preserves its other content and comments.
+Existing `prompt.toml` and `settings` files remain supported. The first time you save in `sopra settings`, Sopra creates `config.toml` from those files, preserves the originals, and keeps the TOML comments. If you create `config.toml` yourself, values missing from it still fall back to the older files. Restart the shell after editing configuration directly.
+
+Environment variables override config values for the current shell: `SOPRA_PROMPT`, `SOPRA_RPROMPT`, `SOPRA_TRANSIENT_PROMPT`, `SOPRA_CLOCK_FORMAT`, `SOPRA_CURSOR_ANIMATION`, `SOPRA_SYNTAX_HIGHLIGHTING`, and `SOPRA_COMPLETION_ENABLED`. Set boolean overrides to `1` or `0`. `SOPRA_BIN` selects a worker executable for development. Installer overrides `SOPRA_REPOSITORY`, `SOPRA_REF`, and `SOPRA_PREFIX` select the repository, ref, and installation directory.
 
 Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
 

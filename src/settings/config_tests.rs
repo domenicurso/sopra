@@ -15,9 +15,9 @@ fn settings_round_trip_preserves_schema_values() {
         completion_enabled: true,
     };
     let _ = fs::remove_file(&file);
-    settings
-        .save(&file, SettingKey::Prompt)
-        .expect("settings should save");
+    for key in SettingKey::ALL {
+        settings.save(&file, key).expect("settings should save");
+    }
     let loaded = Settings::load(Some(&file));
     let _ = fs::remove_file(&file);
     assert_eq!(loaded, settings);
@@ -43,13 +43,41 @@ fn saving_settings_updates_existing_prompt_toml() -> std::io::Result<()> {
         rprompt: "[cyan]{clock}[/]".to_string(),
         ..Settings::default()
     };
-    settings.save(&directory.join("settings"), SettingKey::RightPrompt)?;
-    let first = fs::read_to_string(&file)?;
-    settings.save(&directory.join("settings"), SettingKey::CursorAnimation)?;
-    assert_eq!(fs::read_to_string(&file)?, first);
-    let text = first;
+    let config = directory.join("config.toml");
+    settings.save(&config, SettingKey::RightPrompt)?;
+    let text = fs::read_to_string(&config)?;
+    settings.save(&config, SettingKey::CursorAnimation)?;
+    assert!(fs::read_to_string(&config)?.contains("cursor_animation = true"));
     assert!(text.contains("# preserved") && text.contains("# keep"));
-    let saved = crate::prompt::config::PromptConfig::read(&file)?;
+    let saved = crate::prompt::config::PromptConfig::read(&config)?;
     assert_eq!(saved.right.as_deref(), Some("[cyan]{clock}[/]"));
+    fs::remove_dir_all(directory)
+}
+
+#[test]
+fn migration_keeps_legacy_values_and_comments() -> std::io::Result<()> {
+    let directory = env::temp_dir().join(format!("sopra-migrate-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir_all(&directory)?;
+    fs::write(
+        directory.join("prompt.toml"),
+        "# keep\n[prompt]\nleft = 'custom'\n",
+    )?;
+    fs::write(
+        directory.join("settings"),
+        "prompt=old\nrprompt=right\ncursor_animation=0\n",
+    )?;
+    let path = directory.join("config.toml");
+    let mut settings = Settings::load(Some(&path));
+    settings.syntax_highlighting = false;
+    settings.save(&path, SettingKey::SyntaxHighlighting)?;
+    let config = crate::prompt::config::PromptConfig::read(&path)?;
+    assert_eq!(config.left.as_deref(), Some("custom"));
+    assert_eq!(config.right.as_deref(), Some("right"));
+    assert_eq!(config.cursor_animation, Some(false));
+    assert_eq!(config.syntax_highlighting, Some(false));
+    let migrated = fs::read_to_string(&path)?;
+    assert!(migrated.contains("# keep") && migrated.contains("left = 'custom'"));
+    assert!(directory.join("prompt.toml").exists() && directory.join("settings").exists());
     fs::remove_dir_all(directory)
 }

@@ -1,9 +1,16 @@
+#[path = "config_boolean.rs"]
+mod boolean;
+
+use boolean::{read_bool, set_bool};
 use std::{fs, io, path::Path};
 
 use toml_edit::{DocumentMut, Item, value};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct PromptConfig {
+    pub(crate) cursor_animation: Option<bool>,
+    pub(crate) syntax_highlighting: Option<bool>,
+    pub(crate) completion_enabled: Option<bool>,
     pub(crate) left: Option<String>,
     pub(crate) right: Option<String>,
     pub(crate) transient: Option<String>,
@@ -21,6 +28,9 @@ impl PromptConfig {
         let text = fs::read_to_string(path)?;
         let doc = parse(&text)?;
         Ok(Self {
+            cursor_animation: read_bool(&doc, &["editor", "cursor_animation"])?,
+            syntax_highlighting: read_bool(&doc, &["editor", "syntax_highlighting"])?,
+            completion_enabled: read_bool(&doc, &["editor", "completion"])?,
             left: read_string(&doc, &["prompt", "left"])?,
             right: read_string(&doc, &["prompt", "right"])?,
             transient: read_string(&doc, &["prompt", "transient"])?,
@@ -35,6 +45,15 @@ impl PromptConfig {
     }
 
     pub(crate) fn print(&self) {
+        for (name, flag) in [
+            ("cursor_animation", self.cursor_animation),
+            ("syntax_highlighting", self.syntax_highlighting),
+            ("completion_enabled", self.completion_enabled),
+        ] {
+            if let Some(flag) = flag {
+                println!("{name}\t{}", if flag { "31" } else { "30" });
+            }
+        }
         for (name, value) in [
             ("prompt", &self.left),
             ("rprompt", &self.right),
@@ -63,10 +82,14 @@ impl PromptConfig {
 }
 
 pub(crate) fn update(path: &Path, config: &PromptConfig) -> io::Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let mut doc = parse(&fs::read_to_string(path)?)?;
+    let mut doc = if path.exists() {
+        parse(&fs::read_to_string(path)?)?
+    } else {
+        DocumentMut::new()
+    };
+    set_bool(&mut doc, "cursor_animation", config.cursor_animation)?;
+    set_bool(&mut doc, "syntax_highlighting", config.syntax_highlighting)?;
+    set_bool(&mut doc, "completion", config.completion_enabled)?;
     set(&mut doc, &["prompt", "left"], &config.left)?;
     set(&mut doc, &["prompt", "right"], &config.right)?;
     set(&mut doc, &["prompt", "transient"], &config.transient)?;
@@ -146,41 +169,5 @@ fn set(doc: &mut DocumentMut, keys: &[&str], text: &Option<String>) -> io::Resul
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn reads_and_updates_prompt_templates_without_losing_comments() -> io::Result<()> {
-        let file = std::env::temp_dir().join(format!("sopra-prompt-{}.toml", std::process::id()));
-        fs::write(
-            &file,
-            "# keep me\n[prompt]\nright = '[dim]{clock}[/]' # inline comment\n[widgets.clock]\nformat = '%H:%M'\n[widgets.git_status]\nformat = '<{items}>'\nseparator = ' / '\n",
-        )?;
-        let mut config = PromptConfig::read(&file)?;
-        assert_eq!(config.right.as_deref(), Some("[dim]{clock}[/]"));
-        assert_eq!(config.git_status_format.as_deref(), Some("<{items}>"));
-        assert_eq!(config.git_status_separator.as_deref(), Some(" / "));
-        config.right = Some("{git}".into());
-        update(&file, &config)?;
-        let text = fs::read_to_string(&file)?;
-        assert!(text.contains("# keep me") && text.contains("# inline comment"));
-        assert_eq!(PromptConfig::read(&file)?, config);
-        fs::remove_file(file)
-    }
-    #[test]
-    fn invalid_field_types_report_the_field() -> io::Result<()> {
-        let doc = parse("[widgets.clock]\nformat = 42\n")?;
-        let result = read_string(&doc, &["widgets", "clock", "format"]);
-        assert!(
-            result
-                .err()
-                .is_some_and(|error| error.to_string().contains("widgets.clock.format"))
-        );
-        let doc = parse("[prompt]\nleft = \"\\u0000\"\n")?;
-        assert!(
-            read_string(&doc, &["prompt", "left"])
-                .err()
-                .is_some_and(|error| error.to_string().contains("NUL"))
-        );
-        Ok(())
-    }
-}
+#[path = "config_tests.rs"]
+mod tests;

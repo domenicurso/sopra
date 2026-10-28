@@ -86,6 +86,8 @@ impl SettingsState {
             Key::Left => self.switch_tab(-1),
             Key::Right => self.switch_tab(1),
             Key::Tab => self.advance_setting(),
+            Key::BackTab => self.previous_setting(),
+            Key::Character(' ') => self.begin_or_toggle(),
             Key::Enter => self.begin_or_toggle(),
             Key::Escape | Key::Cancel | Key::Eof => return true,
             _ => {}
@@ -113,6 +115,15 @@ impl SettingsState {
         } else {
             self.switch_tab(1);
             self.selected = 0;
+        }
+    }
+
+    fn previous_setting(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        } else {
+            self.switch_tab(-1);
+            self.selected = self.current_tab().settings.len() - 1;
         }
     }
 

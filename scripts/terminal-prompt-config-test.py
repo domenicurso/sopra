@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 
 from terminal_session import TerminalSession
@@ -116,6 +117,58 @@ def exercise_environment_override(root: Path, config_root: Path) -> None:
         assert active.strip() == "override $", active
 
 
+
+
+def exercise_config_precedence(root: Path, config_root: Path) -> None:
+    directory = config_root / "precedence" / "sopra"
+    directory.mkdir(parents=True)
+    (directory / "config.toml").write_text("[prompt]\nleft = 'new'\n[editor]\ncursor_animation = false\n")
+    (directory / "prompt.toml").write_text("[prompt]\nleft = 'legacy'\nright = 'fallback'\n")
+    (directory / "settings").write_text("cursor_animation=1\nsyntax_highlighting=0\n")
+    script = (
+        'source "$SOPRA_REPO_ROOT/zsh/protocol.zsh"; source "$SOPRA_REPO_ROOT/zsh/settings.zsh"; '
+        '_sopra_load_prompt_config "$(_sopra_config_path)"; '
+        '_sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"; '
+        '_sopra_load_settings; print -r -- "$SOPRA_PROMPT|$SOPRA_RPROMPT|$SOPRA_CURSOR_ANIMATION|$SOPRA_SYNTAX_HIGHLIGHTING"'
+    )
+    env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "XDG_CONFIG_HOME": str(directory.parent),
+           "SOPRA_REPO_ROOT": str(root), "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
+           "SOPRA_PROMPT": "environment"}
+    result = subprocess.run(("zsh", "-f", "-c", script), env=env, text=True, capture_output=True, check=True)
+    assert result.stdout.strip() == "environment|fallback|0|0", result.stdout
+
+
+def exercise_settings_ui(root: Path, config_root: Path) -> None:
+    directory = config_root / "settings-ui" / "sopra"
+    directory.mkdir(parents=True)
+    path = directory / "config.toml"
+    path.write_text("# retained\n[editor]\ncursor_animation = true # toggle\n[prompt]\nleft = 'test $ '\n")
+    environment = {"XDG_CONFIG_HOME": str(directory.parent)}
+    with TerminalSession((str(root / "target/debug/sopra-worker"), "--settings"), rows=30,
+                         columns=90, cwd=str(root), env=environment) as terminal:
+        terminal.wait_for("Prompt shown while editing", timeout=10)
+        terminal.key("ENTER")
+        terminal.key("HOME")
+        terminal.send_text("X")
+        terminal.key("TAB")
+        terminal.read(0.3)
+        terminal.key("UP")
+        terminal.key("RIGHT")
+        terminal.wait_for("Cursor animation", timeout=5)
+        assert "[ On ]" in terminal.screen.text(), terminal.screen.lines()
+        terminal.key("ENTER")
+        terminal.wait_for("[ Off ]", timeout=5)
+        terminal.key("TAB")
+        terminal.read(0.3)
+        terminal.key("ENTER")
+        terminal.read(0.3)
+        terminal.key("ESC")
+    text = path.read_text()
+    assert "cursor_animation = false # toggle" in text, text
+    assert "syntax_highlighting = false" in text, text
+    assert "# retained" in text and tomllib.loads(text)["prompt"]["left"] == "Xtest $ ", text
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
@@ -125,6 +178,8 @@ def main() -> None:
         exercise_environment_override(root, Path(temporary))
         exercise_saved_multiline(root, Path(temporary))
         exercise_git_format(root, Path(temporary))
+        exercise_settings_ui(root, Path(temporary))
+        exercise_config_precedence(root, Path(temporary))
     print("prompt config: ok (TOML, status, duration, transient prompt)")
 
 

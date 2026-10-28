@@ -1,5 +1,7 @@
 mod config;
+mod controls;
 mod drawing;
+mod migration;
 mod panel;
 mod schema;
 mod state;

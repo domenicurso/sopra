@@ -6,16 +6,15 @@ typeset -g _SOPRA_SETTINGS_LOADED=1
 _sopra_config_path() {
     emulate -L zsh
     if [[ -n ${XDG_CONFIG_HOME:-} ]]; then
-        print -r -- "$XDG_CONFIG_HOME/sopra/settings"
+        print -r -- "$XDG_CONFIG_HOME/sopra/config.toml"
     else
-        print -r -- "$HOME/.config/sopra/settings"
+        print -r -- "$HOME/.config/sopra/config.toml"
     fi
 }
 
 _sopra_load_prompt_config() {
     emulate -L zsh
-    local config=$(_sopra_config_path) raw key encoded name
-    config=${config:h}/prompt.toml
+    local config=$1 force=${2:-0} raw key encoded name
     [[ -f $config ]] || return 0
     raw=$("$SOPRA_BIN" --prompt-config "$config") || {
         print -u2 -- "sopra: could not load $config"
@@ -33,9 +32,15 @@ _sopra_load_prompt_config() {
             path_before) name=SOPRA_PATH_BEFORE ;;
             path_selected) name=SOPRA_PATH_SELECTED ;;
             path_after) name=SOPRA_PATH_AFTER ;;
+            cursor_animation) name=SOPRA_CURSOR_ANIMATION ;;
+            syntax_highlighting) name=SOPRA_SYNTAX_HIGHLIGHTING ;;
+            completion_enabled) name=SOPRA_COMPLETION_ENABLED ;;
             *) continue ;;
         esac
-        if (( ! ${+parameters[$name]} )); then
+        if (( force )) && [[ -n ${_SOPRA_ENV_OVERRIDES[$name]-} ]]; then
+            continue
+        fi
+        if (( force || ! ${+parameters[$name]} )); then
             _sopra_hex_decode "$encoded" || return 1
             typeset -g "$name=$_SOPRA_RESULT_BUFFER"
         fi
@@ -46,6 +51,7 @@ _sopra_load_settings() {
     emulate -L zsh
     local force=${1:-0} config key value
     config=$(_sopra_config_path)
+    config=${config:h}/settings
     [[ -r $config ]] || return 0
     while IFS='=' read -r key value; do
         case $key in
@@ -105,7 +111,7 @@ _sopra_settings() {
         SOPRA_COMPLETION_ENABLED="${SOPRA_COMPLETION_ENABLED:-1}" \
         "$SOPRA_BIN" --settings </dev/tty
     local exit_code=$?
-    (( exit_code == 0 )) && _sopra_load_settings 1
+    (( exit_code == 0 )) && _sopra_load_prompt_config "$(_sopra_config_path)" 1
     return $exit_code
 }
 

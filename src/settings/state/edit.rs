@@ -16,6 +16,18 @@ impl SettingsState {
             Key::Home => self.cursor = 0,
             Key::End => self.cursor = self.edit_value().len(),
             Key::Enter => self.commit(),
+            Key::Tab => {
+                self.commit();
+                if !self.editing {
+                    self.advance_setting();
+                }
+            }
+            Key::BackTab => {
+                self.commit();
+                if !self.editing {
+                    self.previous_setting();
+                }
+            }
             Key::Escape => self.cancel_edit(),
             Key::Cancel | Key::Eof => return true,
             _ => {}

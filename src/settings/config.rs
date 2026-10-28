@@ -36,12 +36,36 @@ impl Settings {
         let Some(path) = path else {
             return settings;
         };
-        let Ok(contents) = fs::read_to_string(path) else {
-            return settings;
-        };
-        for line in contents.lines() {
-            if let Some((key, value)) = line.split_once('=') {
-                settings.set_serialized(key, value);
+        if let Some(parent) = path.parent()
+            && let Ok(contents) = fs::read_to_string(parent.join("settings"))
+        {
+            for line in contents.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    settings.set_serialized(key, value);
+                }
+            }
+        }
+        if let Ok(config) = crate::prompt::config::PromptConfig::read(path) {
+            if let Some(value) = config.left {
+                settings.prompt = value;
+            }
+            if let Some(value) = config.right {
+                settings.rprompt = value;
+            }
+            if let Some(value) = config.transient {
+                settings.transient_prompt = value;
+            }
+            if let Some(value) = config.clock_format {
+                settings.clock_format = value;
+            }
+            if let Some(value) = config.cursor_animation {
+                settings.cursor_animation = value;
+            }
+            if let Some(value) = config.syntax_highlighting {
+                settings.syntax_highlighting = value;
+            }
+            if let Some(value) = config.completion_enabled {
+                settings.completion_enabled = value;
             }
         }
         settings
@@ -96,42 +120,22 @@ impl Settings {
             .parent()
             .ok_or_else(|| io::Error::other("Sopra config path has no parent"))?;
         fs::create_dir_all(parent)?;
-        let mut prompt = crate::prompt::config::PromptConfig::default();
+        super::migration::migrate(path)?;
+        let mut config = crate::prompt::config::PromptConfig::default();
         match changed {
-            SettingKey::Prompt => prompt.left = Some(self.prompt.clone()),
-            SettingKey::RightPrompt => prompt.right = Some(self.rprompt.clone()),
-            SettingKey::TransientPrompt => prompt.transient = Some(self.transient_prompt.clone()),
-            SettingKey::ClockFormat => prompt.clock_format = Some(self.clock_format.clone()),
-            _ => {}
+            SettingKey::Prompt => config.left = Some(self.prompt.clone()),
+            SettingKey::RightPrompt => config.right = Some(self.rprompt.clone()),
+            SettingKey::TransientPrompt => config.transient = Some(self.transient_prompt.clone()),
+            SettingKey::ClockFormat => config.clock_format = Some(self.clock_format.clone()),
+            SettingKey::CursorAnimation => config.cursor_animation = Some(self.cursor_animation),
+            SettingKey::SyntaxHighlighting => {
+                config.syntax_highlighting = Some(self.syntax_highlighting)
+            }
+            SettingKey::CompletionEnabled => {
+                config.completion_enabled = Some(self.completion_enabled)
+            }
         }
-        if matches!(
-            changed,
-            SettingKey::Prompt
-                | SettingKey::RightPrompt
-                | SettingKey::TransientPrompt
-                | SettingKey::ClockFormat
-        ) {
-            crate::prompt::config::update(&parent.join("prompt.toml"), &prompt)?;
-        }
-        let contents = SettingKey::ALL
-            .into_iter()
-            .map(|key| {
-                let value = self.value(key);
-                if key == SettingKey::Prompt && value.contains('\n') {
-                    let encoded = value
-                        .as_bytes()
-                        .iter()
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect::<String>();
-                    format!("prompt_hex={encoded}\n")
-                } else {
-                    format!("{}={value}\n", key.storage_name())
-                }
-            })
-            .collect::<String>();
-        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-        fs::write(&temporary, contents)?;
-        fs::rename(temporary, path)
+        crate::prompt::config::update(path, &config)
     }
 
     fn set_serialized(&mut self, key: &str, value: &str) {
@@ -157,7 +161,7 @@ impl Settings {
     }
 }
 
-fn decode_prompt(value: &str) -> Option<String> {
+pub(super) fn decode_prompt(value: &str) -> Option<String> {
     if !value.len().is_multiple_of(2) {
         return None;
     }
@@ -188,7 +192,7 @@ pub(super) fn path() -> Option<PathBuf> {
     let root = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-    Some(root.join("sopra/settings"))
+    Some(root.join("sopra/config.toml"))
 }
 
 #[cfg(test)]
