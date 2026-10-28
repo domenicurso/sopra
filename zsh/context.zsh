@@ -11,7 +11,7 @@ _sopra_command_finished() {
     local -i previous_status=$?
     typeset -g _SOPRA_WIDGET_STATUS=$previous_status
     if (( _SOPRA_COMMAND_STARTED > 0 )); then
-        typeset -gF 3 _SOPRA_WIDGET_DURATION=$(( EPOCHREALTIME - _SOPRA_COMMAND_STARTED ))
+        typeset -gF 6 _SOPRA_WIDGET_DURATION=$(( EPOCHREALTIME - _SOPRA_COMMAND_STARTED ))
         _SOPRA_COMMAND_STARTED=0
     fi
     return 0

@@ -48,7 +48,9 @@ fn env_text(name: &str) -> String {
 }
 
 fn format_duration(seconds: f64) -> String {
-    if seconds < 1.0 {
+    if seconds < 0.001 {
+        format!("{:.1}ms", seconds * 1000.0)
+    } else if seconds < 1.0 {
         format!("{:.0}ms", seconds * 1000.0)
     } else if seconds < 60.0 {
         format!("{seconds:.1}s")
@@ -63,6 +65,9 @@ mod tests {
     use super::format_duration;
     #[test]
     fn duration_uses_readable_units() {
+        assert_eq!(format_duration(0.000_123), "0.1ms");
+        assert_eq!(format_duration(0.000_876), "0.9ms");
+        assert_eq!(format_duration(0.001), "1ms");
         assert_eq!(format_duration(0.125), "125ms");
         assert_eq!(format_duration(2.5), "2.5s");
         assert_eq!(format_duration(62.0), "1m 2s");
