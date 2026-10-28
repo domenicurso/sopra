@@ -155,14 +155,14 @@ def has_plain(output: bytes, needle: bytes) -> bool:
     return needle in rendered or needle in rendered.replace(b" ", b"")
 
 
-def start_session() -> tuple[tuple[int, int], bytearray]:
+def start_session(config_root: str) -> tuple[tuple[int, int], bytearray]:
     env = os.environ.copy()
     env.update(
         {
             "TERM": "xterm-256color",
             "COLUMNS": str(COLUMNS),
             "LINES": str(ROWS),
-            "SOPRA_RPROMPT": "RIGHT",
+            "XDG_CONFIG_HOME": config_root,
         }
     )
     pid, master = pty.fork()

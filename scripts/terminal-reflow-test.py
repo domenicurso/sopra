@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TypedDict, cast
 
 from terminal_session import TerminalSession
+from terminal_config import terminal_config
 
 
 class Snapshot(TypedDict):
@@ -79,16 +80,12 @@ def sweep(terminal: TerminalSession, screen: ReflowScreen, minimum: int) -> None
     assert after["cursor"][1] == before["cursor"][1], (before, after)
 
 
-def run_session(root: Path, screen: ReflowScreen) -> None:
+def run_session(root: Path, screen: ReflowScreen, config_root: str) -> None:
     environment = {
         "SOPRA_REPO_ROOT": str(root),
         "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
         "ZDOTDIR": str(root / "examples/isolated"),
-        "SOPRA_PROMPT": "test $ ",
-        "SOPRA_RPROMPT": "rprompt",
-        "SOPRA_COMPLETION_ENABLED": "0",
-        "SOPRA_CURSOR_ANIMATION": "0",
-        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
+        "XDG_CONFIG_HOME": config_root,
     }
     with TerminalSession(("zsh", "-di"), rows=12, columns=120, cwd=str(root), env=environment) as terminal:
         terminal.screen = screen
@@ -132,13 +129,13 @@ def run_session(root: Path, screen: ReflowScreen) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
-    with subprocess.Popen(
+    with terminal_config("[prompt]\nleft = 'test $ '\nright = 'rprompt'\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(
         ["node", str(root / "scripts/terminal-reflow-screen.cjs")],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     ) as process:
-        run_session(root, ReflowScreen(process))
+        run_session(root, ReflowScreen(process), config_root)
     print("terminal reflow: ok (history, cursor, right prompt, transient prompt)")
 
 

@@ -11,17 +11,20 @@ from terminal_session import TerminalSession
 
 
 def exercise_widgets(root: Path, directory: Path) -> None:
+    config = directory.parent / "widget-config" / "sopra"
+    config.mkdir(parents=True)
+    (config / "config.toml").write_text(
+        "[prompt]\nleft = '{path} $ '\nright = '[if git]{git}[dim] : [/][/]{clock}'\n"
+        "transient = '[dim]done>[/] '\n[widgets.clock]\nformat = '%H[dim]:[/]%M[dim]:[/]%S'\n"
+        "[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n"
+    )
     environment = {
         "SOPRA_REPO_ROOT": str(root),
         "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
         "ZDOTDIR": str(root / "examples/isolated"),
-        "SOPRA_PROMPT": "{path} $ ",
-        "SOPRA_RPROMPT": "[if git]{git}[dim] : [/][/]{clock}",
-        "SOPRA_TRANSIENT_PROMPT": "[dim]done>[/] ",
-        "SOPRA_CLOCK_FORMAT": "%H[dim]:[/]%M[dim]:[/]%S",
-        "SOPRA_COMPLETION_ENABLED": "0",
-        "SOPRA_CURSOR_ANIMATION": "0",
-        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
+        "XDG_CONFIG_HOME": str(config.parent),
+        "SOPRA_CLOCK_FORMAT": "WRONG",
+        "SOPRA_GIT_STATUS_FORMAT": "WRONG",
     }
     with TerminalSession(("zsh", "-di"), rows=20, columns=100, cwd=str(directory), env=environment) as terminal:
         terminal.wait_for(" $ ", timeout=20)
@@ -64,18 +67,19 @@ def exercise_widgets(root: Path, directory: Path) -> None:
 def exercise_multiline_directory(root: Path, directory: Path) -> None:
     config = directory.parent / "path-config" / "sopra"
     config.mkdir(parents=True)
-    (config / "prompt.toml").write_text(
+    (config / "config.toml").write_text(
+        "[prompt]\nleft = \"{path}\\n$ \"\nright = ''\ntransient = '$ '\n"
+        "[editor]\ncompletion = false\ncursor_animation = false\n"
         "[widgets.path]\nbefore = '[green]{text}[/]'\n"
         "selected = '[yellow][reverse]{text}[/][/]'\nafter = '[red][dim]{text}[/]'\n"
     )
     environment = {
         "XDG_CONFIG_HOME": str(config.parent),
         "SOPRA_REPO_ROOT": str(root), "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
-        "ZDOTDIR": str(root / "examples/isolated"), "SOPRA_PROMPT": "{path}\n$ ",
-        "SOPRA_RPROMPT": "", "SOPRA_TRANSIENT_PROMPT": "$ ",
-        "SOPRA_COMPLETION_ENABLED": "0", "SOPRA_CURSOR_ANIMATION": "0",
+        "ZDOTDIR": str(root / "examples/isolated"),
+        "SOPRA_PATH_BEFORE": "WRONG", "SOPRA_PATH_SELECTED": "WRONG", "SOPRA_PATH_AFTER": "WRONG",
     }
-    command = ("env", "-u", "SOPRA_PATH_BEFORE", "-u", "SOPRA_PATH_SELECTED", "-u", "SOPRA_PATH_AFTER", "zsh", "-di")
+    command = ("zsh", "-di")
     with TerminalSession(command, rows=20, columns=100, cwd=str(directory), env=environment) as terminal:
         terminal.wait_for(str(directory), timeout=20)
         terminal.send_text("echo hello")

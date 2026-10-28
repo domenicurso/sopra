@@ -1,33 +1,33 @@
 _sopra_prompt_defaults() {
-    if [[ -z ${SOPRA_PROMPT+x} ]]; then
-        typeset -g SOPRA_PROMPT=$'[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/]\n[dim]$[/] '
+    if [[ -z ${_SOPRA_CONFIG_PROMPT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_PROMPT=$'[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/]\n[dim]$[/] '
     fi
-    if [[ -z ${SOPRA_RPROMPT+x} ]]; then
-        typeset -g SOPRA_RPROMPT='[if git][dim]on [/][bold][cyan]{git}[/][/][if git_status] {git_status}[/][/]'
+    if [[ -z ${_SOPRA_CONFIG_RPROMPT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_RPROMPT='[if git][dim]on [/][bold][cyan]{git}[/][/][if git_status] {git_status}[/][/]'
     fi
-    if [[ -z ${SOPRA_GIT_STATUS_FORMAT+x} ]]; then
-        typeset -g SOPRA_GIT_STATUS_FORMAT='[dim][[[/]{items}[dim]][/]'
+    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_FORMAT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_GIT_STATUS_FORMAT='[dim][[[/]{items}[dim]][/]'
     fi
-    if [[ -z ${SOPRA_GIT_STATUS_SEPARATOR+x} ]]; then
-        typeset -g SOPRA_GIT_STATUS_SEPARATOR='[dim]|[/]'
+    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_SEPARATOR+x} ]]; then
+        typeset -g _SOPRA_CONFIG_GIT_STATUS_SEPARATOR='[dim]|[/]'
     fi
-    if [[ -z ${SOPRA_GIT_STATUS_ITEM_FORMAT+x} ]]; then
-        typeset -g SOPRA_GIT_STATUS_ITEM_FORMAT='[bold][magenta]{item}[/][/]'
+    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT='[bold][magenta]{item}[/][/]'
     fi
-    if [[ -z ${SOPRA_PATH_BEFORE+x} ]]; then
-        typeset -g SOPRA_PATH_BEFORE='{text}'
+    if [[ -z ${_SOPRA_CONFIG_PATH_BEFORE+x} ]]; then
+        typeset -g _SOPRA_CONFIG_PATH_BEFORE='{text}'
     fi
-    if [[ -z ${SOPRA_PATH_SELECTED+x} ]]; then
-        typeset -g SOPRA_PATH_SELECTED='[reverse]{text}[/]'
+    if [[ -z ${_SOPRA_CONFIG_PATH_SELECTED+x} ]]; then
+        typeset -g _SOPRA_CONFIG_PATH_SELECTED='[reverse]{text}[/]'
     fi
-    if [[ -z ${SOPRA_PATH_AFTER+x} ]]; then
-        typeset -g SOPRA_PATH_AFTER='[dim]{text}[/]'
+    if [[ -z ${_SOPRA_CONFIG_PATH_AFTER+x} ]]; then
+        typeset -g _SOPRA_CONFIG_PATH_AFTER='[dim]{text}[/]'
     fi
-    if [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
-        typeset -g SOPRA_CLOCK_FORMAT='%H:%M:%S'
+    if [[ -z ${_SOPRA_CONFIG_CLOCK_FORMAT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_CLOCK_FORMAT='%H:%M:%S'
     fi
-    if [[ -z ${SOPRA_TRANSIENT_PROMPT+x} ]]; then
-        typeset -g SOPRA_TRANSIENT_PROMPT='$ '
+    if [[ -z ${_SOPRA_CONFIG_TRANSIENT_PROMPT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_TRANSIENT_PROMPT='$ '
     fi
 }
 

@@ -5,6 +5,7 @@ import os
 import select
 import subprocess
 import time
+from terminal_config import terminal_config
 from terminal_harness_shell import exercise_history_suspension, exercise_help
 from terminal_harness_support import (
     FRAME_MARKER,
@@ -178,19 +179,20 @@ def main() -> int:
         cwd=ROOT,
         check=True,
     )
-    session, output = start_session()
-    try:
-        origins = check_initial(session, output)
-        origins = exercise_command_completion(session, output, origins)
-        origins = exercise_nested_help(session, output, origins)
-        origins = exercise_path_completion(session, output, origins)
-        origins = exercise_accept(session, output, origins)
-        origins = exercise_history_suspension(session, output, origins)
-        origins = exercise_help(session, output)
-        exercise_escape(session, output, origins)
-        wait_for_exit(session, output)
-    except (OSError, select.error) as error:
-        fail(str(error), *session)
+    with terminal_config("[prompt]\nright = 'RIGHT'\n") as config_root:
+        session, output = start_session(config_root)
+        try:
+            origins = check_initial(session, output)
+            origins = exercise_command_completion(session, output, origins)
+            origins = exercise_nested_help(session, output, origins)
+            origins = exercise_path_completion(session, output, origins)
+            origins = exercise_accept(session, output, origins)
+            origins = exercise_history_suspension(session, output, origins)
+            origins = exercise_help(session, output)
+            exercise_escape(session, output, origins)
+            wait_for_exit(session, output)
+        except (OSError, select.error) as error:
+            fail(str(error), *session)
     return 0
 if __name__ == "__main__":
     main()

@@ -86,7 +86,7 @@ separator = "[dim]|[/]"
 
 Existing `prompt.toml` and `settings` files remain supported. Values missing from `config.toml` fall back to the older files, so you can move them over at your own pace. Restart the shell after editing configuration directly.
 
-Older `SOPRA_*` environment overrides still work for compatibility, but the TOML file is the recommended place to configure Sopra.
+Configure prompt and editor behavior in TOML. Changes take effect when you start a new shell.
 
 Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
 

@@ -10,6 +10,7 @@ from itertools import chain
 from pathlib import Path
 
 from terminal_session import TerminalSession
+from terminal_config import terminal_config
 
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("reflow_test", ROOT / "scripts/terminal-reflow-test.py")
@@ -18,13 +19,10 @@ reflow = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(reflow)
 
 
-def exercise(screen: reflow.ReflowScreen, directory: Path) -> None:
+def exercise(screen: reflow.ReflowScreen, directory: Path, config_root: str) -> None:
     env = {
         "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
-        "ZDOTDIR": str(ROOT / "examples/isolated"), "SOPRA_PROMPT": "{path}\n$ ",
-        "SOPRA_RPROMPT": "RIGHT", "SOPRA_TRANSIENT_PROMPT": "$ ",
-        "SOPRA_COMPLETION_ENABLED": "0", "SOPRA_CURSOR_ANIMATION": "0",
-        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
+        "ZDOTDIR": str(ROOT / "examples/isolated"), "XDG_CONFIG_HOME": config_root,
     }
     with TerminalSession(("zsh", "-di"), rows=12, columns=120, cwd=str(directory), env=env) as terminal:
         terminal.screen = screen
@@ -94,8 +92,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="sm-", dir="/tmp") as temporary:
         directory = Path(temporary).resolve() / "a" / "b"
         directory.mkdir(parents=True)
-        with subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
-            exercise(reflow.ReflowScreen(process), directory)
+        with terminal_config("[prompt]\nleft = \"{path}\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
+            exercise(reflow.ReflowScreen(process), directory, config_root)
     print("multiline prompt: ok")
 
 

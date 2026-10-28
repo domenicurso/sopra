@@ -22,19 +22,19 @@ _sopra_load_prompt_config() {
     }
     while IFS=$'\t' read -r key encoded; do
         case $key in
-            prompt) name=SOPRA_PROMPT ;;
-            rprompt) name=SOPRA_RPROMPT ;;
-            transient_prompt) name=SOPRA_TRANSIENT_PROMPT ;;
-            clock_format) name=SOPRA_CLOCK_FORMAT ;;
-            git_status_format) name=SOPRA_GIT_STATUS_FORMAT ;;
-            git_status_separator) name=SOPRA_GIT_STATUS_SEPARATOR ;;
-            git_status_item_format) name=SOPRA_GIT_STATUS_ITEM_FORMAT ;;
-            path_before) name=SOPRA_PATH_BEFORE ;;
-            path_selected) name=SOPRA_PATH_SELECTED ;;
-            path_after) name=SOPRA_PATH_AFTER ;;
-            cursor_animation) name=SOPRA_CURSOR_ANIMATION ;;
-            syntax_highlighting) name=SOPRA_SYNTAX_HIGHLIGHTING ;;
-            completion_enabled) name=SOPRA_COMPLETION_ENABLED ;;
+            prompt) name=_SOPRA_CONFIG_PROMPT ;;
+            rprompt) name=_SOPRA_CONFIG_RPROMPT ;;
+            transient_prompt) name=_SOPRA_CONFIG_TRANSIENT_PROMPT ;;
+            clock_format) name=_SOPRA_CONFIG_CLOCK_FORMAT ;;
+            git_status_format) name=_SOPRA_CONFIG_GIT_STATUS_FORMAT ;;
+            git_status_separator) name=_SOPRA_CONFIG_GIT_STATUS_SEPARATOR ;;
+            git_status_item_format) name=_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT ;;
+            path_before) name=_SOPRA_CONFIG_PATH_BEFORE ;;
+            path_selected) name=_SOPRA_CONFIG_PATH_SELECTED ;;
+            path_after) name=_SOPRA_CONFIG_PATH_AFTER ;;
+            cursor_animation) name=_SOPRA_CONFIG_CURSOR_ANIMATION ;;
+            syntax_highlighting) name=_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING ;;
+            completion_enabled) name=_SOPRA_CONFIG_COMPLETION_ENABLED ;;
             *) continue ;;
         esac
         if (( ! ${+parameters[$name]} )); then
@@ -53,44 +53,44 @@ _sopra_load_settings() {
     while IFS='=' read -r key value; do
         case $key in
             prompt)
-                if (( force )) || [[ -z ${SOPRA_PROMPT+x} ]]; then
-                    typeset -g SOPRA_PROMPT=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_PROMPT+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_PROMPT=$value
                 fi
                 ;;
             prompt_hex)
-                if (( force )) || [[ -z ${SOPRA_PROMPT+x} ]]; then
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_PROMPT+x} ]]; then
                     _sopra_hex_decode "$value" || return 1
-                    typeset -g SOPRA_PROMPT=$_SOPRA_RESULT_BUFFER
+                    typeset -g _SOPRA_CONFIG_PROMPT=$_SOPRA_RESULT_BUFFER
                 fi
                 ;;
             rprompt)
-                if (( force )) || [[ -z ${SOPRA_RPROMPT+x} ]]; then
-                    typeset -g SOPRA_RPROMPT=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_RPROMPT+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_RPROMPT=$value
                 fi
                 ;;
             transient_prompt)
-                if (( force )) || [[ -z ${SOPRA_TRANSIENT_PROMPT+x} ]]; then
-                    typeset -g SOPRA_TRANSIENT_PROMPT=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_TRANSIENT_PROMPT+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_TRANSIENT_PROMPT=$value
                 fi
                 ;;
             clock_format)
-                if (( force )) || [[ -z ${SOPRA_CLOCK_FORMAT+x} ]]; then
-                    typeset -g SOPRA_CLOCK_FORMAT=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_CLOCK_FORMAT+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_CLOCK_FORMAT=$value
                 fi
                 ;;
             cursor_animation)
-                if (( force )) || [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
-                    typeset -g SOPRA_CURSOR_ANIMATION=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_CURSOR_ANIMATION+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_CURSOR_ANIMATION=$value
                 fi
                 ;;
             syntax_highlighting)
-                if (( force )) || [[ -z ${SOPRA_SYNTAX_HIGHLIGHTING+x} ]]; then
-                    typeset -g SOPRA_SYNTAX_HIGHLIGHTING=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_SYNTAX_HIGHLIGHTING=$value
                 fi
                 ;;
             completion_enabled)
-                if (( force )) || [[ -z ${SOPRA_COMPLETION_ENABLED+x} ]]; then
-                    typeset -g SOPRA_COMPLETION_ENABLED=$value
+                if (( force )) || [[ -z ${_SOPRA_CONFIG_COMPLETION_ENABLED+x} ]]; then
+                    typeset -g _SOPRA_CONFIG_COMPLETION_ENABLED=$value
                 fi
                 ;;
         esac

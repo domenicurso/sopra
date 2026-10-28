@@ -11,6 +11,7 @@ from pathlib import Path
 
 from terminal_screen import VirtualTerminal
 from terminal_session import TerminalSession
+from terminal_config import terminal_config
 
 
 def test_screen_sequences() -> None:
@@ -54,18 +55,13 @@ def test_session_keeps_shell_state() -> None:
 
 def test_sopra_resize_round_trip_and_submit() -> None:
     root = Path(__file__).resolve().parent.parent
-    environment = {
-        "SOPRA_RPROMPT": "rprompt",
-        "SOPRA_COMPLETION_ENABLED": "0",
-        "SOPRA_CURSOR_ANIMATION": "0",
-        "SOPRA_SYNTAX_HIGHLIGHTING": "0",
-    }
-    with TerminalSession(
+    config = "[prompt]\nright = 'rprompt'\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n"
+    with terminal_config(config) as config_root, TerminalSession(
         (str(root / "scripts" / "start.sh"),),
         rows=30,
         columns=120,
         cwd=str(root),
-        env=environment,
+        env={"XDG_CONFIG_HOME": config_root},
     ) as terminal:
         terminal.wait_for("rprompt", timeout=10)
         first_prompt = _active_prompt(terminal.screen.lines())

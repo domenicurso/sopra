@@ -25,14 +25,14 @@ _sopra_load_settings
 source "$script_dir/context.zsh"
 source "$script_dir/prompt.zsh"
 _sopra_prompt_defaults
-if [[ -z ${SOPRA_CURSOR_ANIMATION+x} ]]; then
-    typeset -g SOPRA_CURSOR_ANIMATION=1
+if [[ -z ${_SOPRA_CONFIG_CURSOR_ANIMATION+x} ]]; then
+    typeset -g _SOPRA_CONFIG_CURSOR_ANIMATION=1
 fi
-if [[ -z ${SOPRA_SYNTAX_HIGHLIGHTING+x} ]]; then
-    typeset -g SOPRA_SYNTAX_HIGHLIGHTING=1
+if [[ -z ${_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING+x} ]]; then
+    typeset -g _SOPRA_CONFIG_SYNTAX_HIGHLIGHTING=1
 fi
-if [[ -z ${SOPRA_COMPLETION_ENABLED+x} ]]; then
-    typeset -g SOPRA_COMPLETION_ENABLED=1
+if [[ -z ${_SOPRA_CONFIG_COMPLETION_ENABLED+x} ]]; then
+    typeset -g _SOPRA_CONFIG_COMPLETION_ENABLED=1
 fi
 
 if [[ ! -x $SOPRA_BIN ]]; then
@@ -49,7 +49,7 @@ _sopra_edit() {
     _sopra_shell_context
     expanded_prompt=$(print -P -- "$PROMPT")
     expanded_rprompt=$(print -P -- "$RPROMPT")
-    expanded_transient=$(print -P -- "$SOPRA_TRANSIENT_PROMPT")
+    expanded_transient=$(print -P -- "$_SOPRA_CONFIG_TRANSIENT_PROMPT")
     local -a editor_args
     editor_args=(
         --buffer "$BUFFER" \
@@ -64,26 +64,26 @@ _sopra_edit() {
     if (( suppress_completion )); then
         editor_args+=(--suppress-completion)
     fi
-    if [[ ${(L)SOPRA_COMPLETION_ENABLED} == (0|false|off|no) ]]; then
+    if [[ ${(L)_SOPRA_CONFIG_COMPLETION_ENABLED} == (0|false|off|no) ]]; then
         editor_args+=(--disable-completion)
     fi
-    if [[ ${(L)SOPRA_SYNTAX_HIGHLIGHTING} == (0|false|off|no) ]]; then
+    if [[ ${(L)_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING} == (0|false|off|no) ]]; then
         editor_args+=(--disable-syntax-highlighting)
     fi
-    if [[ ${(L)SOPRA_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
+    if [[ ${(L)_SOPRA_CONFIG_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
     raw=$(
-        SOPRA_PATH_BEFORE="$SOPRA_PATH_BEFORE" \
-        SOPRA_PATH_SELECTED="$SOPRA_PATH_SELECTED" \
-        SOPRA_PATH_AFTER="$SOPRA_PATH_AFTER" \
-        SOPRA_GIT_STATUS_ITEM_FORMAT="$SOPRA_GIT_STATUS_ITEM_FORMAT" \
-        SOPRA_GIT_STATUS_FORMAT="$SOPRA_GIT_STATUS_FORMAT" \
-        SOPRA_GIT_STATUS_SEPARATOR="$SOPRA_GIT_STATUS_SEPARATOR" \
+        SOPRA_PATH_BEFORE="$_SOPRA_CONFIG_PATH_BEFORE" \
+        SOPRA_PATH_SELECTED="$_SOPRA_CONFIG_PATH_SELECTED" \
+        SOPRA_PATH_AFTER="$_SOPRA_CONFIG_PATH_AFTER" \
+        SOPRA_GIT_STATUS_ITEM_FORMAT="$_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT" \
+        SOPRA_GIT_STATUS_FORMAT="$_SOPRA_CONFIG_GIT_STATUS_FORMAT" \
+        SOPRA_GIT_STATUS_SEPARATOR="$_SOPRA_CONFIG_GIT_STATUS_SEPARATOR" \
         SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" \
         SOPRA_WIDGET_DURATION="$_SOPRA_WIDGET_DURATION" \
         SOPRA_WIDGET_USER="$USER" SOPRA_WIDGET_HOST="$HOST" \
-        SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" \
+        SOPRA_CLOCK_FORMAT="$_SOPRA_CONFIG_CLOCK_FORMAT" \
         SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" \
         "$SOPRA_BIN" "${editor_args[@]}" </dev/tty
     ) || return 1
@@ -91,7 +91,7 @@ _sopra_edit() {
 }
 
 _sopra_prepare_transient() {
-    _sopra_shell_prompt "$SOPRA_TRANSIENT_PROMPT"
+    _sopra_shell_prompt "$_SOPRA_CONFIG_TRANSIENT_PROMPT"
     PROMPT=$REPLY
     RPROMPT=''
     # A pending resize can make ZLE redraw its cached full prompt on accept.
@@ -103,8 +103,8 @@ _sopra_clear_highlights() {
 }
 
 _sopra_line_init() {
-    PROMPT=$SOPRA_PROMPT
-    RPROMPT=$SOPRA_RPROMPT
+    PROMPT=$_SOPRA_CONFIG_PROMPT
+    RPROMPT=$_SOPRA_CONFIG_RPROMPT
     _sopra_clear_highlights
     local -i arm_completion=0 suppress_completion=0
     local previous_buffer previous_cursor previous_history
@@ -132,8 +132,8 @@ _sopra_line_init() {
                 ;;
             directory)
                 if builtin cd -- "$_SOPRA_RESULT_DIRECTORY"; then
-                    PROMPT=$SOPRA_PROMPT
-                    RPROMPT=$SOPRA_RPROMPT
+                    PROMPT=$_SOPRA_CONFIG_PROMPT
+                    RPROMPT=$_SOPRA_CONFIG_RPROMPT
                 fi
                 ;;
             up)
