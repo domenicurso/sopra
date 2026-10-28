@@ -91,6 +91,7 @@ impl EditorState {
             Key::PromptWidgets => {}
             Key::Cancel => return Some(self.result(ExitReason::Interrupted)),
             Key::Escape => {
+                self.history.dismiss(&self.buffer);
                 self.hide_overlay();
                 self.disarm_completion();
             }

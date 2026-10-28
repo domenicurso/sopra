@@ -63,6 +63,9 @@ impl EditorState {
     }
 
     pub(crate) fn completion_query_for(&self, item: &CompletionItem) -> String {
+        if item.kind == sopra_completion::CompletionKind::History {
+            return self.buffer[..self.cursor].to_string();
+        }
         sopra_completion::ranking::replacement_query(&self.buffer, self.cursor, item).to_string()
     }
 
@@ -108,7 +111,7 @@ impl EditorState {
     }
 
     pub(crate) fn cursor_cell_width(&self) -> u16 {
-        self.buffer[self.cursor..]
+        self.cursor_text()
             .graphemes(true)
             .next()
             .map(|grapheme| UnicodeWidthStr::width(grapheme).max(1) as u16)
@@ -116,13 +119,21 @@ impl EditorState {
     }
 
     pub(crate) fn cursor_symbol(&self) -> String {
-        self.buffer[self.cursor..]
+        self.cursor_text()
             .graphemes(true)
             .next()
             .filter(|grapheme| {
                 !grapheme.chars().any(char::is_control) && UnicodeWidthStr::width(*grapheme) > 0
             })
             .map_or_else(|| " ".to_string(), ToString::to_string)
+    }
+
+    fn cursor_text(&self) -> &str {
+        if self.cursor == self.buffer.len() {
+            self.history_suffix().unwrap_or("")
+        } else {
+            &self.buffer[self.cursor..]
+        }
     }
 
     pub(crate) fn animation_elapsed(&self, now: Instant) -> Duration {

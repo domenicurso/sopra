@@ -1,3 +1,4 @@
+mod autosuggestion;
 mod canvas;
 mod editor_layout;
 mod editor_scene;

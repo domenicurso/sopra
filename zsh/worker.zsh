@@ -1,6 +1,10 @@
 _sopra_edit() {
     emulate -L zsh
     local raw expanded_prompt expanded_rprompt expanded_transient
+    local autosuggestion_format='[dim]{text}[/]'
+    if [[ -n ${_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT+x} ]]; then
+        autosuggestion_format=$_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT
+    fi
     local -i arm_completion=${1:-0}
     local -i suppress_completion=${2:-0}
     local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
@@ -23,7 +27,9 @@ _sopra_edit() {
         SOPRA_CLOCK_FORMAT="$_SOPRA_CONFIG_CLOCK_FORMAT" \
         SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" \
         SOPRA_EXPANDED_SECONDARY_PROMPT="$(print -P -- "$_SOPRA_CONFIG_SECONDARY_PROMPT")" \
-        "$SOPRA_BIN" "${editor_args[@]}" </dev/tty
+        SOPRA_AUTOSUGGESTIONS="${_SOPRA_CONFIG_AUTOSUGGESTIONS:-1}" \
+        SOPRA_AUTOSUGGESTION_FORMAT="$autosuggestion_format" \
+        "$SOPRA_BIN" "${editor_args[@]}" --history-file <(_sopra_history_snapshot) </dev/tty
     ) || return 1
     _sopra_parse_result "$raw"
 }
@@ -51,4 +57,12 @@ _sopra_editor_args() {
     if [[ ${(L)_SOPRA_CONFIG_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
         editor_args+=(--disable-cursor-animation)
     fi
+}
+
+_sopra_history_snapshot() {
+    zmodload zsh/parameter
+    local event
+    for event in ${(Onk)history}; do
+        printf '%s\0' "${history[$event]}"
+    done
 }

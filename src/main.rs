@@ -24,7 +24,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
     let mut terminal = Terminal::open()?;
+    let history = editor::History::read(args.history_file.as_deref())?;
     let mut editor = editor_for(args, &terminal)?;
+    editor.set_history(history);
     if let Ok(prompt) = std::env::var("SOPRA_EXPANDED_TRANSIENT_PROMPT") {
         editor.set_transient_prompt(prompt);
     }

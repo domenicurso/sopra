@@ -14,6 +14,7 @@ impl EditorState {
             return;
         }
         if self.completion.is_none() {
+            self.refresh_suggestions();
             return;
         }
         let cursor_chars = self.buffer[..self.cursor].chars().count();
@@ -29,6 +30,7 @@ impl EditorState {
         if let Some(completion) = self.completion.as_mut() {
             completion.request(&self.buffer, cursor_chars, &self.cwd);
         }
+        self.refresh_suggestions();
     }
 
     pub(super) fn poll_completion(&mut self) {
@@ -73,8 +75,12 @@ impl EditorState {
             self.suggestion_scroll = 0;
             return;
         }
-        self.suggestions =
-            ranking::rank_for_buffer(&self.completion_source, &self.buffer, self.cursor);
+        self.suggestions = self.history.completions(&self.buffer, self.cursor);
+        self.suggestions.extend(ranking::rank_for_buffer(
+            &self.completion_source,
+            &self.buffer,
+            self.cursor,
+        ));
         if self.suggestions.is_empty() {
             self.selected = None;
             self.suggestion_scroll = 0;

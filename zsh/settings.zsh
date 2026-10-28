@@ -36,6 +36,8 @@ _sopra_load_prompt_config() {
             cursor_animation) name=_SOPRA_CONFIG_CURSOR_ANIMATION ;;
             syntax_highlighting) name=_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING ;;
             completion_enabled) name=_SOPRA_CONFIG_COMPLETION_ENABLED ;;
+            autosuggestions) name=_SOPRA_CONFIG_AUTOSUGGESTIONS ;;
+            autosuggestion_format) name=_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT ;;
             *) continue ;;
         esac
         if (( ! ${+parameters[$name]} )); then

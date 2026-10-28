@@ -2,6 +2,8 @@ mod clipboard;
 mod commands;
 mod completions;
 mod editing;
+mod history;
+pub(crate) use history::History;
 mod mouse;
 mod navigation;
 mod pairs;
@@ -67,6 +69,7 @@ pub(crate) struct EditorConfig {
 
 pub(crate) struct EditorState {
     buffer: String,
+    history: History,
     cursor: usize,
     prompt: String,
     rprompt: String,
@@ -119,6 +122,7 @@ impl EditorState {
         let (prompt, rprompt) = widgets.render();
         Self {
             buffer: config.buffer,
+            history: History::default(),
             cursor,
             prompt,
             rprompt,

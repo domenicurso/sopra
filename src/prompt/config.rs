@@ -11,6 +11,8 @@ pub(crate) struct PromptConfig {
     pub(crate) cursor_animation: Option<bool>,
     pub(crate) syntax_highlighting: Option<bool>,
     pub(crate) completion_enabled: Option<bool>,
+    pub(crate) autosuggestions: Option<bool>,
+    pub(crate) autosuggestion_format: Option<String>,
     pub(crate) left: Option<String>,
     pub(crate) right: Option<String>,
     pub(crate) transient: Option<String>,
@@ -32,6 +34,8 @@ impl PromptConfig {
             cursor_animation: read_bool(&doc, &["editor", "cursor_animation"])?,
             syntax_highlighting: read_bool(&doc, &["editor", "syntax_highlighting"])?,
             completion_enabled: read_bool(&doc, &["editor", "completion"])?,
+            autosuggestions: read_bool(&doc, &["editor", "autosuggestions"])?,
+            autosuggestion_format: read_string(&doc, &["editor", "autosuggestion_format"])?,
             left: read_string(&doc, &["prompt", "left"])?,
             right: read_string(&doc, &["prompt", "right"])?,
             transient: read_string(&doc, &["prompt", "transient"])?,
@@ -51,12 +55,14 @@ impl PromptConfig {
             ("cursor_animation", self.cursor_animation),
             ("syntax_highlighting", self.syntax_highlighting),
             ("completion_enabled", self.completion_enabled),
+            ("autosuggestions", self.autosuggestions),
         ] {
             if let Some(flag) = flag {
                 println!("{name}\t{}", if flag { "31" } else { "30" });
             }
         }
         for (name, value) in [
+            ("autosuggestion_format", &self.autosuggestion_format),
             ("prompt", &self.left),
             ("rprompt", &self.right),
             ("transient_prompt", &self.transient),

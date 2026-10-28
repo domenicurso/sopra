@@ -36,6 +36,7 @@ pub enum CompletionKind {
     #[default]
     Generic,
     Command,
+    History,
     Alias,
     Function,
     Builtin,

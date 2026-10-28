@@ -45,7 +45,8 @@ impl EditorState {
             .unwrap_or(inserted.len())
             .min(inserted.len());
         // Assignment keys and directory paths are incomplete shell words, so keep them open.
-        let add_space = cursor_offset == inserted.len()
+        let add_space = item.kind != sopra_completion::CompletionKind::History
+            && cursor_offset == inserted.len()
             && end == self.buffer.len()
             && inserted.chars().next_back().is_some_and(|character| {
                 !character.is_whitespace() && character != '=' && character != '/'

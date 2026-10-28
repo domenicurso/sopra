@@ -64,6 +64,9 @@ fn editor_elements(
             secondary: crate::prompt::parse(editor.secondary_prompt()),
         }),
     ];
+    elements.push(Box::new(super::autosuggestion::Autosuggestion::new(
+        editor, layout,
+    )));
     if layout.rprompt_column < layout.area.width {
         elements.push(Box::new(PromptElement {
             column: layout.rprompt_column,

@@ -61,6 +61,8 @@ Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/con
 cursor_animation = true
 syntax_highlighting = true
 completion = true
+autosuggestions = true
+autosuggestion_format = "[dim]{text}[/]"
 
 [prompt]
 left = """\
@@ -106,6 +108,10 @@ Use `\n` in a TOML string to start another prompt row. The right prompt stays on
 Set `prompt.secondary` in `config.toml` to customize the continuation prompt; it defaults to `> `. Rust keeps incomplete input in the same editor session, so the primary prompt stays visible until the whole command is submitted. Continuation prompts support the same styling tags as the primary prompt. A separate Zsh process with execution disabled checks whether another line is needed; aliases that introduce unfinished syntax still fall back to the live shell’s continuation handling.
 
 Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
+
+History autosuggestions show the rest of your most recent matching command as dim text. Right or End accepts the whole suggestion; Alt+Right accepts the next word. Escape dismisses it until you edit the command. Hints are clipped to the current screen row and never enter the command buffer until accepted. The completion menu also offers matching full commands from history, newest first; Tab focuses a result and another Tab inserts it. Up and Down keep their normal history behavior until a completion is selected.
+
+Sopra reads the active Zsh history, including commands loaded from your history file and commands run in this session. It does not maintain a separate history file. Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `{text}` and the prompt styling tags. `editor.completion = false` disables the completion menu independently.
 
 When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.
 

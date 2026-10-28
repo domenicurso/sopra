@@ -12,79 +12,66 @@ pub(crate) struct Args {
     pub(crate) prompt: String,
     pub(crate) rprompt: String,
     pub(crate) cwd: PathBuf,
+    pub(crate) history_file: Option<PathBuf>,
 }
 
 impl Args {
     pub(crate) fn parse() -> Result<Self, String> {
-        let mut buffer = String::new();
-        let mut cursor = 0;
-        let mut arm_completion = false;
-        let mut suppress_completion = false;
-        let mut completion_enabled = true;
-        let mut syntax_highlighting = true;
-        let mut cursor_animation = true;
-        let mut prompt = "$ ".to_string();
-        let mut rprompt = String::new();
-        let mut help = false;
-        let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut args = Self::defaults();
         let mut arguments = env::args_os().skip(1);
-
         while let Some(argument) = arguments.next() {
-            match argument.to_string_lossy().as_ref() {
-                "--buffer" => {
-                    buffer = next_value(&mut arguments, "--buffer")?;
-                }
-                "--cursor" => {
-                    cursor = next_value(&mut arguments, "--cursor")?
-                        .parse()
-                        .map_err(|_| "--cursor must be a character index".to_string())?;
-                }
-                "--arm-completion" => {
-                    arm_completion = true;
-                }
-                "--suppress-completion" => {
-                    suppress_completion = true;
-                }
-                "--disable-completion" => {
-                    completion_enabled = false;
-                }
-                "--disable-syntax-highlighting" => {
-                    syntax_highlighting = false;
-                }
-                "--disable-cursor-animation" => {
-                    cursor_animation = false;
-                }
-                "--prompt" => {
-                    prompt = next_value(&mut arguments, "--prompt")?;
-                }
-                "--rprompt" => {
-                    rprompt = next_value(&mut arguments, "--rprompt")?;
-                }
-                "--cwd" => {
-                    cwd = PathBuf::from(next_value(&mut arguments, "--cwd")?);
-                }
-                argument if is_help_argument(argument) => help = true,
-                unknown => return Err(format!("unknown argument: {unknown}")),
+            let argument = argument.to_string_lossy();
+            if is_help_argument(&argument) {
+                print_usage();
+                std::process::exit(0);
             }
+            args.read_argument(&argument, &mut arguments)?;
         }
+        Ok(args)
+    }
 
-        if help {
-            print_usage();
-            std::process::exit(0);
+    fn defaults() -> Self {
+        Self {
+            buffer: String::new(),
+            cursor: 0,
+            arm_completion: false,
+            suppress_completion: false,
+            completion_enabled: true,
+            syntax_highlighting: true,
+            cursor_animation: true,
+            prompt: "$ ".to_string(),
+            rprompt: String::new(),
+            cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            history_file: None,
         }
+    }
 
-        Ok(Self {
-            buffer,
-            cursor,
-            arm_completion,
-            suppress_completion,
-            completion_enabled,
-            syntax_highlighting,
-            cursor_animation,
-            prompt,
-            rprompt,
-            cwd,
-        })
+    fn read_argument(
+        &mut self,
+        argument: &str,
+        arguments: &mut impl Iterator<Item = OsString>,
+    ) -> Result<(), String> {
+        match argument {
+            "--buffer" => self.buffer = next_value(arguments, argument)?,
+            "--cursor" => {
+                self.cursor = next_value(arguments, argument)?
+                    .parse()
+                    .map_err(|_| "--cursor must be a character index".to_string())?
+            }
+            "--arm-completion" => self.arm_completion = true,
+            "--suppress-completion" => self.suppress_completion = true,
+            "--disable-completion" => self.completion_enabled = false,
+            "--disable-syntax-highlighting" => self.syntax_highlighting = false,
+            "--disable-cursor-animation" => self.cursor_animation = false,
+            "--prompt" => self.prompt = next_value(arguments, argument)?,
+            "--rprompt" => self.rprompt = next_value(arguments, argument)?,
+            "--cwd" => self.cwd = PathBuf::from(next_value(arguments, argument)?),
+            "--history-file" => {
+                self.history_file = Some(PathBuf::from(next_value(arguments, argument)?))
+            }
+            unknown => return Err(format!("unknown argument: {unknown}")),
+        }
+        Ok(())
     }
 }
 

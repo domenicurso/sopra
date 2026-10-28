@@ -7,6 +7,9 @@ use sopra_completion::ranking;
 
 impl EditorState {
     pub(super) fn navigate(&mut self, key: Key) -> Option<RunResult> {
+        if self.accept_history(key) {
+            return None;
+        }
         match key {
             Key::Left => self.move_left(),
             Key::Right => self.move_right(),
