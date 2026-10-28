@@ -1,10 +1,10 @@
 #[path = "config_boolean.rs"]
 mod boolean;
 
-use boolean::{read_bool, set_bool};
+use boolean::read_bool;
 use std::{fs, io, path::Path};
 
-use toml_edit::{DocumentMut, Item, value};
+use toml_edit::{DocumentMut, Item};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct PromptConfig {
@@ -81,28 +81,6 @@ impl PromptConfig {
     }
 }
 
-pub(crate) fn update(path: &Path, config: &PromptConfig) -> io::Result<()> {
-    let mut doc = if path.exists() {
-        parse(&fs::read_to_string(path)?)?
-    } else {
-        DocumentMut::new()
-    };
-    set_bool(&mut doc, "cursor_animation", config.cursor_animation)?;
-    set_bool(&mut doc, "syntax_highlighting", config.syntax_highlighting)?;
-    set_bool(&mut doc, "completion", config.completion_enabled)?;
-    set(&mut doc, &["prompt", "left"], &config.left)?;
-    set(&mut doc, &["prompt", "right"], &config.right)?;
-    set(&mut doc, &["prompt", "transient"], &config.transient)?;
-    set(
-        &mut doc,
-        &["widgets", "clock", "format"],
-        &config.clock_format,
-    )?;
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    fs::write(&temporary, doc.to_string())?;
-    fs::rename(temporary, path)
-}
-
 fn parse(text: &str) -> io::Result<DocumentMut> {
     text.parse::<DocumentMut>()
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -138,34 +116,6 @@ fn invalid(keys: &[&str]) -> io::Error {
         io::ErrorKind::InvalidData,
         format!("{} must be a string", keys.join(".")),
     )
-}
-
-fn set(doc: &mut DocumentMut, keys: &[&str], text: &Option<String>) -> io::Result<()> {
-    let Some(text) = text else {
-        return Ok(());
-    };
-    let mut table = doc.as_table_mut();
-    for key in &keys[..keys.len() - 1] {
-        if !table.contains_key(key) {
-            table.insert(key, Item::Table(toml_edit::Table::new()));
-        }
-        table = table
-            .get_mut(key)
-            .and_then(Item::as_table_mut)
-            .ok_or_else(|| invalid(keys))?;
-    }
-    let key = keys[keys.len() - 1];
-    if let Some(existing) = table.get_mut(key) {
-        let previous = existing.as_value().ok_or_else(|| invalid(keys))?;
-        let mut replacement = value(text);
-        if let Some(next) = replacement.as_value_mut() {
-            *next.decor_mut() = previous.decor().clone();
-        }
-        *existing = replacement;
-    } else {
-        table.insert(key, value(text));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

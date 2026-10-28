@@ -50,11 +50,10 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 - Unicode-safe editing with history, word movement, kill/yank operations, and transient command lines.
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
-- `sopra settings` opens an interactive settings modal when the Sopra Zsh integration is loaded.
 
 ## Configuration
 
-Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Run `sopra settings` to change these options interactively; it saves to the same file and preserves other settings and comments.
+Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Edit this file to change the prompt and editor options.
 
 ```toml
 [editor]
@@ -85,9 +84,9 @@ item_format = "[bold][magenta]{item}[/][/]"
 separator = "[dim]|[/]"
 ```
 
-Existing `prompt.toml` and `settings` files remain supported. The first time you save in `sopra settings`, Sopra creates `config.toml` from those files, preserves the originals, and keeps the TOML comments. If you create `config.toml` yourself, values missing from it still fall back to the older files. Restart the shell after editing configuration directly.
+Existing `prompt.toml` and `settings` files remain supported. Values missing from `config.toml` fall back to the older files, so you can move them over at your own pace. Restart the shell after editing configuration directly.
 
-Environment variables override config values for the current shell: `SOPRA_PROMPT`, `SOPRA_RPROMPT`, `SOPRA_TRANSIENT_PROMPT`, `SOPRA_CLOCK_FORMAT`, `SOPRA_CURSOR_ANIMATION`, `SOPRA_SYNTAX_HIGHLIGHTING`, and `SOPRA_COMPLETION_ENABLED`. Set boolean overrides to `1` or `0`. `SOPRA_BIN` selects a worker executable for development. Installer overrides `SOPRA_REPOSITORY`, `SOPRA_REF`, and `SOPRA_PREFIX` select the repository, ref, and installation directory.
+Older `SOPRA_*` environment overrides still work for compatibility, but the TOML file is the recommended place to configure Sopra.
 
 Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
 
@@ -105,11 +104,11 @@ Use `\n` in a TOML string to start another prompt row. The right prompt stays on
 
 Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
 
-With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection. Set `SOPRA_PROMPT` and `SOPRA_RPROMPT` to your existing Zsh prompt strings if you prefer them to the built-in defaults.
+With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
 
 ## How it works
 
-Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. The Zsh bridge passes the current buffer, cursor, prompt, working directory, and completion context to the private Rust worker; Sopra returns the edited buffer and the action Zsh should perform. The bridge also defines the shell-native `sopra` function, whose `settings` subcommand opens the worker's settings mode. Zsh then accepts the command and executes it using the existing shell environment.
+Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. The Zsh bridge passes the current buffer, cursor, prompt, working directory, and completion context to the private Rust worker; Sopra returns the edited buffer and the action Zsh should perform. The shell-native `sopra --help` command shows the configuration path. Zsh then accepts the command and executes it using the existing shell environment.
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 

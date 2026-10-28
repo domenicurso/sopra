@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 import tempfile
-import tomllib
 from pathlib import Path
 
 from terminal_session import TerminalSession
@@ -138,35 +137,13 @@ def exercise_config_precedence(root: Path, config_root: Path) -> None:
     assert result.stdout.strip() == "environment|fallback|0|0", result.stdout
 
 
-def exercise_settings_ui(root: Path, config_root: Path) -> None:
-    directory = config_root / "settings-ui" / "sopra"
-    directory.mkdir(parents=True)
-    path = directory / "config.toml"
-    path.write_text("# retained\n[editor]\ncursor_animation = true # toggle\n[prompt]\nleft = 'test $ '\n")
-    environment = {"XDG_CONFIG_HOME": str(directory.parent)}
-    with TerminalSession((str(root / "target/debug/sopra-worker"), "--settings"), rows=30,
-                         columns=90, cwd=str(root), env=environment) as terminal:
-        terminal.wait_for("Prompt shown while editing", timeout=10)
-        terminal.key("ENTER")
-        terminal.key("HOME")
-        terminal.send_text("X")
-        terminal.key("TAB")
-        terminal.read(0.3)
-        terminal.key("UP")
-        terminal.key("RIGHT")
-        terminal.wait_for("Cursor animation", timeout=5)
-        assert "[ On ]" in terminal.screen.text(), terminal.screen.lines()
-        terminal.key("ENTER")
-        terminal.wait_for("[ Off ]", timeout=5)
-        terminal.key("TAB")
-        terminal.read(0.3)
-        terminal.key("ENTER")
-        terminal.read(0.3)
-        terminal.key("ESC")
-    text = path.read_text()
-    assert "cursor_animation = false # toggle" in text, text
-    assert "syntax_highlighting = false" in text, text
-    assert "# retained" in text and tomllib.loads(text)["prompt"]["left"] == "Xtest $ ", text
+
+def exercise_config_only_command(root: Path) -> None:
+    worker = root / "target/debug/sopra-worker"
+    help_result = subprocess.run((str(worker), "--help"), text=True, capture_output=True, check=True)
+    assert "config.toml" in help_result.stdout and "settings" not in help_result.stdout
+    removed = subprocess.run((str(worker), "--settings"), text=True, capture_output=True)
+    assert removed.returncode != 0 and "unknown argument" in removed.stderr
 
 
 def main() -> None:
@@ -178,8 +155,8 @@ def main() -> None:
         exercise_environment_override(root, Path(temporary))
         exercise_saved_multiline(root, Path(temporary))
         exercise_git_format(root, Path(temporary))
-        exercise_settings_ui(root, Path(temporary))
         exercise_config_precedence(root, Path(temporary))
+        exercise_config_only_command(root)
     print("prompt config: ok (TOML, status, duration, transient prompt)")
 
 

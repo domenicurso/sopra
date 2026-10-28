@@ -14,7 +14,7 @@ _sopra_config_path() {
 
 _sopra_load_prompt_config() {
     emulate -L zsh
-    local config=$1 force=${2:-0} raw key encoded name
+    local config=$1 raw key encoded name
     [[ -f $config ]] || return 0
     raw=$("$SOPRA_BIN" --prompt-config "$config") || {
         print -u2 -- "sopra: could not load $config"
@@ -37,10 +37,7 @@ _sopra_load_prompt_config() {
             completion_enabled) name=SOPRA_COMPLETION_ENABLED ;;
             *) continue ;;
         esac
-        if (( force )) && [[ -n ${_SOPRA_ENV_OVERRIDES[$name]-} ]]; then
-            continue
-        fi
-        if (( force || ! ${+parameters[$name]} )); then
+        if (( ! ${+parameters[$name]} )); then
             _sopra_hex_decode "$encoded" || return 1
             typeset -g "$name=$_SOPRA_RESULT_BUFFER"
         fi
@@ -100,37 +97,12 @@ _sopra_load_settings() {
     done < "$config"
 }
 
-_sopra_settings() {
-    emulate -L zsh
-    SOPRA_PROMPT="$SOPRA_PROMPT" \
-        SOPRA_RPROMPT="$SOPRA_RPROMPT" \
-        SOPRA_TRANSIENT_PROMPT="$SOPRA_TRANSIENT_PROMPT" \
-        SOPRA_CLOCK_FORMAT="$SOPRA_CLOCK_FORMAT" \
-        SOPRA_CURSOR_ANIMATION="${SOPRA_CURSOR_ANIMATION:-1}" \
-        SOPRA_SYNTAX_HIGHLIGHTING="${SOPRA_SYNTAX_HIGHLIGHTING:-1}" \
-        SOPRA_COMPLETION_ENABLED="${SOPRA_COMPLETION_ENABLED:-1}" \
-        "$SOPRA_BIN" --settings </dev/tty
-    local exit_code=$?
-    (( exit_code == 0 )) && _sopra_load_prompt_config "$(_sopra_config_path)" 1
-    return $exit_code
-}
-
 sopra() {
     emulate -L zsh
-    if [[ $# == 1 && ${1-} == (--help|-h|help) ]]; then
+    if [[ $# == 0 || ( $# == 1 && ${1-} == (--help|-h|help) ) ]]; then
         "$SOPRA_BIN" --help
         return $?
     fi
-    if [[ ${1-} == settings ]]; then
-        if [[ $# == 1 ]]; then
-            _sopra_settings
-            return $?
-        fi
-        if [[ $# == 2 && ${2-} == (--help|-h|help) ]]; then
-            "$SOPRA_BIN" settings --help
-            return $?
-        fi
-    fi
-    print -u2 -- 'usage: sopra settings'
+    print -u2 -- 'usage: sopra [--help]'
     return 2
 }

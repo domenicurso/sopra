@@ -25,21 +25,12 @@ pub(crate) struct Renderer {
     previous: Option<Buffer>,
     cursor_hidden: bool,
     origin_row: Option<u16>,
-    preserve_background: bool,
     resize_epoch: Option<usize>,
     redraw_prompt: bool,
     previous_cursor: Option<CursorPosition>,
 }
 
 impl Renderer {
-    pub(crate) fn overlay() -> Self {
-        Self {
-            preserve_background: true,
-            origin_row: Some(0),
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn editor() -> Self {
         Self {
             redraw_prompt: true,
@@ -110,9 +101,7 @@ impl Renderer {
         terminal: &mut Terminal,
         parked: CursorPosition,
     ) -> Option<u16> {
-        let origin = if resized && self.preserve_background {
-            Some(0)
-        } else if resized {
+        let origin = if resized {
             Some(
                 terminal
                     .cursor_position()
@@ -130,7 +119,7 @@ impl Renderer {
 
     fn clear_before_paint(&mut self, next: &Frame, resized: bool, output: &mut Vec<u8>) {
         self.ensure_space(next.required_height, next.buffer.area.height, output);
-        if resized && !self.preserve_background {
+        if resized {
             // The editor owns the viewport from its prompt down, including reflowed rows missed
             // between frames; clearing it leaves the shell history above the prompt untouched.
             clear_viewport(output, self.origin_row.unwrap_or_default());

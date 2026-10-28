@@ -6,7 +6,6 @@ mod palette;
 mod prompt;
 mod render;
 mod scene;
-mod settings;
 mod syntax;
 
 use std::error::Error;
@@ -23,9 +22,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
-    if args.settings {
-        return settings::run().map_err(Into::into);
-    }
     let mut terminal = Terminal::open()?;
     let size = terminal.size()?;
     // ZLE has already positioned the terminal on the active line. The renderer treats that

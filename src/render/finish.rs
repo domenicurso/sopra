@@ -25,22 +25,11 @@ impl Renderer {
             return Ok(());
         };
         let origin_row = self.finish_origin(previous_area, terminal);
-        let Some(previous) = self.previous.take() else {
-            return Ok(());
-        };
+        self.previous.take();
         let mut output = Vec::new();
-        if self.preserve_background {
-            paint_overlay_finish(
-                &previous,
-                replacement.as_ref().map(|frame| &frame.buffer),
-                origin_row,
-                &mut output,
-            );
-        } else {
-            clear_viewport(&mut output, origin_row);
-            if let Some(frame) = &replacement {
-                paint_finish(Some(&frame.buffer), &[], origin_row, &mut output);
-            }
+        clear_viewport(&mut output, origin_row);
+        if let Some(frame) = &replacement {
+            paint_finish(Some(&frame.buffer), &[], origin_row, &mut output);
         }
         move_to(
             &mut output,
@@ -62,7 +51,7 @@ impl Renderer {
             .unwrap_or(TerminalSize::new(previous_area.width, previous_area.height));
         let area = Rect::new(0, 0, size.columns, size.rows);
         let resized = self.resize_detected(area, terminal.resize_epoch());
-        if resized && !self.preserve_background {
+        if resized {
             return terminal.cursor_position().map_or(
                 self.origin_row.unwrap_or_default(),
                 |position| {
@@ -98,40 +87,6 @@ pub(super) fn paint_finish(
                 paint_cell(output, column, origin_row.saturating_add(row), &cell);
             }
         }
-    }
-}
-
-pub(super) fn paint_overlay_finish(
-    previous: &Buffer,
-    replacement: Option<&Buffer>,
-    origin_row: u16,
-    output: &mut Vec<u8>,
-) {
-    let width = previous
-        .area
-        .width
-        .max(replacement.map_or(0, |frame| frame.area.width));
-    let height = previous
-        .area
-        .height
-        .max(replacement.map_or(0, |frame| frame.area.height));
-    for row in 0..height {
-        for column in 0..width {
-            let previous_cell = cell_at(previous, column, row);
-            let next_cell = replacement.map_or(Cell::EMPTY, |frame| cell_at(frame, column, row));
-            if next_cell != previous_cell {
-                paint_replacement_cell(output, column, origin_row.saturating_add(row), &next_cell);
-            }
-        }
-    }
-}
-
-fn paint_replacement_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cell) {
-    if cell == &Cell::EMPTY {
-        move_to(output, column, row);
-        output.extend_from_slice(b"\x1b[0m ");
-    } else {
-        paint_cell(output, column, row, cell);
     }
 }
 

@@ -5,7 +5,7 @@ import os
 import select
 import subprocess
 import time
-from terminal_harness_shell import exercise_history_suspension, exercise_settings
+from terminal_harness_shell import exercise_history_suspension, exercise_help
 from terminal_harness_support import (
     FRAME_MARKER,
     COLUMNS,
@@ -186,7 +186,7 @@ def main() -> int:
         origins = exercise_path_completion(session, output, origins)
         origins = exercise_accept(session, output, origins)
         origins = exercise_history_suspension(session, output, origins)
-        origins = exercise_settings(session, output)
+        origins = exercise_help(session, output)
         exercise_escape(session, output, origins)
         wait_for_exit(session, output)
     except (OSError, select.error) as error:

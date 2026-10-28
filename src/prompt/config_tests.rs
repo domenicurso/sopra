@@ -1,20 +1,15 @@
 use super::*;
 #[test]
-fn reads_and_updates_prompt_templates_without_losing_comments() -> io::Result<()> {
+fn reads_prompt_and_editor_values() -> io::Result<()> {
     let file = std::env::temp_dir().join(format!("sopra-prompt-{}.toml", std::process::id()));
     fs::write(
         &file,
-        "# keep me\n[prompt]\nright = '[dim]{clock}[/]' # inline comment\n[widgets.clock]\nformat = '%H:%M'\n[widgets.git_status]\nformat = '<{items}>'\nseparator = ' / '\n",
+        "[editor]\ncursor_animation = false\n[prompt]\nright = '[dim]{clock}[/]'\n[widgets.clock]\nformat = '%H:%M'\n",
     )?;
-    let mut config = PromptConfig::read(&file)?;
+    let config = PromptConfig::read(&file)?;
+    assert_eq!(config.cursor_animation, Some(false));
     assert_eq!(config.right.as_deref(), Some("[dim]{clock}[/]"));
-    assert_eq!(config.git_status_format.as_deref(), Some("<{items}>"));
-    assert_eq!(config.git_status_separator.as_deref(), Some(" / "));
-    config.right = Some("{git}".into());
-    update(&file, &config)?;
-    let text = fs::read_to_string(&file)?;
-    assert!(text.contains("# keep me") && text.contains("# inline comment"));
-    assert_eq!(PromptConfig::read(&file)?, config);
+    assert_eq!(config.clock_format.as_deref(), Some("%H:%M"));
     fs::remove_file(file)
 }
 #[test]
