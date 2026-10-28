@@ -33,7 +33,12 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> S
     layout.overlay_width = overlay_width(&items, &layout.footer_hint, &layout.footer, size.columns);
     let elements = editor_elements(editor, &layout, now, items, item_queries, prompt, rprompt);
     let cursor_cells = (0..editor.cursor_cell_width())
-        .map(|offset| (layout.cursor_column.saturating_add(offset), layout.row))
+        .map(|offset| {
+            (
+                layout.cursor_column.saturating_add(offset),
+                layout.cursor_row,
+            )
+        })
         .filter(|(column, _)| *column < size.columns)
         .collect::<Vec<_>>();
     let repaint_cells = if editor.cursor_animation_enabled() {
@@ -47,7 +52,7 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> S
         repaint_cells,
         CursorPosition {
             column: layout.cursor_column,
-            row: layout.row,
+            row: layout.cursor_row,
         },
         layout.required_height(),
         elements,
@@ -74,12 +79,6 @@ fn editor_elements(
             buffer: editor.buffer().to_string(),
             spans: editor.syntax().to_vec(),
             selection: editor.text_selection(),
-            max_width: if layout.row == layout.prompt_row {
-                layout.rprompt_column
-            } else {
-                layout.area.width
-            }
-            .saturating_sub(layout.line_column),
         }),
     ];
     if !rprompt.is_empty() && layout.rprompt_column < layout.area.width {
@@ -109,7 +108,7 @@ fn editor_elements(
     }
     elements.push(Box::new(CursorElement {
         column: layout.cursor_column,
-        row: layout.row,
+        row: layout.cursor_row,
         symbol: editor.cursor_symbol(),
         width: editor.cursor_cell_width(),
         style: editor.cursor_style(now),
@@ -118,7 +117,8 @@ fn editor_elements(
 }
 
 fn clear_rows(layout: &EditorLayout) -> Vec<u16> {
-    let mut rows: Vec<u16> = (layout.prompt_row..=layout.row).collect();
+    let mut rows: Vec<u16> =
+        (layout.prompt_row..=layout.end_row.min(layout.area.height.saturating_sub(1))).collect();
     if layout.overlay_height > 0 {
         rows.extend(
             (0..layout.overlay_height)

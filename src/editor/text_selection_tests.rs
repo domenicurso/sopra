@@ -1,4 +1,4 @@
-use super::text_selection::{TextSelection, offset_for_column};
+use super::text_selection::TextSelection;
 use crate::input::MouseKind;
 use std::time::{Duration, Instant};
 
@@ -7,8 +7,6 @@ fn clicks_and_drags_select_graphemes_words_and_lines() {
     let mut selection = TextSelection::default();
     let now = Instant::now();
     let text = "one café 👨‍👩‍👧 end";
-    assert_eq!(offset_for_column(text, 4), 4);
-    assert_eq!(offset_for_column(text, 9), 10);
     selection.mouse(MouseKind::Press, 4, text, now);
     selection.mouse(MouseKind::Release, 4, text, now);
     selection.mouse(MouseKind::Press, 4, text, now + Duration::from_millis(100));

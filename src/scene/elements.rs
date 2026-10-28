@@ -1,6 +1,5 @@
 use ratatui::style::Style;
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 use super::{
     Element,
@@ -19,24 +18,23 @@ pub(super) struct PromptElement {
 
 impl Element for PromptElement {
     fn paint(&self, canvas: &mut Canvas) {
-        let mut row = self.row;
-        let mut column = self.column;
+        let mut flow = super::text_flow::TextFlow::new(
+            crate::input::CursorPosition {
+                column: self.column,
+                row: self.row,
+            },
+            canvas.buffer.area.width,
+        );
         for span in &self.spans {
-            for (index, text) in span.text.split('\n').enumerate() {
-                if index > 0 {
-                    row = row.saturating_add(1);
-                    column = 0;
+            for grapheme in span.text.graphemes(true) {
+                if let Some(position) = flow.advance(grapheme) {
+                    canvas.text(TextRun {
+                        position: (position.column, position.row),
+                        text: grapheme,
+                        style: span.style,
+                        max_width: canvas.buffer.area.width.saturating_sub(position.column),
+                    });
                 }
-                if row >= canvas.buffer.area.height {
-                    return;
-                }
-                canvas.text(TextRun {
-                    position: (column, row),
-                    text,
-                    style: span.style,
-                    max_width: canvas.buffer.area.width.saturating_sub(column),
-                });
-                column = column.saturating_add(unicode_width::UnicodeWidthStr::width(text) as u16);
             }
         }
     }
@@ -48,42 +46,35 @@ pub(super) struct CommandElement {
     pub(super) buffer: String,
     pub(super) spans: Vec<SyntaxSpan>,
     pub(super) selection: Option<std::ops::Range<usize>>,
-    pub(super) max_width: u16,
 }
 
 impl Element for CommandElement {
     fn paint(&self, canvas: &mut Canvas) {
-        let width = canvas
-            .buffer
-            .area
-            .width
-            .saturating_sub(self.column)
-            .min(self.max_width);
-        let mut offset = 0_u16;
+        let mut flow = super::text_flow::TextFlow::new(
+            crate::input::CursorPosition {
+                column: self.column,
+                row: self.row,
+            },
+            canvas.buffer.area.width,
+        );
         for (byte, grapheme) in self.buffer.grapheme_indices(true) {
-            if grapheme.chars().any(char::is_control) {
+            let Some(position) = flow.advance(grapheme) else {
                 continue;
-            }
-            let grapheme_width = grapheme.width() as u16;
-            if grapheme_width == 0 {
-                continue;
+            };
+            let mut style = syntax::style_at(&self.spans, byte);
+            if self
+                .selection
+                .as_ref()
+                .is_some_and(|selection| selection.contains(&byte))
+            {
+                style = style.add_modifier(ratatui::style::Modifier::REVERSED);
             }
             canvas.text(TextRun {
-                position: (self.column.saturating_add(offset), self.row),
+                position: (position.column, position.row),
                 text: grapheme,
-                style: if self
-                    .selection
-                    .as_ref()
-                    .is_some_and(|selection| selection.contains(&byte))
-                {
-                    syntax::style_at(&self.spans, byte)
-                        .add_modifier(ratatui::style::Modifier::REVERSED)
-                } else {
-                    syntax::style_at(&self.spans, byte)
-                },
-                max_width: width.saturating_sub(offset),
+                style,
+                max_width: canvas.buffer.area.width.saturating_sub(position.column),
             });
-            offset = offset.saturating_add(grapheme_width);
         }
     }
 }

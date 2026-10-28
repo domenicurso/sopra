@@ -111,6 +111,24 @@ def exercise_secondary(config_root: str) -> None:
         assert any(line.startswith("PRIMARY") for line in lines), lines
 
 
+def exercise_wrapped_command(config_root: str) -> None:
+    env = {
+        "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
+        "ZDOTDIR": str(ROOT / "examples/isolated"), "XDG_CONFIG_HOME": config_root,
+    }
+    with TerminalSession(("zsh", "-di"), rows=12, columns=20, cwd=str(ROOT), env=env) as terminal:
+        terminal.wait_for("P $", timeout=20)
+        terminal.send_text("echo abcdefghijklmnopqrstuvwxyz")
+        terminal.read(0.3)
+        lines = terminal.screen.text().splitlines()
+        assert "P $ echo abcdefghijk" in lines and "lmnopqrstuvwxyz" in lines, lines
+        terminal.key("ENTER")
+        terminal.read(0.5)
+        lines = terminal.screen.text().splitlines()
+        assert "$ echo abcdefghijklm" in lines and "nopqrstuvwxyz" in lines, lines
+        assert "abcdefghijklmnopqrst" in lines and "uvwxyz" in lines, lines
+
+
 def main() -> None:
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=ROOT, check=True)
     with tempfile.TemporaryDirectory(prefix="sm-", dir="/tmp") as temporary:
@@ -120,7 +138,9 @@ def main() -> None:
             exercise(reflow.ReflowScreen(process), directory, config_root)
     with terminal_config("[prompt]\nleft = 'PRIMARY $ '\nright = ''\ntransient = '$ '\nsecondary = 'CONT > '\n[editor]\ncompletion = false\ncursor_animation = false\n") as config_root:
         exercise_secondary(config_root)
-    print("multiline prompt and secondary prompt: ok")
+    with terminal_config("[prompt]\nleft = 'P $ '\nright = ''\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root:
+        exercise_wrapped_command(config_root)
+    print("multiline, wrapped, and secondary prompts: ok")
 
 
 if __name__ == "__main__":

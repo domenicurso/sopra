@@ -158,3 +158,18 @@ fn cursor_repaints_the_character_under_it() {
     let frame = Scene::for_editor(&editor, size, Instant::now()).render();
     assert_eq!(frame.buffer[(3, 0)].symbol(), "c");
 }
+
+#[test]
+fn command_wraps_and_keeps_the_cursor_on_the_next_row() {
+    let size = TerminalSize::new(8, 8);
+    let frame = Scene::for_editor(&editor("abcdefghi", size), size, Instant::now()).render();
+    let line = |row| {
+        (0..size.columns)
+            .map(|column| frame.buffer[(column, row)].symbol())
+            .collect::<String>()
+    };
+    assert_eq!(line(0), "$ abcdef");
+    assert!(line(1).starts_with("ghi"));
+    assert_eq!(frame.cursor, CursorPosition { row: 1, column: 3 });
+    assert_eq!(frame.required_height, 2);
+}

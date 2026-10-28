@@ -11,6 +11,8 @@ pub(super) struct EditorLayout {
     pub(super) column: u16,
     pub(super) line_column: u16,
     pub(super) cursor_column: u16,
+    pub(super) cursor_row: u16,
+    pub(super) end_row: u16,
     pub(super) rprompt_column: u16,
     pub(super) overlay_row: u16,
     pub(super) overlay_height: u16,
@@ -25,32 +27,42 @@ impl EditorLayout {
     pub(super) fn new(
         editor: &EditorState,
         size: TerminalSize,
-        prompt_width: usize,
+        _prompt_width: usize,
         rprompt_width: usize,
     ) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let prompt_row = editor.anchor().row.min(size.rows.saturating_sub(1));
-        let prompt_breaks = editor.prompt().matches('\n').count() as u16;
-        let row = prompt_row
-            .saturating_add(prompt_breaks)
-            .min(size.rows.saturating_sub(1));
         let column = editor.anchor().column.min(size.columns.saturating_sub(1));
-        let line_column = if row == prompt_row { column } else { 0 }
-            .saturating_add(prompt_width as u16)
-            .min(size.columns.saturating_sub(1));
-        let cursor_column = line_column
-            .saturating_add(editor.cursor_display_width())
-            .min(size.columns.saturating_sub(1));
-        let buffer_end = line_column.saturating_add(editor.buffer_display_width());
-        let cursor_end = cursor_column.saturating_add(editor.cursor_cell_width());
+        let mut flow = super::text_flow::TextFlow::new(
+            crate::input::CursorPosition {
+                row: prompt_row,
+                column,
+            },
+            size.columns,
+        );
+        let prompt = crate::prompt::parse(editor.prompt());
+        flow.prompt(&prompt);
+        let start = flow.cursor();
+        let row = start.row;
+        let line_column = start.column;
+        let mut cursor_flow = flow;
+        cursor_flow.text(&editor.buffer()[..editor.cursor_byte()]);
+        let cursor = cursor_flow.cursor();
+        flow.text(editor.buffer());
+        let end = flow.cursor();
         let occupied = if row == prompt_row {
-            buffer_end.max(cursor_end)
+            if end.row > prompt_row {
+                size.columns
+            } else {
+                end.column
+                    .max(cursor.column.saturating_add(editor.cursor_cell_width()))
+            }
         } else {
-            crate::prompt::lines::widths(&crate::prompt::parse(editor.prompt()))[0] as u16
+            crate::prompt::lines::widths(&prompt)[0].min(size.columns as usize) as u16
         };
         let rprompt_column = rprompt_column(size.columns, occupied, rprompt_width);
         let completion_token_width = editor.completion_token_width();
-        let placement = overlay_layout::for_editor(editor, size, row);
+        let placement = overlay_layout::for_editor(editor, size, cursor.row);
         let overlay_row = placement.as_ref().map_or(0, |value| value.row);
         let overlay_height = placement.as_ref().map_or(0, |value| value.height);
         Self {
@@ -59,7 +71,9 @@ impl EditorLayout {
             prompt_row,
             column,
             line_column,
-            cursor_column,
+            cursor_column: cursor.column,
+            cursor_row: cursor.row,
+            end_row: end.row,
             rprompt_column,
             overlay_row,
             overlay_height,
@@ -89,7 +103,7 @@ impl EditorLayout {
     }
 
     pub(super) fn required_height(&self) -> u16 {
-        let line_height = self.row.saturating_add(1);
+        let line_height = self.end_row.saturating_add(1);
         let overlay_height = self.overlay_row.saturating_add(self.overlay_height);
         line_height.max(overlay_height)
     }
@@ -109,86 +123,5 @@ fn rprompt_column(columns: u16, occupied_end: u16, width: usize) -> u16 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::EditorLayout;
-    use crate::{
-        editor::{EditorConfig, EditorState},
-        input::{CursorPosition, TerminalSize},
-        palette::TerminalPalette,
-    };
-
-    fn editor(cursor_chars: usize) -> EditorState {
-        editor_with_buffer(33, cursor_chars)
-    }
-
-    fn editor_with_buffer(buffer_chars: usize, cursor_chars: usize) -> EditorState {
-        let buffer = "1".repeat(buffer_chars);
-        EditorState::new(EditorConfig {
-            buffer,
-            cursor_chars,
-            arm_completion: false,
-            suppress_completion: true,
-            completion_enabled: false,
-            syntax_highlighting: false,
-            cursor_animation: false,
-            prompt: "$ ".to_string(),
-            rprompt: "RIGHT".to_string(),
-            anchor: CursorPosition { row: 0, column: 0 },
-            size: TerminalSize::new(40, 24),
-            cwd: std::path::PathBuf::new(),
-            palette: TerminalPalette::default(),
-        })
-    }
-
-    #[test]
-    fn multiline_input_starts_at_the_left_edge_after_a_nonzero_anchor() {
-        let editor = EditorState::new(EditorConfig {
-            buffer: "abc".into(),
-            cursor_chars: 3,
-            arm_completion: false,
-            suppress_completion: true,
-            completion_enabled: false,
-            syntax_highlighting: false,
-            cursor_animation: false,
-            prompt: "first\n$ ".into(),
-            rprompt: "right".into(),
-            anchor: CursorPosition { row: 0, column: 7 },
-            size: TerminalSize::new(40, 24),
-            cwd: std::path::PathBuf::new(),
-            palette: TerminalPalette::default(),
-        });
-        let layout = EditorLayout::new(&editor, TerminalSize::new(40, 24), 2, 5);
-        assert_eq!(
-            (
-                layout.prompt_row,
-                layout.row,
-                layout.line_column,
-                layout.cursor_column
-            ),
-            (0, 1, 2, 5)
-        );
-    }
-
-    #[test]
-    fn right_prompt_does_not_cover_the_end_cursor_at_an_exact_fit() {
-        let size = TerminalSize::new(40, 24);
-        let layout = EditorLayout::new(&editor(33), size, 2, 5);
-
-        assert_eq!(layout.rprompt_column, size.columns);
-    }
-
-    #[test]
-    fn right_prompt_ends_at_the_terminal_edge_when_there_is_room() {
-        let layout =
-            EditorLayout::new(&editor_with_buffer(29, 29), TerminalSize::new(40, 24), 2, 5);
-
-        assert_eq!(layout.rprompt_column, 35);
-    }
-
-    #[test]
-    fn right_prompt_is_hidden_when_the_terminal_has_no_safe_right_edge() {
-        let layout = EditorLayout::new(&editor(0), TerminalSize::new(1, 24), 2, 5);
-
-        assert_eq!(layout.rprompt_column, 1);
-    }
-}
+#[path = "editor_layout_tests.rs"]
+mod tests;

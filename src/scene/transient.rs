@@ -13,7 +13,12 @@ use super::{
 pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
     let area = Rect::new(0, 0, size.columns, size.rows);
     let spans = crate::prompt::parse(editor.transient_prompt());
-    let width = (crate::prompt::width(&spans) as u16).min(size.columns);
+    let mut flow =
+        super::text_flow::TextFlow::new(CursorPosition { column: 0, row: 0 }, size.columns);
+    flow.prompt(&spans);
+    let start = flow.cursor();
+    flow.text(editor.buffer());
+    let height = flow.cursor().row.saturating_add(1);
     let elements: Vec<Box<dyn Element>> = vec![
         Box::new(PromptElement {
             column: 0,
@@ -25,20 +30,19 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
             },
         }),
         Box::new(CommandElement {
-            column: width,
-            row: 0,
+            column: start.column,
+            row: start.row,
             buffer: editor.buffer().to_string(),
             spans: editor.transient_syntax(),
             selection: None,
-            max_width: size.columns.saturating_sub(width),
         }),
     ];
     Scene::new(
         area,
-        vec![0],
+        (0..height.min(size.rows)).collect(),
         Vec::new(),
         CursorPosition { column: 0, row: 0 },
-        1,
+        height,
         elements,
     )
 }

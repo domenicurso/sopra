@@ -122,12 +122,13 @@ impl Renderer {
     }
 
     fn clear_before_paint(&mut self, next: &Frame, resized: bool, output: &mut Vec<u8>) {
-        self.ensure_space(next.required_height, next.buffer.area.height, output);
         if resized {
             // The editor owns the viewport from its prompt down, including reflowed rows missed
             // between frames; clearing it leaves the shell history above the prompt untouched.
             clear_viewport(output, self.origin_row.unwrap_or_default());
-        } else if self.previous.is_none() {
+        }
+        self.ensure_space(next.required_height, next.buffer.area.height, output);
+        if !resized && self.previous.is_none() {
             clear_rows(
                 output,
                 self.origin_row.unwrap_or_default(),

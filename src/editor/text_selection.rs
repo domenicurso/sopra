@@ -3,7 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 use crate::input::MouseKind;
 
@@ -141,19 +140,4 @@ fn unit_range(buffer: &str, offset: usize, clicks: u8) -> Range<usize> {
                 .then_some(start..start + word.len())
         })
         .unwrap_or(offset..offset)
-}
-
-pub(super) fn offset_for_column(buffer: &str, column: usize) -> usize {
-    let mut width = 0;
-    for (byte, grapheme) in buffer.grapheme_indices(true) {
-        let cell_width = UnicodeWidthStr::width(grapheme);
-        if cell_width == 0 {
-            continue;
-        }
-        if column < width + cell_width {
-            return byte;
-        }
-        width += cell_width;
-    }
-    buffer.len()
 }

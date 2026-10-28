@@ -14,6 +14,10 @@ impl EditorState {
         self.text_selection.range()
     }
 
+    pub(crate) fn cursor_byte(&self) -> usize {
+        self.cursor
+    }
+
     pub(crate) fn buffer(&self) -> &str {
         &self.buffer
     }
@@ -95,14 +99,6 @@ impl EditorState {
         crate::syntax::highlight_without_cursor(&self.buffer, &self.cwd)
     }
 
-    pub(crate) fn cursor_display_width(&self) -> u16 {
-        UnicodeWidthStr::width(&self.buffer[..self.cursor]) as u16
-    }
-
-    pub(crate) fn buffer_display_width(&self) -> u16 {
-        UnicodeWidthStr::width(self.buffer.as_str()) as u16
-    }
-
     pub(crate) fn cursor_cell_width(&self) -> u16 {
         self.buffer[self.cursor..]
             .graphemes(true)
@@ -130,7 +126,7 @@ impl EditorState {
     }
 
     pub(super) fn restore_position(&self, size: TerminalSize) -> CursorPosition {
-        self.position_for(size, self.prompt(), self.cursor_display_width())
+        self.position_for(size, self.prompt(), true)
     }
 
     pub(super) fn restore_prompt_position(
@@ -138,7 +134,7 @@ impl EditorState {
         size: TerminalSize,
         prompt: &str,
     ) -> CursorPosition {
-        self.position_for(size, prompt, 0)
+        self.position_for(size, prompt, false)
     }
 
     pub(crate) fn cursor_style(&self, now: Instant) -> Style {
@@ -151,25 +147,18 @@ impl EditorState {
             .add_modifier(Modifier::BOLD)
     }
 
-    fn position_for(&self, size: TerminalSize, prompt: &str, content_width: u16) -> CursorPosition {
-        let row = self
-            .anchor
-            .row
-            .saturating_add(prompt.bytes().filter(|byte| *byte == b'\n').count() as u16)
-            .min(size.rows.saturating_sub(1));
-        let prompt_width = crate::prompt::lines::widths(&crate::prompt::parse(prompt))
-            .last()
-            .copied()
-            .unwrap_or(0) as u16;
-        let column = if row == self.anchor.row {
-            self.anchor.column
-        } else {
-            0
+    fn position_for(
+        &self,
+        size: TerminalSize,
+        prompt: &str,
+        include_buffer: bool,
+    ) -> CursorPosition {
+        let mut flow = crate::scene::text_flow::TextFlow::new(self.anchor, size.columns);
+        flow.prompt(&crate::prompt::parse(prompt));
+        if include_buffer {
+            flow.text(&self.buffer[..self.cursor]);
         }
-        .saturating_add(prompt_width)
-        .saturating_add(content_width)
-        .min(size.columns.saturating_sub(1));
-        CursorPosition { row, column }
+        flow.cursor()
     }
 }
 
