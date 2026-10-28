@@ -49,7 +49,7 @@ _sopra_edit() {
     _sopra_shell_context
     expanded_prompt=$(print -P -- "$PROMPT")
     expanded_rprompt=$(print -P -- "$RPROMPT")
-    expanded_transient=$(print -P -- "$_SOPRA_CONFIG_TRANSIENT_PROMPT")
+    expanded_transient=$(print -P -- "${_sopra_transient_prompt-$_SOPRA_CONFIG_TRANSIENT_PROMPT}")
     local -a editor_args
     editor_args=(
         --buffer "$BUFFER" \
@@ -91,7 +91,7 @@ _sopra_edit() {
 }
 
 _sopra_prepare_transient() {
-    _sopra_shell_prompt "$_SOPRA_CONFIG_TRANSIENT_PROMPT"
+    _sopra_shell_prompt "${_sopra_transient_prompt-$_SOPRA_CONFIG_TRANSIENT_PROMPT}"
     PROMPT=$REPLY
     RPROMPT=''
     # A pending resize can make ZLE redraw its cached full prompt on accept.
@@ -103,8 +103,17 @@ _sopra_clear_highlights() {
 }
 
 _sopra_line_init() {
-    PROMPT=$_SOPRA_CONFIG_PROMPT
-    RPROMPT=$_SOPRA_CONFIG_RPROMPT
+    local _sopra_transient_prompt=$_SOPRA_CONFIG_TRANSIENT_PROMPT
+    if [[ $CONTEXT == cont ]]; then
+        PROMPT=$_SOPRA_CONFIG_SECONDARY_PROMPT
+        _sopra_shell_prompt "$_SOPRA_CONFIG_SECONDARY_PROMPT"
+        PS2=$REPLY
+        RPROMPT=''
+        _sopra_transient_prompt=$_SOPRA_CONFIG_SECONDARY_PROMPT
+    else
+        PROMPT=$_SOPRA_CONFIG_PROMPT
+        RPROMPT=$_SOPRA_CONFIG_RPROMPT
+    fi
     _sopra_clear_highlights
     local -i arm_completion=0 suppress_completion=0
     local previous_buffer previous_cursor previous_history

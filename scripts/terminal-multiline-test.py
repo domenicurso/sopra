@@ -87,6 +87,30 @@ def exercise_resize(terminal: TerminalSession, screen: reflow.ReflowScreen, dire
     assert sum(str(directory) in line for line in state["lines"]) == 1, state
 
 
+def exercise_secondary(config_root: str) -> None:
+    env = {
+        "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
+        "ZDOTDIR": str(ROOT / "examples/isolated"), "XDG_CONFIG_HOME": config_root,
+    }
+    with TerminalSession(("zsh", "-di"), rows=12, columns=60, cwd=str(ROOT), env=env) as terminal:
+        terminal.wait_for("PRIMARY", timeout=20)
+        terminal.send_text("for x in alpha beta; do")
+        terminal.key("ENTER")
+        terminal.wait_for("CONT >", timeout=5)
+        terminal.send_text("echo $x")
+        terminal.key("ENTER")
+        terminal.read(0.4)
+        lines = terminal.screen.text().splitlines()
+        assert "CONT > echo $x" in lines, lines
+        assert lines.count("CONT >") == 1, lines
+        terminal.send_text("done")
+        terminal.key("ENTER")
+        terminal.read(0.5)
+        lines = terminal.screen.text().splitlines()
+        assert "CONT > done" in lines and "alpha" in lines and "beta" in lines, lines
+        assert any(line.startswith("PRIMARY") for line in lines), lines
+
+
 def main() -> None:
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=ROOT, check=True)
     with tempfile.TemporaryDirectory(prefix="sm-", dir="/tmp") as temporary:
@@ -94,7 +118,9 @@ def main() -> None:
         directory.mkdir(parents=True)
         with terminal_config("[prompt]\nleft = \"{path}\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
             exercise(reflow.ReflowScreen(process), directory, config_root)
-    print("multiline prompt: ok")
+    with terminal_config("[prompt]\nleft = 'PRIMARY $ '\nright = ''\ntransient = '$ '\nsecondary = 'CONT > '\n[editor]\ncompletion = false\ncursor_animation = false\n") as config_root:
+        exercise_secondary(config_root)
+    print("multiline prompt and secondary prompt: ok")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,9 @@ _sopra_prompt_defaults() {
     if [[ -z ${_SOPRA_CONFIG_CLOCK_FORMAT+x} ]]; then
         typeset -g _SOPRA_CONFIG_CLOCK_FORMAT='%H:%M:%S'
     fi
+    if [[ -z ${_SOPRA_CONFIG_SECONDARY_PROMPT+x} ]]; then
+        typeset -g _SOPRA_CONFIG_SECONDARY_PROMPT='> '
+    fi
     if [[ -z ${_SOPRA_CONFIG_TRANSIENT_PROMPT+x} ]]; then
         typeset -g _SOPRA_CONFIG_TRANSIENT_PROMPT='$ '
     fi

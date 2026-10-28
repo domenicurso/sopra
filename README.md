@@ -103,6 +103,8 @@ Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, pl
 
 Use `\n` in a TOML string to start another prompt row. The right prompt stays on the first row, and the command starts after the last row.
 
+Set `prompt.secondary` in `config.toml` to customize the continuation prompt shown when Zsh needs another line; it defaults to `> `.
+
 Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
 
 When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.

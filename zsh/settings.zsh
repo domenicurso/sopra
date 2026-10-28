@@ -25,6 +25,7 @@ _sopra_load_prompt_config() {
             prompt) name=_SOPRA_CONFIG_PROMPT ;;
             rprompt) name=_SOPRA_CONFIG_RPROMPT ;;
             transient_prompt) name=_SOPRA_CONFIG_TRANSIENT_PROMPT ;;
+            secondary_prompt) name=_SOPRA_CONFIG_SECONDARY_PROMPT ;;
             clock_format) name=_SOPRA_CONFIG_CLOCK_FORMAT ;;
             git_status_format) name=_SOPRA_CONFIG_GIT_STATUS_FORMAT ;;
             git_status_separator) name=_SOPRA_CONFIG_GIT_STATUS_SEPARATOR ;;

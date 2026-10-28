@@ -4,12 +4,13 @@ fn reads_prompt_and_editor_values() -> io::Result<()> {
     let file = std::env::temp_dir().join(format!("sopra-prompt-{}.toml", std::process::id()));
     fs::write(
         &file,
-        "[editor]\ncursor_animation = false\n[prompt]\nright = '[dim]{clock}[/]'\n[widgets.clock]\nformat = '%H:%M'\n",
+        "[editor]\ncursor_animation = false\n[prompt]\nright = '[dim]{clock}[/]'\nsecondary = '[dim]> [/] ' \n[widgets.clock]\nformat = '%H:%M'\n",
     )?;
     let config = PromptConfig::read(&file)?;
     assert_eq!(config.cursor_animation, Some(false));
     assert_eq!(config.right.as_deref(), Some("[dim]{clock}[/]"));
     assert_eq!(config.clock_format.as_deref(), Some("%H:%M"));
+    assert_eq!(config.secondary.as_deref(), Some("[dim]> [/] "));
     fs::remove_file(file)
 }
 #[test]
