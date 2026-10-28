@@ -139,6 +139,7 @@ fn inline_metadata_follows_the_hint_without_entering_the_command() {
     assert_eq!(frame.buffer[(12, 0)].symbol(), "世");
     assert_eq!(frame.buffer[(14, 0)].symbol(), "界");
     assert_eq!(line["$ echo café 世 界   ".len()..].trim_end(), "History");
+    assert!(frame.buffer[(18, 0)].modifier.contains(Modifier::ITALIC));
     assert_eq!(frame.required_height, 1);
     editor.handle_key(Key::Right);
     assert_eq!(editor.buffer(), "echo café 世界");
@@ -164,3 +165,18 @@ fn inline_metadata_disappears_before_overlapping_the_right_prompt() {
 
 #[path = "history_navigation_tests.rs"]
 mod navigation;
+
+#[test]
+fn metadata_style_is_configurable_independently_of_the_suggestion() {
+    let mut editor = editor("echo");
+    editor.history.metadata_format = "[bold]{text}[/]".to_string();
+    let spans = editor.autosuggestion_metadata();
+    assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
+    assert!(!spans[0].style.add_modifier.contains(Modifier::ITALIC));
+    assert!(
+        editor.autosuggestion_spans()[0]
+            .style
+            .add_modifier
+            .contains(Modifier::DIM)
+    );
+}

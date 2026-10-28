@@ -13,6 +13,7 @@ pub(crate) struct PromptConfig {
     pub(crate) completion_enabled: Option<bool>,
     pub(crate) autosuggestions: Option<bool>,
     pub(crate) autosuggestion_format: Option<String>,
+    pub(crate) autosuggestion_metadata_format: Option<String>,
     pub(crate) left: Option<String>,
     pub(crate) right: Option<String>,
     pub(crate) transient: Option<String>,
@@ -36,6 +37,10 @@ impl PromptConfig {
             completion_enabled: read_bool(&doc, &["editor", "completion"])?,
             autosuggestions: read_bool(&doc, &["editor", "autosuggestions"])?,
             autosuggestion_format: read_string(&doc, &["editor", "autosuggestion_format"])?,
+            autosuggestion_metadata_format: read_string(
+                &doc,
+                &["editor", "autosuggestion_metadata_format"],
+            )?,
             left: read_string(&doc, &["prompt", "left"])?,
             right: read_string(&doc, &["prompt", "right"])?,
             transient: read_string(&doc, &["prompt", "transient"])?,
@@ -63,6 +68,10 @@ impl PromptConfig {
         }
         for (name, value) in [
             ("autosuggestion_format", &self.autosuggestion_format),
+            (
+                "autosuggestion_metadata_format",
+                &self.autosuggestion_metadata_format,
+            ),
             ("prompt", &self.left),
             ("rprompt", &self.right),
             ("transient_prompt", &self.transient),

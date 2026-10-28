@@ -38,6 +38,7 @@ _sopra_load_prompt_config() {
             completion_enabled) name=_SOPRA_CONFIG_COMPLETION_ENABLED ;;
             autosuggestions) name=_SOPRA_CONFIG_AUTOSUGGESTIONS ;;
             autosuggestion_format) name=_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT ;;
+            autosuggestion_metadata_format) name=_SOPRA_CONFIG_AUTOSUGGESTION_METADATA_FORMAT ;;
             *) continue ;;
         esac
         if (( ! ${+parameters[$name]} )); then

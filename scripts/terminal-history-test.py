@@ -2,6 +2,7 @@
 """Exercise live Zsh history suggestions without modifying the user's history."""
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,7 +20,7 @@ def environment(zdotdir: str, config_root: str) -> dict[str, str]:
 
 def current_line(terminal: TerminalSession) -> str:
     lines = terminal.screen.lines()
-    return lines[terminal.screen.row].rstrip()
+    return re.sub(r"  \d+s ago$", "  recent", lines[terminal.screen.row].rstrip())
 
 
 def exercise(zdotdir: str, config_root: str) -> None:
@@ -28,13 +29,13 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.wait_for("test $ ", timeout=20)
         terminal.send_text("echo history-")
         terminal.read(0.3)
-        assert current_line(terminal) == "test $ echo history-newest  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
         assert terminal.screen.column == len("test $ echo history-")
         terminal.resize(24, 25)
         terminal.read(0.2)
         terminal.resize(24, 80)
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo history-newest  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
         terminal.key("RIGHT")
         terminal.key("ENTER")
         terminal.read(0.4)
@@ -62,7 +63,7 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.read(0.3)
         terminal.send_text("echo session-")
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo session-only  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo session-only  recent", terminal.screen.text()
         terminal.key("CTRL-U")
         terminal.send_text("echo not-a-match")
         terminal.read(0.2)
@@ -75,22 +76,22 @@ def cycle_and_recall(zdotdir: str, config_root: str) -> None:
         terminal.wait_for("test $ ", timeout=20)
         terminal.send_text("echo history-")
         terminal.read(0.2)
-        assert "just now" in terminal.screen.text(), terminal.screen.text()
+        assert re.search(r"\d+s ago", terminal.screen.text()), terminal.screen.text()
         terminal.key("DOWN")
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo history-older  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-older  recent", terminal.screen.text()
         assert terminal.screen.column == len("test $ echo history-")
         terminal.key("CTRL-L")
         terminal.key("UP")
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo history-newest  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
         assert "Tab to accept" not in terminal.screen.text(), terminal.screen.text()
         terminal.key("DOWN")
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo history-older  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-older  recent", terminal.screen.text()
         terminal.send(b"\x1b[1;3A")
         terminal.read(0.2)
-        assert current_line(terminal) == "test $ echo history-newest  just now", terminal.screen.text()
+        assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
         terminal.key("CTRL-U")
         terminal.send_text("echo unseen-draft")
         terminal.key("CTRL-L")
@@ -116,7 +117,7 @@ def disabled(zdotdir: str, config_root: str) -> None:
         assert current_line(terminal) == "test $ echo history-", terminal.screen.text()
         terminal.key("RIGHT")
         assert terminal.screen.column == len("test $ echo history-")
-        assert "just now" in terminal.screen.text(), terminal.screen.text()
+        assert re.search(r"\d+s ago", terminal.screen.text()), terminal.screen.text()
 
 
 def main() -> None:

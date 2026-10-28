@@ -16,6 +16,7 @@ pub(crate) struct History {
     recall: Option<navigation::Recall>,
     enabled: bool,
     format: String,
+    metadata_format: String,
     dismissed: Option<String>,
 }
 
@@ -27,6 +28,7 @@ impl Default for History {
             recall: None,
             enabled: true,
             format: "[dim]{text}[/]".to_string(),
+            metadata_format: "[dim][italic]{text}[/][/]".to_string(),
             dismissed: None,
         }
     }
@@ -43,6 +45,9 @@ impl History {
         });
         if let Ok(format) = std::env::var("SOPRA_AUTOSUGGESTION_FORMAT") {
             history.format = format;
+        }
+        if let Ok(format) = std::env::var("SOPRA_AUTOSUGGESTION_METADATA_FORMAT") {
+            history.metadata_format = format;
         }
         Ok(history)
     }
@@ -137,7 +142,7 @@ impl EditorState {
             crate::prompt::parse(
                 &self
                     .history
-                    .format
+                    .metadata_format
                     .replace("{text}", &snapshot::description(entry)),
             )
         })

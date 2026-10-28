@@ -2,6 +2,10 @@ _sopra_edit() {
     emulate -L zsh
     local raw expanded_prompt expanded_rprompt expanded_transient
     local autosuggestion_format='[dim]{text}[/]'
+    local metadata_format='[dim][italic]{text}[/][/]'
+    if [[ -n ${_SOPRA_CONFIG_AUTOSUGGESTION_METADATA_FORMAT+x} ]]; then
+        metadata_format=$_SOPRA_CONFIG_AUTOSUGGESTION_METADATA_FORMAT
+    fi
     if [[ -n ${_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT+x} ]]; then
         autosuggestion_format=$_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT
     fi
@@ -29,6 +33,7 @@ _sopra_edit() {
         SOPRA_EXPANDED_SECONDARY_PROMPT="$(print -P -- "$_SOPRA_CONFIG_SECONDARY_PROMPT")" \
         SOPRA_AUTOSUGGESTIONS="${_SOPRA_CONFIG_AUTOSUGGESTIONS:-1}" \
         SOPRA_AUTOSUGGESTION_FORMAT="$autosuggestion_format" \
+        SOPRA_AUTOSUGGESTION_METADATA_FORMAT="$metadata_format" \
         "$SOPRA_BIN" "${editor_args[@]}" --history-file <(_sopra_history_snapshot) </dev/tty
     ) || return 1
     _sopra_parse_result "$raw"

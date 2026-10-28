@@ -81,7 +81,7 @@ pub(super) fn description(entry: &Entry) -> String {
 fn age(started: Option<u64>, now: u64) -> Option<String> {
     let elapsed = now.checked_sub(started?)?;
     let (count, unit) = match elapsed {
-        0..60 => return Some("just now".to_string()),
+        0..60 => (elapsed, "s"),
         60..3600 => (elapsed / 60, "m"),
         3600..86400 => (elapsed / 3600, "h"),
         86400..2592000 => (elapsed / 86400, "d"),
@@ -115,7 +115,10 @@ mod tests {
     fn timestamps_are_optional_and_future_times_are_not_reported_as_recent() {
         assert_eq!(age(None, 3600), None);
         assert_eq!(age(Some(3601), 3600), None);
-        assert_eq!(age(Some(3599), 3600).as_deref(), Some("just now"));
+        assert_eq!(age(Some(3599), 3600).as_deref(), Some("1s ago"));
+        assert_eq!(age(Some(3600), 3600).as_deref(), Some("0s ago"));
+        assert_eq!(age(Some(3541), 3600).as_deref(), Some("59s ago"));
+        assert_eq!(age(Some(3540), 3600).as_deref(), Some("1m ago"));
         assert_eq!(age(Some(1), 301).as_deref(), Some("5m ago"));
         assert_eq!(age(Some(1), 7201).as_deref(), Some("2h ago"));
         assert_eq!(age(Some(1), 172801).as_deref(), Some("2d ago"));
