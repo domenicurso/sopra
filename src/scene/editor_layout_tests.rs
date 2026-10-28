@@ -45,7 +45,7 @@ fn multiline_input_starts_at_the_left_edge_after_a_nonzero_anchor() {
         cwd: std::path::PathBuf::new(),
         palette: TerminalPalette::default(),
     });
-    let layout = EditorLayout::new(&editor, TerminalSize::new(40, 24), 2, 5);
+    let layout = EditorLayout::new(&editor, TerminalSize::new(40, 24), 5);
     assert_eq!(
         (
             layout.prompt_row,
@@ -60,21 +60,21 @@ fn multiline_input_starts_at_the_left_edge_after_a_nonzero_anchor() {
 #[test]
 fn right_prompt_does_not_cover_the_end_cursor_at_an_exact_fit() {
     let size = TerminalSize::new(40, 24);
-    let layout = EditorLayout::new(&editor(33), size, 2, 5);
+    let layout = EditorLayout::new(&editor(33), size, 5);
 
     assert_eq!(layout.rprompt_column, size.columns);
 }
 
 #[test]
 fn right_prompt_ends_at_the_terminal_edge_when_there_is_room() {
-    let layout = EditorLayout::new(&editor_with_buffer(29, 29), TerminalSize::new(40, 24), 2, 5);
+    let layout = EditorLayout::new(&editor_with_buffer(29, 29), TerminalSize::new(40, 24), 5);
 
     assert_eq!(layout.rprompt_column, 35);
 }
 
 #[test]
 fn right_prompt_is_hidden_when_the_terminal_has_no_safe_right_edge() {
-    let layout = EditorLayout::new(&editor(0), TerminalSize::new(1, 24), 2, 5);
+    let layout = EditorLayout::new(&editor(0), TerminalSize::new(1, 24), 5);
 
     assert_eq!(layout.rprompt_column, 1);
 }

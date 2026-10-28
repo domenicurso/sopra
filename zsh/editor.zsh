@@ -24,6 +24,7 @@ _sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"
 _sopra_load_settings
 source "$script_dir/context.zsh"
 source "$script_dir/prompt.zsh"
+source "$script_dir/worker.zsh"
 _sopra_prompt_defaults
 if [[ -z ${_SOPRA_CONFIG_CURSOR_ANIMATION+x} ]]; then
     typeset -g _SOPRA_CONFIG_CURSOR_ANIMATION=1
@@ -40,56 +41,6 @@ if [[ ! -x $SOPRA_BIN ]]; then
     return 1
 fi
 
-_sopra_edit() {
-    emulate -L zsh
-    local raw expanded_prompt expanded_rprompt expanded_transient
-    local -i arm_completion=${1:-0}
-    local -i suppress_completion=${2:-0}
-    local -x SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
-    _sopra_shell_context
-    expanded_prompt=$(print -P -- "$PROMPT")
-    expanded_rprompt=$(print -P -- "$RPROMPT")
-    expanded_transient=$(print -P -- "${_sopra_transient_prompt-$_SOPRA_CONFIG_TRANSIENT_PROMPT}")
-    local -a editor_args
-    editor_args=(
-        --buffer "$BUFFER" \
-        --cursor "$CURSOR" \
-        --prompt "$expanded_prompt" \
-        --rprompt "$expanded_rprompt" \
-        --cwd "$PWD"
-    )
-    if (( arm_completion )); then
-        editor_args+=(--arm-completion)
-    fi
-    if (( suppress_completion )); then
-        editor_args+=(--suppress-completion)
-    fi
-    if [[ ${(L)_SOPRA_CONFIG_COMPLETION_ENABLED} == (0|false|off|no) ]]; then
-        editor_args+=(--disable-completion)
-    fi
-    if [[ ${(L)_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING} == (0|false|off|no) ]]; then
-        editor_args+=(--disable-syntax-highlighting)
-    fi
-    if [[ ${(L)_SOPRA_CONFIG_CURSOR_ANIMATION} == (0|false|off|no) ]]; then
-        editor_args+=(--disable-cursor-animation)
-    fi
-    raw=$(
-        SOPRA_PATH_BEFORE="$_SOPRA_CONFIG_PATH_BEFORE" \
-        SOPRA_PATH_SELECTED="$_SOPRA_CONFIG_PATH_SELECTED" \
-        SOPRA_PATH_AFTER="$_SOPRA_CONFIG_PATH_AFTER" \
-        SOPRA_GIT_STATUS_ITEM_FORMAT="$_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT" \
-        SOPRA_GIT_STATUS_FORMAT="$_SOPRA_CONFIG_GIT_STATUS_FORMAT" \
-        SOPRA_GIT_STATUS_SEPARATOR="$_SOPRA_CONFIG_GIT_STATUS_SEPARATOR" \
-        SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" \
-        SOPRA_WIDGET_DURATION="$_SOPRA_WIDGET_DURATION" \
-        SOPRA_WIDGET_USER="$USER" SOPRA_WIDGET_HOST="$HOST" \
-        SOPRA_CLOCK_FORMAT="$_SOPRA_CONFIG_CLOCK_FORMAT" \
-        SOPRA_EXPANDED_TRANSIENT_PROMPT="$expanded_transient" \
-        "$SOPRA_BIN" "${editor_args[@]}" </dev/tty
-    ) || return 1
-    _sopra_parse_result "$raw"
-}
-
 _sopra_prepare_transient() {
     _sopra_shell_prompt "${_sopra_transient_prompt-$_SOPRA_CONFIG_TRANSIENT_PROMPT}"
     PROMPT=$REPLY
@@ -104,10 +55,10 @@ _sopra_clear_highlights() {
 
 _sopra_line_init() {
     local _sopra_transient_prompt=$_SOPRA_CONFIG_TRANSIENT_PROMPT
+    _sopra_shell_prompt "$_SOPRA_CONFIG_SECONDARY_PROMPT"
+    PS2=$REPLY
     if [[ $CONTEXT == cont ]]; then
         PROMPT=$_SOPRA_CONFIG_SECONDARY_PROMPT
-        _sopra_shell_prompt "$_SOPRA_CONFIG_SECONDARY_PROMPT"
-        PS2=$REPLY
         RPROMPT=''
         _sopra_transient_prompt=$_SOPRA_CONFIG_SECONDARY_PROMPT
     else
@@ -116,69 +67,75 @@ _sopra_line_init() {
     fi
     _sopra_clear_highlights
     local -i arm_completion=0 suppress_completion=0
-    local previous_buffer previous_cursor previous_history
     while _sopra_edit "$arm_completion" "$suppress_completion"; do
         arm_completion=0
         suppress_completion=0
         BUFFER=$_SOPRA_RESULT_BUFFER
         CURSOR=$_SOPRA_RESULT_CURSOR
-        case $_SOPRA_RESULT_ACTION in
-            accept)
-                _sopra_prepare_transient
-                if [[ -n $_SOPRA_RESULT_HIGHLIGHTS ]]; then
-                    region_highlight=("${(@s.;.)_SOPRA_RESULT_HIGHLIGHTS}")
-                fi
-                zle .accept-line
-                return 0
-                ;;
-            interrupt)
-                _sopra_prepare_transient
-                _sopra_clear_highlights
-                BUFFER=''
-                CURSOR=0
-                zle .accept-line
-                return 0
-                ;;
-            directory)
-                if builtin cd -- "$_SOPRA_RESULT_DIRECTORY"; then
-                    PROMPT=$_SOPRA_CONFIG_PROMPT
-                    RPROMPT=$_SOPRA_CONFIG_RPROMPT
-                fi
-                ;;
-            up)
-                previous_buffer=$BUFFER
-                previous_cursor=$CURSOR
-                previous_history=${HISTNO:-}
-                zle up-line-or-history
-                if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
-                    && ${HISTNO:-} == $previous_history ]]; then
-                    arm_completion=1
-                else
-                    suppress_completion=1
-                fi
-                ;;
-            down)
-                previous_buffer=$BUFFER
-                previous_cursor=$CURSOR
-                previous_history=${HISTNO:-}
-                zle down-line-or-history
-                if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
-                    && ${HISTNO:-} == $previous_history ]]; then
-                    arm_completion=1
-                else
-                    suppress_completion=1
-                fi
-                ;;
-            tab)
-                zle expand-or-complete
-                ;;
-            eof)
-                zle .eof
-                return 0
-                ;;
-        esac
+        _sopra_apply_result || return 0
     done
     zle -R
 }
 
+_sopra_apply_result() {
+    case $_SOPRA_RESULT_ACTION in
+        accept)
+            _sopra_prepare_transient
+            if [[ -n $_SOPRA_RESULT_HIGHLIGHTS ]]; then
+                region_highlight=("${(@s.;.)_SOPRA_RESULT_HIGHLIGHTS}")
+            fi
+            zle .accept-line
+            return 1
+            ;;
+        interrupt)
+            _sopra_prepare_transient
+            _sopra_clear_highlights
+            BUFFER=''
+            CURSOR=0
+            zle .accept-line
+            return 1
+            ;;
+        directory)
+            if builtin cd -- "$_SOPRA_RESULT_DIRECTORY"; then
+                PROMPT=$_SOPRA_CONFIG_PROMPT
+                RPROMPT=$_SOPRA_CONFIG_RPROMPT
+            fi
+            ;;
+        up|down) _sopra_history "$_SOPRA_RESULT_ACTION" ;;
+        tab) zle expand-or-complete ;;
+        eof) zle .eof; return 1 ;;
+    esac
+    return 0
+}
+
+_sopra_history() {
+    local previous_buffer=$BUFFER previous_cursor=$CURSOR previous_history=${HISTNO:-}
+    zle "$1-line-or-history"
+    if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
+        && ${HISTNO:-} == $previous_history ]]; then
+        arm_completion=1
+    else
+        suppress_completion=1
+    fi
+}
+
+_sopra_line_finish() {
+    [[ $_SOPRA_RESULT_ACTION == accept ]] || return 0
+    # Only multiline transcripts need display-only continuation prefixes.
+    [[ $BUFFER == *$'\n'* ]] || return 0
+    local original_buffer=$BUFFER
+    local -i original_cursor=$CURSOR
+    BUFFER=$_SOPRA_RESULT_DISPLAY
+    local -a original_highlights=("${region_highlight[@]}")
+    region_highlight=()
+    if [[ $_SOPRA_RESULT_DISPLAY_HIGHLIGHTS != - ]]; then
+        region_highlight=("${(@s.;.)_SOPRA_RESULT_DISPLAY_HIGHLIGHTS}")
+    fi
+    zle -I
+    BUFFER=$original_buffer
+    CURSOR=$original_cursor
+    region_highlight=("${original_highlights[@]}")
+}
+
 zle -N zle-line-init _sopra_line_init
+zle -N zle-line-finish _sopra_line_finish

@@ -1,10 +1,30 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::EditorState;
+use super::{EditorState, ExitReason, RunResult};
+use crate::input::Key;
 use crate::scene::MAX_OVERLAY_ITEMS;
 use sopra_completion::ranking;
 
 impl EditorState {
+    pub(super) fn navigate(&mut self, key: Key) -> Option<RunResult> {
+        match key {
+            Key::Left => self.move_left(),
+            Key::Right => self.move_right(),
+            Key::WordLeft => self.move_word_left(),
+            Key::WordRight => self.move_word_right(),
+            Key::Home => self.cursor = 0,
+            Key::End => self.cursor = self.buffer.len(),
+            Key::Up if !self.move_selection(-1) && !self.move_vertical(-1) => {
+                return Some(self.result(ExitReason::DelegateUp));
+            }
+            Key::Down if !self.move_selection(1) && !self.move_vertical(1) => {
+                return Some(self.result(ExitReason::DelegateDown));
+            }
+            _ => {}
+        }
+        None
+    }
+
     pub(super) fn delete(&mut self) {
         let Some(end) = next_grapheme_end(&self.buffer, self.cursor) else {
             return;

@@ -30,6 +30,14 @@ impl EditorState {
         self.transient_prompt = prompt;
     }
 
+    pub(crate) fn set_secondary_prompt(&mut self, prompt: String) {
+        self.secondary_prompt = prompt;
+    }
+
+    pub(crate) fn secondary_prompt(&self) -> &str {
+        &self.secondary_prompt
+    }
+
     pub(crate) fn transient_prompt(&self) -> &str {
         &self.transient_prompt
     }
@@ -156,7 +164,10 @@ impl EditorState {
         let mut flow = crate::scene::text_flow::TextFlow::new(self.anchor, size.columns);
         flow.prompt(&crate::prompt::parse(prompt));
         if include_buffer {
-            flow.text(&self.buffer[..self.cursor]);
+            flow.command(
+                &self.buffer[..self.cursor],
+                &crate::prompt::parse(self.secondary_prompt()),
+            );
         }
         flow.cursor()
     }

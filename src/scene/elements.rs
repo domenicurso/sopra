@@ -46,6 +46,7 @@ pub(super) struct CommandElement {
     pub(super) buffer: String,
     pub(super) spans: Vec<SyntaxSpan>,
     pub(super) selection: Option<std::ops::Range<usize>>,
+    pub(super) secondary: Vec<PromptSpan>,
 }
 
 impl Element for CommandElement {
@@ -58,6 +59,18 @@ impl Element for CommandElement {
             canvas.buffer.area.width,
         );
         for (byte, grapheme) in self.buffer.grapheme_indices(true) {
+            if grapheme == "\n" {
+                flow.advance(grapheme);
+                let start = flow.position;
+                PromptElement {
+                    column: start.column,
+                    row: start.row,
+                    spans: self.secondary.clone(),
+                }
+                .paint(canvas);
+                flow.prompt(&self.secondary);
+                continue;
+            }
             let Some(position) = flow.advance(grapheme) else {
                 continue;
             };

@@ -70,6 +70,17 @@ impl EditorState {
             self.handle_mouse(event, renderer.origin_row());
             return Ok(None);
         }
+        if key == Key::Enter
+            && !self.widgets.active()
+            && super::submission::needs_continuation(&self.buffer)?
+        {
+            self.buffer.push('\n');
+            self.cursor = self.buffer.len();
+            self.text_selection.clear();
+            self.note_activity();
+            self.request_completion();
+            return Ok(None);
+        }
         Ok(self.handle_key(key))
     }
 
@@ -121,10 +132,14 @@ impl EditorState {
     ) -> io::Result<()> {
         let size = terminal.size().unwrap_or(self.last_size);
         let (restore_position, replacement) = match reason {
-            ExitReason::Accepted | ExitReason::Interrupted => (
+            ExitReason::Accepted => (
                 self.restore_prompt_position(size, self.transient_prompt()),
                 Some(Scene::for_transient(self, size).render()),
             ),
+            ExitReason::Interrupted => {
+                let frame = Scene::for_transient(self, size).render();
+                (frame.cursor, Some(frame))
+            }
             ExitReason::ChangeDirectory => {
                 (crate::input::CursorPosition { row: 0, column: 0 }, None)
             }

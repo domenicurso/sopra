@@ -2,8 +2,6 @@ use std::time::Instant;
 
 use super::EditorState;
 use crate::input::{MouseEvent, MouseKind};
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 impl EditorState {
     pub(super) fn handle_mouse(&mut self, event: MouseEvent, origin: Option<u16>) {
@@ -14,7 +12,6 @@ impl EditorState {
         }
         let Some(origin) = origin else { return };
         let start = self.restore_prompt_position(self.last_size, self.prompt());
-        let mut flow = crate::scene::text_flow::TextFlow::new(start, self.last_size.columns);
         let target_row = event.position.row.saturating_sub(origin);
         if event.kind == MouseKind::Press
             && (event.position.row < origin
@@ -23,20 +20,10 @@ impl EditorState {
         {
             return;
         }
-        let mut offset = self.buffer.len();
-        for (byte, grapheme) in self.buffer.grapheme_indices(true) {
-            let Some(position) = flow.advance(grapheme) else {
-                continue;
-            };
-            if target_row < position.row
-                || (target_row == position.row
-                    && event.position.column
-                        < position.column.saturating_add(grapheme.width() as u16))
-            {
-                offset = byte;
-                break;
-            }
-        }
+        let offset = self.offset_at(crate::input::CursorPosition {
+            row: target_row,
+            column: event.position.column,
+        });
         let cursor = self
             .text_selection
             .mouse(event.kind, offset, &self.buffer, Instant::now());

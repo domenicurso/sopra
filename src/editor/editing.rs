@@ -79,22 +79,14 @@ impl EditorState {
             Key::KillToEnd => self.kill_to_end(),
             Key::KillToStart => self.kill_to_start(),
             Key::Yank => self.insert_yank(),
-            Key::Left => self.move_left(),
-            Key::Right => self.move_right(),
-            Key::WordLeft => self.move_word_left(),
-            Key::WordRight => self.move_word_right(),
-            Key::Home => self.cursor = 0,
-            Key::End => self.cursor = self.buffer.len(),
-            Key::Up => {
-                if !self.move_selection(-1) {
-                    return Some(self.result(ExitReason::DelegateUp));
-                }
-            }
-            Key::Down => {
-                if !self.move_selection(1) {
-                    return Some(self.result(ExitReason::DelegateDown));
-                }
-            }
+            Key::Left
+            | Key::Right
+            | Key::WordLeft
+            | Key::WordRight
+            | Key::Home
+            | Key::End
+            | Key::Up
+            | Key::Down => return self.navigate(key),
             Key::Clear => self.toggle_overlay(),
             Key::PromptWidgets => {}
             Key::Cancel => return Some(self.result(ExitReason::Interrupted)),

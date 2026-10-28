@@ -39,6 +39,7 @@ printf 'Building Sopra...\n'
 mkdir -p "$SOPRA_PREFIX/libexec" "$SOPRA_PREFIX/share/sopra"
 install -m 0755 "$source_dir/target/release/sopra-worker" "$SOPRA_PREFIX/libexec/sopra-worker"
 install -m 0644 "$source_dir/zsh/editor.zsh" "$SOPRA_PREFIX/share/sopra/editor.zsh"
+install -m 0644 "$source_dir/zsh/worker.zsh" "$SOPRA_PREFIX/share/sopra/worker.zsh"
 install -m 0644 "$source_dir/zsh/context.zsh" "$SOPRA_PREFIX/share/sopra/context.zsh"
 install -m 0644 "$source_dir/zsh/protocol.zsh" "$SOPRA_PREFIX/share/sopra/protocol.zsh"
 install -m 0644 "$source_dir/zsh/prompt.zsh" "$SOPRA_PREFIX/share/sopra/prompt.zsh"

@@ -97,18 +97,67 @@ def exercise_secondary(config_root: str) -> None:
         terminal.send_text("for x in alpha beta; do")
         terminal.key("ENTER")
         terminal.wait_for("CONT >", timeout=5)
+        lines = terminal.screen.text().splitlines()
+        assert lines[lines.index("PRIMARY") + 1] == "$ for x in alpha beta; do", lines
         terminal.send_text("echo $x")
         terminal.key("ENTER")
         terminal.read(0.4)
         lines = terminal.screen.text().splitlines()
+        assert lines[lines.index("PRIMARY") + 1] == "$ for x in alpha beta; do", lines
         assert "CONT > echo $x" in lines, lines
         assert lines.count("CONT >") == 1, lines
+        terminal.resize(12, 120)
+        terminal.read(0.2)
+        for width in chain(range(118, 39, -2), range(42, 121, 2)):
+            terminal.resize(12, width)
+            terminal.read(0)
+            time.sleep(0.001)
+        terminal.read(0.3)
+        assert "PRIMARY\n$ for x in alpha beta; do" in terminal.screen.text()
         terminal.send_text("done")
         terminal.key("ENTER")
         terminal.read(0.5)
         lines = terminal.screen.text().splitlines()
         assert "CONT > done" in lines and "alpha" in lines and "beta" in lines, lines
-        assert any(line.startswith("PRIMARY") for line in lines), lines
+        assert "$ for x in alpha beta; do" in lines, lines
+        assert lines.index("PRIMARY") > lines.index("beta"), lines
+        assert any(line == "PRIMARY" for line in lines), lines
+
+
+def exercise_continuation_inputs(config_root: str) -> None:
+    env = {
+        "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
+        "ZDOTDIR": str(ROOT / "examples/isolated"), "XDG_CONFIG_HOME": config_root,
+    }
+    with TerminalSession(("zsh", "-di"), rows=18, columns=60, cwd=str(ROOT), env=env) as terminal:
+        terminal.wait_for("PRIMARY", timeout=20)
+        terminal.send_text("echo \\")
+        terminal.key("ENTER")
+        terminal.wait_for("CONT >", timeout=5)
+        assert "PRIMARY\n$ echo \\" in terminal.screen.text(), terminal.screen.text()
+        terminal.send_text("continued-output")
+        terminal.key("ENTER")
+        terminal.read(0.4)
+        assert "continued-output" in terminal.screen.text().splitlines(), terminal.screen.text()
+        terminal.send_text("cat <<EOF")
+        terminal.key("ENTER")
+        terminal.read(0.2)
+        terminal.send_text("heredoc-output")
+        terminal.key("ENTER")
+        terminal.read(0.2)
+        assert "PRIMARY\n$ cat <<EOF" in terminal.screen.text(), terminal.screen.text()
+        terminal.send_text("EOF")
+        terminal.key("ENTER")
+        terminal.read(0.4)
+        assert "heredoc-output" in terminal.screen.text().splitlines(), terminal.screen.text()
+        terminal.send_text("for x in a; do")
+        terminal.key("ENTER")
+        terminal.send_text("echo cancelled")
+        terminal.key("CTRL-C")
+        terminal.read(0.3)
+        lines = terminal.screen.text().splitlines()
+        assert "CONT > echo cancelled" in lines, lines
+        assert lines.count("PRIMARY") == 1, lines
 
 
 def exercise_wrapped_command(config_root: str) -> None:
@@ -136,8 +185,9 @@ def main() -> None:
         directory.mkdir(parents=True)
         with terminal_config("[prompt]\nleft = \"{path}\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
             exercise(reflow.ReflowScreen(process), directory, config_root)
-    with terminal_config("[prompt]\nleft = 'PRIMARY $ '\nright = ''\ntransient = '$ '\nsecondary = 'CONT > '\n[editor]\ncompletion = false\ncursor_animation = false\n") as config_root:
+    with terminal_config("[prompt]\nleft = \"PRIMARY\\n$ \"\nright = ''\ntransient = '$ '\nsecondary = '[blue]CONT >[/] '\n[editor]\ncompletion = false\ncursor_animation = false\n") as config_root:
         exercise_secondary(config_root)
+        exercise_continuation_inputs(config_root)
     with terminal_config("[prompt]\nleft = 'P $ '\nright = ''\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root:
         exercise_wrapped_command(config_root)
     print("multiline, wrapped, and secondary prompts: ok")

@@ -3,6 +3,7 @@ typeset -g _SOPRA_RESULT_BUFFER=''
 typeset -g _SOPRA_RESULT_CURSOR=0
 typeset -g _SOPRA_RESULT_HIGHLIGHTS=''
 typeset -g _SOPRA_RESULT_DIRECTORY=''
+typeset -g _SOPRA_RESULT_DISPLAY='' _SOPRA_RESULT_DISPLAY_HIGHLIGHTS=''
 
 _sopra_hex_decode() {
     emulate -L zsh
@@ -26,6 +27,9 @@ _sopra_parse_result() {
     IFS=$'\t' read -rA fields <<< "$raw"
     [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|interrupt|up|down|tab|eof|directory) ]] || return 1
     [[ ${fields[3]-} == <-> ]] || return 1
+    _sopra_hex_decode "${fields[7]:--}" || return 1
+    typeset -g _SOPRA_RESULT_DISPLAY=$_SOPRA_RESULT_BUFFER
+    typeset -g _SOPRA_RESULT_DISPLAY_HIGHLIGHTS=${fields[8]:--}
     _sopra_hex_decode "${fields[6]-}" || return 1
     typeset -g _SOPRA_RESULT_DIRECTORY=$_SOPRA_RESULT_BUFFER
     _sopra_hex_decode "${fields[4]-}" || return 1

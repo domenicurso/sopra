@@ -98,3 +98,20 @@ fn selected_text_deletes_or_collapses_with_arrow_keys() {
     assert_eq!(editor.buffer(), "hello ");
     assert_eq!(editor.cursor, 6);
 }
+
+#[test]
+fn multiline_caret_and_mouse_positions_use_the_continuation_prefix() {
+    use crate::input::{CursorPosition, Key};
+    let mut editor = test_editor();
+    editor.buffer = "echo café\nprintf hé".into();
+    editor.cursor = editor.buffer.len();
+    let end = editor.cursor;
+    assert_eq!(
+        editor.offset_at(CursorPosition { row: 1, column: 2 }),
+        "echo café\n".len()
+    );
+    assert!(editor.handle_key(Key::Up).is_none());
+    assert_eq!(editor.cursor, "echo café".len());
+    assert!(editor.handle_key(Key::Down).is_none());
+    assert_eq!(editor.cursor, end);
+}

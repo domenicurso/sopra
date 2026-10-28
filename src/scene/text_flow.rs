@@ -56,6 +56,15 @@ impl TextFlow {
         }
     }
 
+    pub(crate) fn command(&mut self, text: &str, secondary: &[PromptSpan]) {
+        for grapheme in text.graphemes(true) {
+            self.advance(grapheme);
+            if grapheme == "\n" {
+                self.prompt(secondary);
+            }
+        }
+    }
+
     pub(crate) fn prompt(&mut self, spans: &[PromptSpan]) {
         for span in spans {
             self.text(&span.text);

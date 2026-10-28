@@ -161,6 +161,11 @@ impl EditorState {
             cursor: self.buffer[..self.cursor].chars().count(),
             highlights: crate::syntax::highlight_without_cursor(&self.buffer, &self.cwd),
             directory: None,
+            submitted_spans: super::transcript::submitted_spans(
+                &self.buffer,
+                &self.transient_syntax(),
+                self.secondary_prompt(),
+            ),
         }
     }
 }

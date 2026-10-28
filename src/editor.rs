@@ -5,12 +5,15 @@ mod editing;
 mod mouse;
 mod navigation;
 mod pairs;
+mod position;
 mod session;
+mod submission;
 #[cfg(test)]
 mod tests;
 mod text_selection;
 #[cfg(test)]
 mod text_selection_tests;
+mod transcript;
 mod view;
 
 use std::{
@@ -43,6 +46,7 @@ pub(crate) struct RunResult {
     pub(crate) cursor: usize,
     pub(crate) highlights: Vec<SyntaxSpan>,
     pub(crate) directory: Option<PathBuf>,
+    pub(crate) submitted_spans: Vec<crate::prompt::PromptSpan>,
 }
 
 pub(crate) struct EditorConfig {
@@ -67,6 +71,7 @@ pub(crate) struct EditorState {
     prompt: String,
     rprompt: String,
     transient_prompt: String,
+    secondary_prompt: String,
     widgets: crate::prompt::widgets::Widgets,
     anchor: CursorPosition,
     selected: Option<usize>,
@@ -95,19 +100,30 @@ pub(crate) struct EditorState {
 impl EditorState {
     pub(crate) fn new(config: EditorConfig) -> Self {
         let cursor = navigation::char_index_to_byte(&config.buffer, config.cursor_chars);
-        let completion_active = config.completion_enabled && !config.suppress_completion;
         let widgets = crate::prompt::widgets::Widgets::new(
             config.prompt.clone(),
             config.rprompt.clone(),
             config.cwd.clone(),
         );
+        let mut state = Self::initialize(config, widgets, cursor);
+        state.request_completion();
+        state
+    }
+
+    fn initialize(
+        config: EditorConfig,
+        widgets: crate::prompt::widgets::Widgets,
+        cursor: usize,
+    ) -> Self {
+        let completion_active = config.completion_enabled && !config.suppress_completion;
         let (prompt, rprompt) = widgets.render();
-        let mut state = Self {
+        Self {
             buffer: config.buffer,
             cursor,
             prompt,
             rprompt,
             transient_prompt: "$ ".to_string(),
+            secondary_prompt: "> ".to_string(),
             widgets,
             anchor: config.anchor,
             text_selection: text_selection::TextSelection::default(),
@@ -134,9 +150,7 @@ impl EditorState {
             yank: String::new(),
             animation_started: Instant::now(),
             last_size: config.size,
-        };
-        state.request_completion();
-        state
+        }
     }
 
     pub(super) fn note_activity(&mut self) {
