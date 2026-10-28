@@ -12,31 +12,47 @@ use std::os::unix::process::CommandExt;
 const TIMEOUT: Duration = Duration::from_millis(600);
 
 pub(crate) fn run(command: &mut Command) -> Option<String> {
+    run_with_stderr(command, true)
+}
+
+pub(crate) fn run_stdout(command: &mut Command) -> Option<String> {
+    run_with_stderr(command, false)
+}
+
+fn run_with_stderr(command: &mut Command, capture_stderr: bool) -> Option<String> {
     isolate(command);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    command.stdin(Stdio::null()).stdout(Stdio::piped());
+    command.stderr(if capture_stderr {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
     let mut child = command.spawn().ok()?;
     let stdout = child.stdout.take()?;
-    let stderr = child.stderr.take()?;
+    let stderr = capture_stderr.then(|| child.stderr.take()).flatten();
     let (events, receiver) = mpsc::channel();
     let stdout_thread = reader(stdout, events.clone());
-    let stderr_thread = reader(stderr, events);
-    let output = collect(&mut child, receiver);
+    let stderr_thread = stderr.map(|stream| reader(stream, events));
+    let output = collect(&mut child, receiver, usize::from(capture_stderr) + 1);
     // A timed-out probe has already been terminated. Do not wait on a reader
     // whose pipe may still be held by a descendant the probe did not create.
     output.as_ref()?;
     let _ = stdout_thread.join();
-    let _ = stderr_thread.join();
+    if let Some(stderr_thread) = stderr_thread {
+        let _ = stderr_thread.join();
+    }
     output
 }
 
-fn collect(child: &mut Child, receiver: mpsc::Receiver<Event>) -> Option<String> {
+fn collect(
+    child: &mut Child,
+    receiver: mpsc::Receiver<Event>,
+    stream_count: usize,
+) -> Option<String> {
     let deadline = Instant::now() + TIMEOUT;
     let mut output = Vec::new();
     let mut streams = 0;
-    while streams < 2 {
+    while streams < stream_count {
         while let Ok(event) = receiver.try_recv() {
             match event {
                 Event::Data(data) => output.extend(data),
@@ -50,7 +66,7 @@ fn collect(child: &mut Child, receiver: mpsc::Receiver<Event>) -> Option<String>
                 return None;
             }
         };
-        if streams == 2 {
+        if streams == stream_count {
             if !finished {
                 terminate(child);
             }
@@ -120,5 +136,13 @@ mod tests {
 
         assert!(run(&mut command).is_none());
         assert!(started.elapsed().as_secs() < 2);
+    }
+
+    #[test]
+    fn stdout_probe_excludes_diagnostics() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf stdout; printf stderr >&2"]);
+
+        assert_eq!(super::run_stdout(&mut command).as_deref(), Some("stdout"));
     }
 }

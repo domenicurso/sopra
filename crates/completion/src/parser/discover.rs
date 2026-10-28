@@ -211,5 +211,5 @@ fn run_man(request: &HelpRequest) -> Option<String> {
         .env("MANPAGER", "cat")
         .env("PAGER", "cat")
         .stdin(Stdio::null());
-    process::run(&mut command)
+    process::run_stdout(&mut command)
 }
