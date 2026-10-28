@@ -34,8 +34,6 @@ use sopra_completion::{CompletionEngine, CompletionItem};
 pub(crate) enum ExitReason {
     Accepted,
     Interrupted,
-    DelegateUp,
-    DelegateDown,
     DelegateTab,
     DelegateEof,
     ChangeDirectory,

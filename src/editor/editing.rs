@@ -21,8 +21,17 @@ impl EditorState {
             self.request_completion();
             return None;
         }
+        self.finish_history_recall_for(key);
         self.resume_completion_for(key);
-        let reveal_overlay = !matches!(key, Key::Escape | Key::Clear);
+        let reveal_overlay = !matches!(
+            key,
+            Key::Escape
+                | Key::Clear
+                | Key::Up
+                | Key::Down
+                | Key::PreviousSuggestion
+                | Key::NextSuggestion
+        );
         if let Some(result) = self.dispatch_key(key) {
             return Some(result);
         }
@@ -55,24 +64,32 @@ impl EditorState {
         }
     }
 
+    fn complete_tab(&mut self) -> Option<RunResult> {
+        if self.accept_history(Key::Tab) {
+            return None;
+        }
+        if self.selected.is_none() {
+            if !self.arm_first_completion() {
+                return Some(self.result(ExitReason::DelegateTab));
+            }
+            if self.suggestions.len() == 1 && !self.apply_selected() {
+                return Some(self.result(ExitReason::DelegateTab));
+            }
+        } else if !self.apply_selected() {
+            return Some(self.result(ExitReason::DelegateTab));
+        }
+        None
+    }
+
     fn dispatch_key(&mut self, key: Key) -> Option<RunResult> {
         match key {
             Key::Character(character) => self.insert_character(character),
             Key::Mouse(_) | Key::Ignore => {}
             Key::Enter => return Some(self.result(ExitReason::Accepted)),
-            Key::Tab => {
-                if self.selected.is_none() {
-                    if !self.arm_first_completion() {
-                        return Some(self.result(ExitReason::DelegateTab));
-                    }
-                    if self.suggestions.len() == 1 && !self.apply_selected() {
-                        return Some(self.result(ExitReason::DelegateTab));
-                    }
-                } else if !self.apply_selected() {
-                    return Some(self.result(ExitReason::DelegateTab));
-                }
-            }
+            Key::Tab => return self.complete_tab(),
             Key::BackTab => {}
+            Key::PreviousSuggestion => self.cycle_history(-1),
+            Key::NextSuggestion => self.cycle_history(1),
             Key::Backspace => self.backspace(),
             Key::Delete => self.delete(),
             Key::WordBackspace => self.delete_word_back(),

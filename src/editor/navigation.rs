@@ -1,12 +1,15 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{EditorState, ExitReason, RunResult};
+use super::{EditorState, RunResult};
 use crate::input::Key;
 use crate::scene::MAX_OVERLAY_ITEMS;
 use sopra_completion::ranking;
 
 impl EditorState {
     pub(super) fn navigate(&mut self, key: Key) -> Option<RunResult> {
+        if self.navigate_closed_history(key) {
+            return None;
+        }
         if self.accept_history(key) {
             return None;
         }
@@ -18,10 +21,10 @@ impl EditorState {
             Key::Home => self.cursor = 0,
             Key::End => self.cursor = self.buffer.len(),
             Key::Up if !self.move_selection(-1) && !self.move_vertical(-1) => {
-                return Some(self.result(ExitReason::DelegateUp));
+                self.recall_history(-1);
             }
             Key::Down if !self.move_selection(1) && !self.move_vertical(1) => {
-                return Some(self.result(ExitReason::DelegateDown));
+                self.recall_history(1);
             }
             _ => {}
         }
@@ -90,17 +93,27 @@ impl EditorState {
 
     pub(super) fn move_selection(&mut self, direction: i8) -> bool {
         let count = self.suggestions.len();
-        if count == 0 || !self.overlay_visible {
+        if !self.overlay_visible {
             return false;
         }
-        let Some(selected) = self.selected else {
+        if count == 0 {
+            if self.completion.is_some()
+                && !self.completion_suspended
+                && !self.buffer.trim().is_empty()
+                && !self.buffer.contains('\n')
+            {
+                self.completion_armed = true;
+            }
             return false;
-        };
-        self.selected = Some(if direction < 0 {
-            selected.checked_sub(1).unwrap_or(count.saturating_sub(1))
-        } else {
-            (selected + 1) % count.max(1)
+        }
+        let selected = self.selected.or_else(|| self.history_preview_index());
+        self.completion_armed = true;
+        self.selected = Some(match selected {
+            None => 0,
+            Some(selected) if direction < 0 => selected.checked_sub(1).unwrap_or(count - 1),
+            Some(selected) => (selected + 1) % count,
         });
+        self.remember_history_selection();
         self.update_suggestion_scroll();
         true
     }

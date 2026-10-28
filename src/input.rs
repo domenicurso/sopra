@@ -47,6 +47,8 @@ pub(crate) enum Key {
     Right,
     WordLeft,
     WordRight,
+    PreviousSuggestion,
+    NextSuggestion,
     Up,
     Down,
     Home,

@@ -6,8 +6,6 @@ pub(crate) fn write_result(result: &RunResult) -> std::io::Result<()> {
     let action = match result.reason {
         ExitReason::Accepted => "accept",
         ExitReason::Interrupted => "interrupt",
-        ExitReason::DelegateUp => "up",
-        ExitReason::DelegateDown => "down",
         ExitReason::DelegateTab => "tab",
         ExitReason::DelegateEof => "eof",
         ExitReason::ChangeDirectory => "directory",

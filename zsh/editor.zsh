@@ -66,10 +66,7 @@ _sopra_line_init() {
         RPROMPT=$_SOPRA_CONFIG_RPROMPT
     fi
     _sopra_clear_highlights
-    local -i arm_completion=0 suppress_completion=0
-    while _sopra_edit "$arm_completion" "$suppress_completion"; do
-        arm_completion=0
-        suppress_completion=0
+    while _sopra_edit; do
         BUFFER=$_SOPRA_RESULT_BUFFER
         CURSOR=$_SOPRA_RESULT_CURSOR
         _sopra_apply_result || return 0
@@ -101,22 +98,10 @@ _sopra_apply_result() {
                 RPROMPT=$_SOPRA_CONFIG_RPROMPT
             fi
             ;;
-        up|down) _sopra_history "$_SOPRA_RESULT_ACTION" ;;
         tab) zle expand-or-complete ;;
         eof) zle .eof; return 1 ;;
     esac
     return 0
-}
-
-_sopra_history() {
-    local previous_buffer=$BUFFER previous_cursor=$CURSOR previous_history=${HISTNO:-}
-    zle "$1-line-or-history"
-    if [[ $BUFFER == $previous_buffer && $CURSOR == $previous_cursor \
-        && ${HISTNO:-} == $previous_history ]]; then
-        arm_completion=1
-    else
-        suppress_completion=1
-    fi
 }
 
 _sopra_line_finish() {

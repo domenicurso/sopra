@@ -75,18 +75,37 @@ impl EditorState {
             self.suggestion_scroll = 0;
             return;
         }
+        let previous = self
+            .selected
+            .and_then(|index| self.suggestions.get(index))
+            .map(|item| (item.kind, item.insert.clone()));
         self.suggestions = self.history.completions(&self.buffer, self.cursor);
         self.suggestions.extend(ranking::rank_for_buffer(
             &self.completion_source,
             &self.buffer,
             self.cursor,
         ));
+        self.restore_completion_focus(previous);
+    }
+
+    fn restore_completion_focus(
+        &mut self,
+        previous: Option<(sopra_completion::CompletionKind, String)>,
+    ) {
         if self.suggestions.is_empty() {
             self.selected = None;
             self.suggestion_scroll = 0;
         } else if self.completion_armed {
             self.selected = Some(
-                self.selected
+                previous
+                    .filter(|(kind, _)| *kind != sopra_completion::CompletionKind::History)
+                    .and_then(|(kind, insert)| {
+                        self.suggestions
+                            .iter()
+                            .position(|item| item.kind == kind && item.insert == insert)
+                    })
+                    .or_else(|| self.history_choice_index())
+                    .or(self.selected)
                     .unwrap_or_default()
                     .min(self.suggestions.len().saturating_sub(1)),
             );

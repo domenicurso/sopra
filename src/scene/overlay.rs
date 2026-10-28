@@ -74,19 +74,18 @@ impl OverlayElement {
         );
         for (offset, item) in self.items[start..].iter().take(visible).enumerate() {
             let row = inner.top().saturating_add(offset as u16);
-            super::overlay_items::paint_item(
-                canvas,
-                inner,
-                row,
+            super::overlay_items::ItemRow {
                 item,
-                self.selected == Some(start + offset),
-                self.item_queries
+                selected: self.selected == Some(start + offset),
+                query: self
+                    .item_queries
                     .get(start + offset)
                     .map_or("", String::as_str),
-            );
+            }
+            .paint(canvas, inner, row);
         }
         if self.items.len() > visible {
-            super::overlay_items::paint_scrollbar(
+            super::overlay_scrollbar::paint(
                 canvas,
                 Rect::new(
                     self.area.right().saturating_sub(1),

@@ -1,4 +1,4 @@
-use super::History;
+use super::{History, snapshot::Entry};
 use crate::{
     editor::{EditorConfig, EditorState},
     input::{CursorPosition, Key, TerminalSize},
@@ -23,7 +23,13 @@ fn editor(buffer: &str) -> EditorState {
         palette: crate::palette::TerminalPalette::default(),
     });
     editor.set_history(History {
-        entries: vec!["echo café 世界".to_string(), "echo older".to_string()],
+        entries: ["echo café 世界", "echo older"]
+            .into_iter()
+            .map(|command| Entry {
+                command: command.to_string(),
+                started: None,
+            })
+            .collect(),
         ..History::default()
     });
     editor
@@ -66,8 +72,6 @@ fn history_menu_replaces_the_entire_command_without_adding_a_space() {
     let mut editor = editor("echo");
     assert_eq!(editor.visible_items()[0].insert, "echo café 世界");
     editor.handle_key(Key::Tab);
-    assert!(editor.autosuggestion_spans().is_empty());
-    editor.handle_key(Key::Tab);
     assert_eq!(editor.buffer(), "echo café 世界");
 }
 
@@ -89,20 +93,6 @@ fn ghost_text_clips_before_the_right_prompt_and_is_absent_from_transient_frames(
 }
 
 #[test]
-fn history_snapshot_preserves_multiline_entries_and_deduplicates_recent_commands()
--> std::io::Result<()> {
-    let file = std::env::temp_dir().join(format!("sopra-history-{}", std::process::id()));
-    std::fs::write(
-        &file,
-        b"echo recent\0echo recent\0echo old\necho next\0\xff\0\x1b[31m\0",
-    )?;
-    let history = History::read(Some(&file))?;
-    std::fs::remove_file(file)?;
-    assert_eq!(history.entries, ["echo recent", "echo old\necho next"]);
-    Ok(())
-}
-
-#[test]
 fn disabling_inline_hints_keeps_history_completion_available() {
     let mut editor = editor("echo");
     editor.history.enabled = false;
@@ -115,7 +105,10 @@ fn disabling_inline_hints_keeps_history_completion_available() {
 #[test]
 fn configured_styling_does_not_interpret_history_as_markup() {
     let mut editor = editor("echo");
-    editor.history.entries = vec!["echo [red]literal[/]".to_string()];
+    editor.history.entries = vec![Entry {
+        command: "echo [red]literal[/]".to_string(),
+        started: None,
+    }];
     editor.history.format = "[italic]{text}[/]".to_string();
     let spans = editor.autosuggestion_spans();
     assert_eq!(
@@ -127,3 +120,6 @@ fn configured_styling_does_not_interpret_history_as_markup() {
     );
     assert!(spans[0].style.add_modifier.contains(Modifier::ITALIC));
 }
+
+#[path = "history_navigation_tests.rs"]
+mod navigation;

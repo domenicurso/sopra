@@ -42,8 +42,6 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.send_text("echo history-")
         terminal.key("TAB")
         terminal.read(0.2)
-        terminal.key("TAB")
-        terminal.read(0.2)
         assert current_line(terminal) == "test $ echo history-newest", terminal.screen.text()
         assert terminal.screen.column == len("test $ echo history-newest")
         terminal.key("CTRL-U")
@@ -71,6 +69,44 @@ def exercise(zdotdir: str, config_root: str) -> None:
         assert current_line(terminal) == "test $ echo not-a-match", terminal.screen.text()
 
 
+def cycle_and_recall(zdotdir: str, config_root: str) -> None:
+    with TerminalSession(("zsh", "-di"), rows=24, columns=80, cwd=str(ROOT),
+                         env=environment(zdotdir, config_root)) as terminal:
+        terminal.wait_for("test $ ", timeout=20)
+        terminal.send_text("echo history-")
+        terminal.read(0.2)
+        assert "just now" in terminal.screen.text(), terminal.screen.text()
+        terminal.key("DOWN")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo history-older", terminal.screen.text()
+        assert terminal.screen.column == len("test $ echo history-")
+        terminal.key("CTRL-L")
+        terminal.key("UP")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo history-newest", terminal.screen.text()
+        assert "Tab to accept" not in terminal.screen.text(), terminal.screen.text()
+        terminal.key("DOWN")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo history-older", terminal.screen.text()
+        terminal.send(b"\x1b[1;3A")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo history-newest", terminal.screen.text()
+        terminal.key("CTRL-U")
+        terminal.send_text("echo unseen-draft")
+        terminal.key("CTRL-L")
+        terminal.read(0.2)
+        row = terminal.screen.row
+        terminal.key("UP")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo history-newest", terminal.screen.text()
+        assert terminal.screen.row == row, terminal.screen.text()
+        terminal.key("DOWN")
+        terminal.read(0.2)
+        assert current_line(terminal) == "test $ echo unseen-draft", terminal.screen.text()
+        assert terminal.screen.row == row, terminal.screen.text()
+        assert terminal.screen.text().count("test $") == 1, terminal.screen.text()
+
+
 def disabled(zdotdir: str, config_root: str) -> None:
     with TerminalSession(("zsh", "-di"), rows=24, columns=80, cwd=str(ROOT),
                          env=environment(zdotdir, config_root)) as terminal:
@@ -80,7 +116,7 @@ def disabled(zdotdir: str, config_root: str) -> None:
         assert current_line(terminal) == "test $ echo history-", terminal.screen.text()
         terminal.key("RIGHT")
         assert terminal.screen.column == len("test $ echo history-")
-        assert "History" in terminal.screen.text(), terminal.screen.text()
+        assert "just now" in terminal.screen.text(), terminal.screen.text()
 
 
 def main() -> None:
@@ -92,6 +128,7 @@ def main() -> None:
         config = "[prompt]\nleft = 'test $ '\nright = ''\n[editor]\ncursor_animation = false\n"
         with terminal_config(config) as config_root:
             exercise(zdotdir, config_root)
+            cycle_and_recall(zdotdir, config_root)
         with terminal_config(config + "autosuggestions = false\n") as config_root:
             disabled(zdotdir, config_root)
     print("history: ok (live snapshot, inline acceptance, menu, resize, dismissal, configuration)")

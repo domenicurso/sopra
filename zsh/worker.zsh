@@ -60,9 +60,15 @@ _sopra_editor_args() {
 }
 
 _sopra_history_snapshot() {
-    zmodload zsh/parameter
+    zmodload zsh/parameter || return 1
+    local -a events=(${(Onk)history})
+    printf 'H2\0'
+    if (( ${#events} )); then
+        fc -l -t '%s' "$events[-1]" "$events[1]"
+    fi
+    printf '\0'
     local event
-    for event in ${(Onk)history}; do
-        printf '%s\0' "${history[$event]}"
+    for event in $events; do
+        printf '%s\0%s\0' "$event" "${history[$event]}"
     done
 }

@@ -73,6 +73,8 @@ impl Terminal {
         }
         Ok(match sequence.last().copied() {
             Some(b'Z') if prefix == b'[' => Key::BackTab,
+            Some(b'A') if sequence == b"1;3A" => Key::PreviousSuggestion,
+            Some(b'B') if sequence == b"1;3B" => Key::NextSuggestion,
             Some(b'A') => Key::Up,
             Some(b'B') => Key::Down,
             Some(b'C') => Key::Right,

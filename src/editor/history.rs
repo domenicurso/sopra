@@ -1,4 +1,9 @@
-use std::{collections::HashSet, io, path::Path};
+#[path = "history_navigation.rs"]
+mod navigation;
+#[path = "history_snapshot.rs"]
+mod snapshot;
+
+use std::{io, path::Path};
 
 use sopra_completion::{CompletionItem, CompletionKind, CompletionSource};
 
@@ -6,7 +11,9 @@ use super::EditorState;
 use crate::{input::Key, prompt::PromptSpan};
 
 pub(crate) struct History {
-    entries: Vec<String>,
+    entries: Vec<snapshot::Entry>,
+    choice: Option<String>,
+    recall: Option<navigation::Recall>,
     enabled: bool,
     format: String,
     dismissed: Option<String>,
@@ -16,6 +23,8 @@ impl Default for History {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            choice: None,
+            recall: None,
             enabled: true,
             format: "[dim]{text}[/]".to_string(),
             dismissed: None,
@@ -27,20 +36,7 @@ impl History {
     pub(crate) fn read(path: Option<&Path>) -> io::Result<Self> {
         let mut history = Self::default();
         if let Some(path) = path {
-            let bytes = std::fs::read(path)?;
-            let mut seen = HashSet::new();
-            history.entries = bytes
-                .split(|byte| *byte == 0)
-                .filter_map(|record| {
-                    // The editor accepts UTF-8 and printable commands; other records cannot
-                    // be displayed or inserted faithfully and must not become suggestions.
-                    let text = std::str::from_utf8(record).ok()?;
-                    (!text.trim().is_empty()
-                        && !text.chars().any(|c| c.is_control() && c != '\n')
-                        && seen.insert(text.to_string()))
-                    .then(|| text.to_string())
-                })
-                .collect();
+            history.entries = snapshot::read(path)?;
         }
         history.enabled = std::env::var("SOPRA_AUTOSUGGESTIONS").map_or(true, |value| {
             !matches!(value.to_lowercase().as_str(), "0" | "false" | "off" | "no")
@@ -51,9 +47,11 @@ impl History {
         Ok(history)
     }
 
-    fn matching<'a>(&'a self, buffer: &'a str) -> impl Iterator<Item = &'a String> {
+    fn matching<'a>(&'a self, buffer: &'a str) -> impl Iterator<Item = &'a snapshot::Entry> {
         self.entries.iter().filter(move |entry| {
-            !buffer.trim().is_empty() && entry.len() > buffer.len() && entry.starts_with(buffer)
+            !buffer.trim().is_empty()
+                && entry.command.len() > buffer.len()
+                && entry.command.starts_with(buffer)
         })
     }
 
@@ -64,18 +62,26 @@ impl History {
         self.matching(buffer)
             .map(|entry| {
                 let mut item = CompletionItem::with_range(
-                    entry.replace('\n', " ↵ "),
-                    entry.clone(),
-                    Some("History".to_string()),
+                    entry.command.replace('\n', " ↵ "),
+                    entry.command.clone(),
+                    Some(snapshot::description(entry)),
                     CompletionKind::History,
                     0..buffer.len(),
                     CompletionSource::ShellContext,
                 );
                 item.group = Some("History".to_string());
-                item.match_indices = (0..buffer.chars().count()).collect();
+                item.match_indices = buffer.char_indices().map(|(byte, _)| byte).collect();
                 item
             })
             .collect()
+    }
+
+    fn chosen<'a>(&'a self, buffer: &'a str) -> Option<&'a str> {
+        let entries = self.matching(buffer).collect::<Vec<_>>();
+        self.choice
+            .as_deref()
+            .filter(|choice| entries.iter().any(|entry| entry.command == *choice))
+            .or_else(|| entries.first().map(|entry| entry.command.as_str()))
     }
 
     pub(super) fn dismiss(&mut self, buffer: &str) {
@@ -93,16 +99,18 @@ impl EditorState {
         if !self.history.enabled
             || self.cursor != self.buffer.len()
             || self.widgets.active()
-            || self.selected.is_some()
             || self.text_selection.range().is_some()
             || self.history.dismissed.as_deref() == Some(&self.buffer)
         {
             return None;
         }
-        self.history
-            .matching(&self.buffer)
-            .next()
-            .map(|entry| &entry[self.buffer.len()..])
+        let command =
+            if let Some(item) = self.selected.and_then(|index| self.suggestions.get(index)) {
+                (item.kind == CompletionKind::History).then_some(item.insert.as_str())?
+            } else {
+                self.history.chosen(&self.buffer)?
+            };
+        command.strip_prefix(&self.buffer)
     }
 
     pub(crate) fn autosuggestion_spans(&self) -> Vec<PromptSpan> {
@@ -117,12 +125,13 @@ impl EditorState {
     }
 
     pub(super) fn accept_history(&mut self, key: Key) -> bool {
-        if !matches!(key, Key::Right | Key::End | Key::WordRight) {
+        if !matches!(key, Key::Right | Key::End | Key::WordRight | Key::Tab) {
             return false;
         }
         let Some(suffix) = self.history_suffix() else {
             return false;
         };
+        let chosen = format!("{}{}", self.buffer, suffix);
         let count = if key == Key::WordRight {
             let start = suffix.len() - suffix.trim_start().len();
             start
@@ -133,6 +142,7 @@ impl EditorState {
             suffix.len()
         };
         let accepted = suffix[..count].to_string();
+        self.history.choice = Some(chosen);
         self.buffer.push_str(&accepted);
         self.cursor = self.buffer.len();
         self.reset_selection();

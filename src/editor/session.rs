@@ -143,10 +143,9 @@ impl EditorState {
             ExitReason::ChangeDirectory => {
                 (crate::input::CursorPosition { row: 0, column: 0 }, None)
             }
-            ExitReason::DelegateUp
-            | ExitReason::DelegateDown
-            | ExitReason::DelegateTab
-            | ExitReason::DelegateEof => (self.restore_position(size), None),
+            ExitReason::DelegateTab | ExitReason::DelegateEof => {
+                (self.restore_position(size), None)
+            }
         };
         renderer.finish(terminal, restore_position, replacement)
     }

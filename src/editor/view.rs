@@ -51,7 +51,7 @@ impl EditorState {
     }
 
     pub(crate) fn selected_index(&self) -> Option<usize> {
-        self.selected
+        self.selected.or_else(|| self.history_preview_index())
     }
 
     pub(crate) const fn suggestion_viewport_start(&self) -> usize {
@@ -85,14 +85,14 @@ impl EditorState {
     pub(crate) fn completion_footer(&self) -> String {
         format!(
             "{}/{}; {}",
-            self.selected.map_or(0, |index| index + 1),
+            self.selected_index().map_or(0, |index| index + 1),
             self.suggestions.len(),
             completion_elapsed(self.completion_elapsed)
         )
     }
 
     pub(crate) fn completion_hint(&self) -> &'static str {
-        if self.selected.is_some() || self.suggestions.len() == 1 {
+        if self.selected_index().is_some() || self.suggestions.len() == 1 {
             "Tab to accept"
         } else {
             "Tab to focus"
