@@ -1,5 +1,7 @@
 _sopra_edit() {
     emulate -L zsh
+    # Prompt markup such as "$[/]" must not become Zsh arithmetic expansion.
+    unsetopt PROMPT_SUBST
     local raw expanded_prompt expanded_rprompt expanded_transient
     local autosuggestion_format='[dim]{text}[/]'
     local metadata_format='[dim][italic]{text}[/][/]'

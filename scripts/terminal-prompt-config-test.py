@@ -18,7 +18,7 @@ def exercise_config(root: Path, config_root: Path) -> None:
 completion = false
 cursor_animation = false
 [prompt]
-left = "[cyan]{user}[/] $ "
+left = "[cyan]{user}[/] [dim]$[/] "
 right = "[if status]FAIL={status} [/][if duration]TIME={duration} [/]{clock}"
 transient = "done> "
 [widgets.clock]
@@ -26,7 +26,7 @@ format = "%H[dim]:[/]%M"
 ''')
     shell_dir = config_root / "zsh"
     shell_dir.mkdir()
-    (shell_dir / ".zshrc").write_text("record_status() { print -r -- $? >> $HOOK_LOG; }\nprecmd_functions=(record_status)\nsource $SOPRA_REPO_ROOT/zsh/editor.zsh\n")
+    (shell_dir / ".zshrc").write_text("setopt PROMPT_SUBST\nrecord_status() { print -r -- $? >> $HOOK_LOG; }\nprecmd_functions=(record_status)\nsource $SOPRA_REPO_ROOT/zsh/editor.zsh\n")
     environment = {
         "HOOK_LOG": str(config_root / "hook.log"),
         "XDG_CONFIG_HOME": str(config_root), "SOPRA_REPO_ROOT": str(root),
@@ -37,6 +37,7 @@ format = "%H[dim]:[/]%M"
     with TerminalSession(command, rows=20, columns=100, cwd=str(root), env=environment) as terminal:
         terminal.wait_for(" $ ", timeout=20)
         terminal.read(0.4)
+        assert "bad math expression" not in terminal.screen.text(), terminal.screen.lines()
         assert re.search(r"\d\d:\d\d", terminal.screen.text()), terminal.screen.lines()
         terminal.send_text("false")
         terminal.key("ENTER")
