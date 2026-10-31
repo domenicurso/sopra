@@ -1,3 +1,9 @@
+_sopra_hide_native_prompt() {
+    # ZLE paints before zle-line-init, while the Rust editor is still starting.
+    PROMPT=''
+    RPROMPT=''
+}
+
 _sopra_prompt_defaults() {
     if [[ -z ${_SOPRA_CONFIG_PROMPT+x} ]]; then
         typeset -g _SOPRA_CONFIG_PROMPT=$'[bold][red]{user}[/][/] [dim]in[/] [bold][cyan]{path}[/][/]\n[dim]$[/] '

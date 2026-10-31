@@ -125,3 +125,5 @@ _sopra_line_finish() {
 
 zle -N zle-line-init _sopra_line_init
 zle -N zle-line-finish _sopra_line_finish
+_sopra_hide_native_prompt
+precmd_functions=(${precmd_functions:#_sopra_hide_native_prompt} _sopra_hide_native_prompt)
