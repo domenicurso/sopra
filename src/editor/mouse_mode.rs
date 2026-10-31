@@ -9,6 +9,11 @@ impl EditorState {
         terminal: &mut Terminal,
     ) -> io::Result<bool> {
         let enabled = match key {
+            Action::SearchHistory => {
+                self.set_mouse_editing(false, terminal)?;
+                return Ok(false);
+            }
+            Action::ToggleMouseEditing if self.searching_history() => return Ok(true),
             Action::ToggleMouseEditing => !self.mouse_editing,
             Action::Escape if self.mouse_editing => false,
             Action::Enter => {

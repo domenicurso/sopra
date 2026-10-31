@@ -69,8 +69,10 @@ fn right_end_and_word_right_accept_history_without_splitting_unicode() {
 }
 
 #[test]
-fn history_menu_replaces_the_entire_command_without_adding_a_space() {
+fn history_search_replaces_the_entire_command_without_adding_a_space() {
     let mut editor = editor("echo");
+    assert!(editor.visible_items().is_empty());
+    editor.handle_key(Action::SearchHistory);
     assert_eq!(editor.visible_items()[0].insert, "echo café 世界");
     editor.handle_key(Action::Tab);
     assert_eq!(editor.buffer(), "echo café 世界");
@@ -94,11 +96,14 @@ fn ghost_text_clips_before_the_right_prompt_and_is_absent_from_transient_frames(
 }
 
 #[test]
-fn disabling_inline_hints_keeps_history_completion_available() {
+fn disabling_inline_hints_keeps_explicit_history_search_available() {
     let mut editor = editor("echo");
     editor.history.enabled = false;
     assert!(editor.autosuggestion_spans().is_empty());
+    assert!(editor.visible_items().is_empty());
+    editor.handle_key(Action::SearchHistory);
     assert!(!editor.visible_items().is_empty());
+    editor.handle_key(Action::Escape);
     editor.handle_key(Action::Right);
     assert_eq!(editor.buffer(), "echo");
 }
@@ -181,3 +186,6 @@ fn metadata_style_is_configurable_independently_of_the_suggestion() {
             .contains(Modifier::DIM)
     );
 }
+
+#[path = "history_search_tests.rs"]
+mod search;

@@ -1,5 +1,4 @@
 use super::super::EditorState;
-use sopra_completion::CompletionKind;
 
 pub(super) struct Recall {
     index: usize,
@@ -7,13 +6,6 @@ pub(super) struct Recall {
 }
 
 impl EditorState {
-    pub(in crate::editor) fn history_choice_index(&self) -> Option<usize> {
-        self.completions.items.iter().position(|item| {
-            item.kind == CompletionKind::History
-                && Some(&item.insert) == self.history.choice.as_ref()
-        })
-    }
-
     pub(in crate::editor) fn navigate_closed_history(
         &mut self,
         key: crate::actions::Action,
@@ -79,14 +71,6 @@ impl EditorState {
         }
     }
 
-    pub(in crate::editor) fn history_preview_index(&self) -> Option<usize> {
-        let suffix = self.history_suffix()?;
-        self.completions.items.iter().position(|item| {
-            item.kind == CompletionKind::History
-                && item.insert.strip_prefix(&self.buffer) == Some(suffix)
-        })
-    }
-
     pub(in crate::editor) fn cycle_history(&mut self, direction: i8) {
         if self.cursor != self.buffer.len() || self.widgets.active() {
             return;
@@ -107,21 +91,6 @@ impl EditorState {
         };
         self.history.choice = Some(matches[index].command.clone());
         self.history.dismissed = None;
-        self.completions.focus.select(self.history_choice_index());
-        self.completions
-            .focus
-            .set_armed(self.completions.focus.selected().is_some());
-    }
-
-    pub(in crate::editor) fn remember_history_selection(&mut self) {
-        if let Some(item) = self
-            .completions
-            .focus
-            .selected()
-            .and_then(|index| self.completions.items.get(index))
-            .filter(|item| item.kind == CompletionKind::History)
-        {
-            self.history.choice = Some(item.insert.clone());
-        }
+        self.disarm_completion();
     }
 }

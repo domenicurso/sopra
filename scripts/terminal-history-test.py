@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from terminal_config import terminal_config
@@ -23,6 +24,13 @@ def current_line(terminal: TerminalSession) -> str:
     return re.sub(r"  \d+s ago$", "  recent", lines[terminal.screen.row].rstrip())
 
 
+def wait_for_cursor(terminal: TerminalSession, column: int) -> None:
+    deadline = time.monotonic() + 3.0
+    while terminal.screen.column != column and time.monotonic() < deadline:
+        terminal.read(0.05)
+    assert terminal.screen.column == column, (terminal.screen.column, terminal.screen.text())
+
+
 def exercise(zdotdir: str, config_root: str) -> None:
     with TerminalSession(("zsh", "-di"), rows=24, columns=80, cwd=str(ROOT),
                          env=environment(zdotdir, config_root)) as terminal:
@@ -30,7 +38,7 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.send_text("echo history-")
         terminal.read(0.3)
         assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
-        assert terminal.screen.column == len("test $ echo history-")
+        wait_for_cursor(terminal, len("test $ echo history-"))
         terminal.resize(24, 25)
         terminal.read(0.2)
         terminal.resize(24, 80)
@@ -41,10 +49,11 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.read(0.4)
         assert "history-newest" in terminal.screen.lines(), terminal.screen.text()
         terminal.send_text("echo history-")
-        terminal.key("TAB")
+        terminal.send(b"\x12")
+        terminal.key("ENTER")
         terminal.read(0.2)
         assert current_line(terminal) == "test $ echo history-newest", terminal.screen.text()
-        assert terminal.screen.column == len("test $ echo history-newest")
+        wait_for_cursor(terminal, len("test $ echo history-newest"))
         terminal.key("CTRL-U")
         terminal.send_text("echo history-")
         terminal.key("ESC")
@@ -56,7 +65,7 @@ def exercise(zdotdir: str, config_root: str) -> None:
         terminal.send_text("echo history-o")
         terminal.key("END")
         terminal.read(0.2)
-        assert terminal.screen.column == len("test $ echo history-older")
+        wait_for_cursor(terminal, len("test $ echo history-older"))
         terminal.key("CTRL-U")
         terminal.send_text("echo session-only")
         terminal.key("ENTER")
@@ -80,8 +89,7 @@ def cycle_and_recall(zdotdir: str, config_root: str) -> None:
         terminal.key("DOWN")
         terminal.read(0.2)
         assert current_line(terminal) == "test $ echo history-older  recent", terminal.screen.text()
-        assert terminal.screen.column == len("test $ echo history-")
-        terminal.key("CTRL-L")
+        wait_for_cursor(terminal, len("test $ echo history-"))
         terminal.key("UP")
         terminal.read(0.2)
         assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
@@ -94,7 +102,6 @@ def cycle_and_recall(zdotdir: str, config_root: str) -> None:
         assert current_line(terminal) == "test $ echo history-newest  recent", terminal.screen.text()
         terminal.key("CTRL-U")
         terminal.send_text("echo unseen-draft")
-        terminal.key("CTRL-L")
         terminal.read(0.2)
         row = terminal.screen.row
         terminal.key("UP")
@@ -116,7 +123,10 @@ def disabled(zdotdir: str, config_root: str) -> None:
         terminal.read(0.2)
         assert current_line(terminal) == "test $ echo history-", terminal.screen.text()
         terminal.key("RIGHT")
-        assert terminal.screen.column == len("test $ echo history-")
+        wait_for_cursor(terminal, len("test $ echo history-"))
+        terminal.send(b"\x12")
+        terminal.read(0.2)
+        assert "History:" in terminal.screen.text(), terminal.screen.text()
         assert re.search(r"\d+s ago", terminal.screen.text()), terminal.screen.text()
 
 

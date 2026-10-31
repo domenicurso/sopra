@@ -29,6 +29,7 @@ pub(crate) enum Action {
     Clear,
     PromptWidgets,
     ToggleMouseEditing,
+    SearchHistory,
     Eof,
 }
 
@@ -48,6 +49,7 @@ pub(crate) fn resolve(key: Key) -> Action {
             'l' => Action::Clear,
             'n' => Action::Down,
             'p' => Action::Up,
+            'r' => Action::SearchHistory,
             'u' => Action::KillToStart,
             'w' => Action::WordBackspace,
             'y' => Action::Yank,
@@ -86,6 +88,7 @@ mod tests {
     fn physical_controls_resolve_without_terminal_feature_knowledge() {
         assert_eq!(resolve(Key::Control('g')), Action::ToggleMouseEditing);
         assert_eq!(resolve(Key::Alt('g')), Action::PromptWidgets);
+        assert_eq!(resolve(Key::Control('r')), Action::SearchHistory);
         assert_eq!(resolve(Key::Alt('f')), Action::WordRight);
         assert_eq!(resolve(Key::Control('z')), Action::Ignore);
     }

@@ -29,7 +29,11 @@ painting, so intermediate dimensions do not continually invalidate cursor replie
 
 `sopra-shell-context` owns environment snapshots and command discovery. Syntax
 highlighting and completion use that boundary directly. Completion owns discovery
-of command help and its graph cache, filesystem candidates, and ranking. Queued
+of command help and its graph cache, filesystem candidates, and ranking. The
+editor uses the same Zsh history snapshot for inline suggestions, explicit Ctrl+R
+search, and recency tie-breaking among valid completion candidates. Search owns
+a saved draft and temporarily displays its query in the command input; it ignores
+asynchronous contextual completion responses and restores the draft on cancellation. Queued
 help requests capture their environment so subsequent shell commands cannot change
 an in-flight subprocess's inputs. Generation boundaries reject results from an
 older edit while retaining reusable command graphs.

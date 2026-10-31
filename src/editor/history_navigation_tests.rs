@@ -1,21 +1,18 @@
 use super::*;
 
 #[test]
-fn history_cycling_and_menu_navigation_share_the_same_command() {
+fn inline_cycling_does_not_add_history_to_completions() {
     let mut editor = editor("echo");
-    assert_eq!(editor.selected_index(), Some(0));
+    assert_eq!(editor.selected_index(), None);
     editor.hide_overlay();
     editor.handle_key(Action::Down);
     assert!(!editor.overlay_visible());
     assert_eq!(editor.autosuggestion_spans()[0].text, " older");
-    assert_eq!(editor.selected_index(), Some(1));
+    assert!(editor.visible_items().is_empty());
     editor.handle_key(Action::Up);
     assert_eq!(editor.autosuggestion_spans()[0].text, " café 世界");
-    editor.show_overlay();
-    editor.handle_key(Action::Down);
-    assert_eq!(editor.autosuggestion_spans()[0].text, " older");
-    editor.handle_key(Action::Tab);
-    assert_eq!(editor.buffer(), "echo older");
+    editor.handle_key(Action::End);
+    assert_eq!(editor.buffer(), "echo café 世界");
 }
 
 #[test]
@@ -42,14 +39,12 @@ fn contextual_completion_focus_suppresses_history_and_refresh_preserves_identity
         sopra_completion::CompletionKind::Command,
     )]);
     editor.handle_key(Action::Down);
-    editor.handle_key(Action::Down);
     assert!(editor.autosuggestion_spans().is_empty());
     editor.refresh_suggestions();
-    assert_eq!(editor.selected_index(), Some(2));
-    editor.handle_key(Action::Up);
-    assert_eq!(editor.autosuggestion_spans()[0].text, " older");
+    assert_eq!(editor.selected_index(), Some(0));
     editor.set_completion_source_for_test(Vec::new());
-    assert_eq!(editor.selected_index(), Some(1));
+    assert_eq!(editor.selected_index(), None);
+    assert_eq!(editor.autosuggestion_spans()[0].text, " café 世界");
 }
 
 #[test]
@@ -67,8 +62,8 @@ fn accepting_one_word_preserves_the_chosen_history_match() {
     editor.handle_key(Action::WordRight);
     assert_eq!(editor.buffer(), "echo same");
     assert_eq!(editor.autosuggestion_spans()[0].text, " older");
-    assert_eq!(editor.selected_index(), Some(1));
-    editor.handle_key(Action::Tab);
+    assert_eq!(editor.selected_index(), None);
+    editor.handle_key(Action::End);
     assert_eq!(editor.buffer(), "echo same older");
 }
 
@@ -83,4 +78,21 @@ fn inline_cycling_works_when_completion_is_disabled_and_no_menu_is_rendered() {
     editor.handle_key(Action::Down);
     assert_eq!(editor.buffer(), "echo");
     assert_eq!(editor.autosuggestion_spans()[0].text, " older");
+}
+
+#[test]
+fn explicit_inline_cycling_releases_contextual_completion_focus() {
+    let mut editor = editor("echo");
+    editor.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
+        "echo-other",
+        "",
+        "echo-other",
+        sopra_completion::CompletionKind::Command,
+    )]);
+    editor.handle_key(Action::Down);
+    assert!(editor.autosuggestion_spans().is_empty());
+    editor.handle_key(Action::NextSuggestion);
+    assert_eq!(editor.selected_index(), None);
+    assert_eq!(editor.autosuggestion_spans()[0].text, " older");
+    assert_eq!(editor.visible_items().len(), 1);
 }

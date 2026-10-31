@@ -13,10 +13,12 @@ pub(super) fn for_editor(
     size: TerminalSize,
     row: u16,
 ) -> Option<OverlayLayout> {
-    if !editor.overlay_visible() || editor.visible_items().is_empty() {
+    if !editor.overlay_visible()
+        || (editor.visible_items().is_empty() && !editor.searching_history())
+    {
         return None;
     }
-    let requested = editor.visible_items().len().min(MAX_OVERLAY_ITEMS) as u16 + 2;
+    let requested = editor.visible_items().len().clamp(1, MAX_OVERLAY_ITEMS) as u16 + 2;
     let below = size.rows.saturating_sub(row.saturating_add(1));
     let above = row.saturating_sub(1);
     let (above, height) = placement(requested, below, above)?;

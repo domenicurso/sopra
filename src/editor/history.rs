@@ -1,17 +1,20 @@
+#[path = "history_affinity.rs"]
+mod affinity;
 #[path = "history_navigation.rs"]
 mod navigation;
+#[path = "history_search.rs"]
+mod search;
 #[path = "history_snapshot.rs"]
 mod snapshot;
 
 use std::{io, path::Path};
-
-use sopra_completion::{CompletionItem, CompletionKind, CompletionSource};
 
 use super::EditorState;
 use crate::{actions::Action, prompt::PromptSpan};
 
 pub(crate) struct History {
     entries: Vec<snapshot::Entry>,
+    search: Option<search::Search>,
     choice: Option<String>,
     recall: Option<navigation::Recall>,
     enabled: bool,
@@ -24,6 +27,7 @@ impl Default for History {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
+            search: None,
             choice: None,
             recall: None,
             enabled: true,
@@ -41,6 +45,7 @@ impl History {
         config: &crate::config::Config,
     ) -> io::Result<()> {
         self.entries = path.map(snapshot::read).transpose()?.unwrap_or_default();
+        self.search = None;
         self.choice = None;
         self.recall = None;
         self.dismissed = None;
@@ -56,27 +61,6 @@ impl History {
                 && entry.command.len() > buffer.len()
                 && entry.command.starts_with(buffer)
         })
-    }
-
-    pub(super) fn completions(&self, buffer: &str, cursor: usize) -> Vec<CompletionItem> {
-        if cursor != buffer.len() {
-            return Vec::new();
-        }
-        self.matching(buffer)
-            .map(|entry| {
-                let mut item = CompletionItem::with_range(
-                    entry.command.replace('\n', " ↵ "),
-                    entry.command.clone(),
-                    Some(snapshot::description(entry)),
-                    CompletionKind::History,
-                    0..buffer.len(),
-                    CompletionSource::ShellContext,
-                );
-                item.group = Some("History".to_string());
-                item.match_indices = buffer.char_indices().map(|(byte, _)| byte).collect();
-                item
-            })
-            .collect()
     }
 
     fn chosen<'a>(&'a self, buffer: &'a str) -> Option<&'a str> {
@@ -102,21 +86,16 @@ impl EditorState {
         if !self.history.enabled
             || self.cursor != self.buffer.len()
             || self.widgets.active()
+            || self.searching_history()
             || self.text_selection.range().is_some()
             || self.history.dismissed.as_deref() == Some(&self.buffer)
         {
             return None;
         }
-        let command = if let Some(item) = self
-            .completions
-            .focus
-            .selected()
-            .and_then(|index| self.completions.items.get(index))
-        {
-            (item.kind == CompletionKind::History).then_some(item.insert.as_str())?
-        } else {
-            self.history.chosen(&self.buffer)?
-        };
+        if self.overlay_visible() && self.completions.focus.selected().is_some() {
+            return None;
+        }
+        let command = self.history.chosen(&self.buffer)?;
         command.strip_prefix(&self.buffer)
     }
 
@@ -141,10 +120,7 @@ impl EditorState {
     }
 
     pub(super) fn accept_history(&mut self, key: Action) -> bool {
-        if !matches!(
-            key,
-            Action::Right | Action::End | Action::WordRight | Action::Tab
-        ) {
+        if !matches!(key, Action::Right | Action::End | Action::WordRight) {
             return false;
         }
         let Some(suffix) = self.history_suffix() else {

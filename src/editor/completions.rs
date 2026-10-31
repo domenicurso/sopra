@@ -4,6 +4,10 @@ use super::EditorState;
 
 impl EditorState {
     pub(super) fn request_completion(&mut self) {
+        if self.searching_history() {
+            self.refresh_history_search();
+            return;
+        }
         self.syntax = if self.syntax_enabled {
             crate::syntax::highlight_at(&self.buffer, &self.cwd, self.cursor)
         } else {
@@ -48,7 +52,7 @@ impl EditorState {
     }
 
     fn apply_completion(&mut self, response: sopra_completion::CompletionResponse) {
-        if self.completions.suspended() {
+        if self.completions.suspended() || self.searching_history() {
             return;
         }
         let cursor_chars = self.buffer[..self.cursor].chars().count();
@@ -82,12 +86,10 @@ impl EditorState {
             .selected()
             .and_then(|index| self.completions.items.get(index))
             .map(|item| (item.kind, item.insert.clone()));
-        self.completions.items = self.history.completions(&self.buffer, self.cursor);
-        self.completions.items.extend(ranking::rank_for_buffer(
-            &self.completions.source,
-            &self.buffer,
-            self.cursor,
-        ));
+        self.completions.items =
+            ranking::rank_for_buffer(&self.completions.source, &self.buffer, self.cursor);
+        self.history
+            .rank_contextual(&mut self.completions.items, &self.buffer, self.cursor);
         self.restore_completion_focus(previous);
     }
 
@@ -101,14 +103,12 @@ impl EditorState {
         } else if self.completions.focus.armed() {
             self.completions.focus.select(Some(
                 previous
-                    .filter(|(kind, _)| *kind != sopra_completion::CompletionKind::History)
                     .and_then(|(kind, insert)| {
                         self.completions
                             .items
                             .iter()
                             .position(|item| item.kind == kind && item.insert == insert)
                     })
-                    .or_else(|| self.history_choice_index())
                     .or(self.completions.focus.selected())
                     .unwrap_or_default()
                     .min(self.completions.items.len().saturating_sub(1)),
@@ -132,7 +132,10 @@ impl EditorState {
     }
 
     pub(super) fn resume_completion(&mut self) {
-        if self.completions.engine.is_none() || !self.completions.suspended() {
+        if self.searching_history()
+            || self.completions.engine.is_none()
+            || !self.completions.suspended()
+        {
             return;
         }
         self.completions.set_suspended(false);

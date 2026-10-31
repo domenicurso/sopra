@@ -7,6 +7,9 @@ impl EditorState {
         if key == Action::Ignore {
             return None;
         }
+        if self.history_search_input(key) {
+            return None;
+        }
         match self.widgets.handle(key) {
             sopra::Action::Consumed => return None,
             sopra::Action::ChangeDirectory(directory) => {
@@ -65,9 +68,6 @@ impl EditorState {
     }
 
     fn complete_tab(&mut self) -> Option<RunResult> {
-        if self.accept_history(Action::Tab) {
-            return None;
-        }
         if self.completions.focus.selected().is_none() {
             if !self.arm_first_completion() {
                 return Some(self.result(ExitReason::DelegateTab));
@@ -105,7 +105,7 @@ impl EditorState {
             | Action::Up
             | Action::Down => return self.navigate(key),
             Action::Clear => self.toggle_overlay(),
-            Action::PromptWidgets | Action::ToggleMouseEditing => {}
+            Action::PromptWidgets | Action::ToggleMouseEditing | Action::SearchHistory => {}
             Action::Cancel => return Some(self.result(ExitReason::Interrupted)),
             Action::Escape => {
                 self.history.dismiss(&self.buffer);

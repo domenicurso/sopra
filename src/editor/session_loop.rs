@@ -74,13 +74,15 @@ impl Loop {
             }
             return Ok(None);
         }
-        Ok(if key == Action::Enter && !editor.widgets.active() {
-            syntax.request(&editor.buffer)?;
-            None
-        } else {
-            syntax.cancel();
-            editor.handle_input(key, terminal)?
-        })
+        Ok(
+            if key == Action::Enter && !editor.widgets.active() && !editor.searching_history() {
+                syntax.request(&editor.buffer)?;
+                None
+            } else {
+                syntax.cancel();
+                editor.handle_input(key, terminal)?
+            },
+        )
     }
 
     fn mouse_input(

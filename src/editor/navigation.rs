@@ -106,18 +106,13 @@ impl EditorState {
             }
             return false;
         }
-        let selected = self
-            .completions
-            .focus
-            .selected()
-            .or_else(|| self.history_preview_index());
+        let selected = self.completions.focus.selected();
         self.completions.focus.set_armed(true);
         self.completions.focus.select(Some(match selected {
             None => 0,
             Some(selected) if direction < 0 => selected.checked_sub(1).unwrap_or(count - 1),
             Some(selected) => (selected + 1) % count,
         }));
-        self.remember_history_selection();
         self.update_suggestion_scroll();
         true
     }

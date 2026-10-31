@@ -1,6 +1,7 @@
 mod clipboard;
 mod commands;
 mod completion_state;
+mod completion_view;
 mod completions;
 mod editing;
 mod history;
