@@ -103,3 +103,19 @@ fn help_response_hydrates_nested_command_before_replaying_completion() {
     let _ = fs::remove_file(path);
     assert!(found);
 }
+
+#[test]
+fn edit_generations_advance_without_restarting_the_engine() {
+    // Worker creation is an invariant of this integration fixture.
+    let mut engine = CompletionEngine::new().expect("completion worker");
+    engine.request("ec", 2, std::path::Path::new("."));
+    let old = engine
+        .poll()
+        .map(|result| result.generation)
+        .max()
+        .unwrap_or_default();
+    let floor = engine.begin_edit();
+    assert!(floor > old);
+    engine.request("ec", 2, std::path::Path::new("."));
+    assert!(engine.poll().all(|result| result.generation > floor));
+}

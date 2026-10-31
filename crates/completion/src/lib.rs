@@ -1,5 +1,3 @@
-mod command_catalog;
-mod command_discovery;
 mod commands;
 mod engine;
 mod filesystem;
@@ -14,12 +12,12 @@ mod shell;
 mod token;
 mod variables;
 
-pub use commands::command_available;
 pub use model::Request;
 pub use model::{
     Completion, CompletionItem, CompletionKind, CompletionResponse, CompletionResponseSource,
     CompletionSource,
 };
+pub use sopra_shell_context::command_available;
 
 pub fn dump_command_graph(command: &str, cwd: &Path) -> Result<String, String> {
     parser::render_command_graph(command, cwd)
@@ -71,6 +69,14 @@ impl CompletionEngine {
             generation: 0,
             local: engine::LocalCompletion::new(),
         })
+    }
+
+    /// Start a new edit without discarding discovered command graphs.
+    pub fn begin_edit(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.help_latest.clear();
+        self.help_prefetch.clear();
+        self.generation
     }
 
     pub fn request(&mut self, line: &str, cursor: usize, cwd: &Path) {

@@ -7,83 +7,27 @@ use std::{
 
 use super::command_discovery::{add_exported_commands, add_named_commands, add_path_commands};
 
-const BUILTINS: &[&str] = &[
-    "alias",
-    "autoload",
-    "bg",
-    "bindkey",
-    "break",
-    "builtin",
-    "cd",
-    "command",
-    "compadd",
-    "continue",
-    "dirs",
-    "echo",
-    "eval",
-    "exec",
-    "exit",
-    "export",
-    "fc",
-    "fg",
-    "functions",
-    "getopts",
-    "hash",
-    "history",
-    "jobs",
-    "kill",
-    "let",
-    "local",
-    "popd",
-    "print",
-    "printf",
-    "pushd",
-    "pwd",
-    "read",
-    "rehash",
-    "return",
-    "set",
-    "shift",
-    "source",
-    "suspend",
-    "test",
-    "times",
-    "trap",
-    "true",
-    "type",
-    "typeset",
-    "ulimit",
-    "umask",
-    "unalias",
-    "unset",
-    "wait",
-    "whence",
-    "which",
-    "zle",
-    "zmodload",
-];
-
 #[derive(Debug, Clone)]
-pub(crate) struct CommandEntry {
+pub struct CommandEntry {
     pub(crate) name: String,
     pub(crate) detail: &'static str,
     pub(crate) location: Option<PathBuf>,
 }
 
 impl CommandEntry {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub(crate) fn detail(&self) -> &str {
+    pub fn detail(&self) -> &str {
         self.detail
     }
 
-    pub(crate) fn location(&self) -> Option<&Path> {
+    pub fn location(&self) -> Option<&Path> {
         self.location.as_deref()
     }
 
-    pub(crate) fn visible(&self, query: &str) -> bool {
+    pub fn visible(&self, query: &str) -> bool {
         if self.name.starts_with('.') {
             return query.starts_with('.') || query.starts_with(&self.name);
         }
@@ -106,15 +50,21 @@ impl CommandEntry {
 }
 
 struct Catalog {
-    inputs: [Option<OsString>; 4],
+    inputs: [Option<OsString>; 5],
     entries: Arc<[CommandEntry]>,
 }
 
 static CATALOG: RwLock<Option<Catalog>> = RwLock::new(None);
 
-pub(crate) fn catalog() -> Arc<[CommandEntry]> {
-    let inputs = ["PATH", "SOPRA_COMMANDS", "SOPRA_ALIASES", "SOPRA_FUNCTIONS"]
-        .map(sopra_shell_context::var_os);
+pub fn catalog() -> Arc<[CommandEntry]> {
+    let inputs = [
+        "PATH",
+        "SOPRA_COMMANDS",
+        "SOPRA_BUILTINS",
+        "SOPRA_ALIASES",
+        "SOPRA_FUNCTIONS",
+    ]
+    .map(crate::var_os);
     let mut catalog = CATALOG.write().unwrap_or_else(|error| error.into_inner());
     if let Some(catalog) = catalog.as_ref().filter(|catalog| catalog.inputs == inputs) {
         return Arc::clone(&catalog.entries);
@@ -129,18 +79,18 @@ pub(crate) fn catalog() -> Arc<[CommandEntry]> {
 
 fn build() -> Vec<CommandEntry> {
     let mut commands = BTreeMap::new();
-    for name in BUILTINS {
+    for name in super::command_discovery::builtins() {
         commands.insert(
-            (*name).to_string(),
+            name.clone(),
             CommandEntry {
-                name: (*name).to_string(),
+                name: name.clone(),
                 detail: "builtin",
                 location: None,
             },
         );
     }
     if !add_exported_commands(&mut commands)
-        && let Some(path) = sopra_shell_context::var_os("PATH")
+        && let Some(path) = crate::var_os("PATH")
     {
         for directory in std::env::split_paths(&path) {
             add_path_commands(&mut commands, &directory);

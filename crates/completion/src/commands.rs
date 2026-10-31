@@ -1,10 +1,11 @@
 use std::ops::Range;
 
-use super::command_catalog::{CommandEntry, catalog};
 use super::{CompletionItem, CompletionKind, CompletionSource};
+use sopra_shell_context::{CommandEntry, catalog};
 
-pub use super::command_discovery::command_available;
-pub(crate) use super::command_discovery::resolve;
+#[cfg(test)]
+use sopra_shell_context::command_available;
+pub(crate) use sopra_shell_context::resolve;
 
 pub(super) fn complete(query: &str, replace: Range<usize>) -> Vec<CompletionItem> {
     catalog()

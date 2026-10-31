@@ -33,12 +33,15 @@ impl LocalCompletion {
         if let Some(items) = variables::complete(request, request.replace.clone(), token) {
             return handled(items, false, None);
         }
-        if is_path_context(&request.line[..start], token) {
+        if is_path_context(token) {
             return handled(self.filesystem.complete(request, token), false, None);
         }
         if let Some(invocation) = parser::invocation(request)
-            && let Some(result) = self.complete_command(request, &invocation)
+            && let Some(mut result) = self.complete_command(request, &invocation)
         {
+            if result.items.is_empty() && !token.starts_with('-') {
+                result.items = self.filesystem.complete(request, token);
+            }
             return result;
         }
         if crate::shell::command_position(&request.line, cursor) {
@@ -142,37 +145,8 @@ fn handled(
     }
 }
 
-fn is_path_context(prefix: &str, token: &str) -> bool {
-    if token.starts_with(['/', '.', '~']) || token.contains('/') {
-        return true;
-    }
-    let command = prefix
-        .rsplit(['|', '&', ';', '\n'])
-        .next()
-        .and_then(|segment| segment.split_whitespace().next())
-        .unwrap_or_default();
-    matches!(
-        command,
-        "cd" | "chdir"
-            | "pushd"
-            | "dirs"
-            | "ls"
-            | "la"
-            | "ll"
-            | "cat"
-            | "less"
-            | "more"
-            | "head"
-            | "tail"
-            | "rm"
-            | "mv"
-            | "cp"
-            | "open"
-            | "code"
-            | "vim"
-            | "nvim"
-            | "nano"
-    )
+fn is_path_context(token: &str) -> bool {
+    token.starts_with(['/', '.', '~']) || token.contains('/')
 }
 
 #[cfg(test)]

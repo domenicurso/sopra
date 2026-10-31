@@ -1,4 +1,10 @@
-//! Shell snapshots are shared explicitly; the worker never mutates process env.
+mod snapshot;
+pub use snapshot::Snapshot;
+mod command_catalog;
+mod command_discovery;
+pub use command_catalog::{CommandEntry, catalog};
+pub use command_discovery::{command_available, resolve};
+// Shell snapshots never mutate the worker process environment.
 use std::{collections::BTreeMap, env::VarError, ffi::OsString, sync::RwLock};
 
 static SHELL: RwLock<Option<BTreeMap<OsString, OsString>>> = RwLock::new(None);
@@ -8,6 +14,13 @@ pub fn replace(values: BTreeMap<OsString, OsString>) {
 }
 
 pub fn vars_os() -> BTreeMap<OsString, OsString> {
+    if let Some(values) = snapshot::current() {
+        return values;
+    }
+    process_snapshot()
+}
+
+fn process_snapshot() -> BTreeMap<OsString, OsString> {
     SHELL
         .read()
         .unwrap_or_else(|error| error.into_inner())
@@ -16,6 +29,9 @@ pub fn vars_os() -> BTreeMap<OsString, OsString> {
 }
 
 pub fn var_os(name: impl AsRef<std::ffi::OsStr>) -> Option<OsString> {
+    if let Some(values) = snapshot::current() {
+        return values.get(name.as_ref()).cloned();
+    }
     let shell = SHELL.read().unwrap_or_else(|error| error.into_inner());
     match shell.as_ref() {
         Some(values) => values.get(name.as_ref()).cloned(),

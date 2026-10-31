@@ -4,11 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sopra_shell_context as env;
+use crate as env;
 
 use super::command_catalog::{CommandEntry, catalog};
 
-pub(crate) fn resolve(program: &str, cwd: &Path) -> Option<(String, Option<PathBuf>)> {
+pub fn resolve(program: &str, cwd: &Path) -> Option<(String, Option<PathBuf>)> {
     if program.contains('/') {
         let path = Path::new(program);
         let path = if path.is_absolute() {
@@ -119,4 +119,28 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+fn standalone_builtins() -> &'static str {
+    static NAMES: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        std::process::Command::new("zsh")
+            .args(["-dfc", "printf '%s\\n' \"${(@k)builtins}\""])
+            .env_clear()
+            .envs(env::vars_os())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+            .unwrap_or_default()
+    })
+}
+
+pub(super) fn builtins() -> Vec<String> {
+    let names = env::var("SOPRA_BUILTINS").unwrap_or_else(|_| standalone_builtins().into());
+    names
+        .lines()
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
 }

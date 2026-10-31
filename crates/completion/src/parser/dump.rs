@@ -29,6 +29,7 @@ fn render(command: &str, cwd: &Path, path: Vec<String>, full: bool) -> Result<St
         .unwrap_or(command)
         .to_string();
     let request = HelpRequest {
+        environment: sopra_shell_context::Snapshot::capture(),
         key: command.to_string(),
         command: executable,
         program,

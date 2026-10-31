@@ -20,7 +20,7 @@ pub(crate) fn run_stdout(command: &mut Command) -> Option<String> {
 }
 
 fn run_with_stderr(command: &mut Command, capture_stderr: bool) -> Option<String> {
-    command.env_clear().envs(sopra_shell_context::vars_os());
+    apply_environment(command);
     isolate(command);
     command.stdin(Stdio::null()).stdout(Stdio::piped());
     command.stderr(if capture_stderr {
@@ -43,6 +43,21 @@ fn run_with_stderr(command: &mut Command, capture_stderr: bool) -> Option<String
         let _ = stderr_thread.join();
     }
     output
+}
+
+fn apply_environment(command: &mut Command) {
+    let overrides = command
+        .get_envs()
+        .map(|(key, value)| (key.to_owned(), value.map(std::ffi::OsStr::to_owned)))
+        .collect::<Vec<_>>();
+    command.env_clear().envs(sopra_shell_context::vars_os());
+    for (key, value) in overrides {
+        if let Some(value) = value {
+            command.env(key, value);
+        } else {
+            command.env_remove(key);
+        }
+    }
 }
 
 fn collect(
@@ -137,6 +152,18 @@ mod tests {
 
         assert!(run(&mut command).is_none());
         assert!(started.elapsed().as_secs() < 2);
+    }
+
+    #[test]
+    fn explicit_probe_environment_overrides_the_shell_snapshot() {
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "printf %s \"$SOPRA_PROBE_MARKER\""])
+            .env("SOPRA_PROBE_MARKER", "probe-value");
+        assert_eq!(
+            super::run_stdout(&mut command).as_deref(),
+            Some("probe-value")
+        );
     }
 
     #[test]

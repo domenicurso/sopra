@@ -61,6 +61,7 @@ pub(crate) fn request_for_path(
     discover_usage_commands: bool,
 ) -> HelpRequest {
     HelpRequest {
+        environment: sopra_shell_context::Snapshot::capture(),
         key: invocation.key.clone(),
         command: invocation.command.clone(),
         program: invocation.program.clone(),
