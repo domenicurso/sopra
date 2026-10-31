@@ -16,7 +16,6 @@ from typing import Callable, NoReturn
 
 CSI = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]")
 ROOT = Path(__file__).resolve().parent.parent
-START = ROOT / "scripts" / "start.sh"
 ROWS, COLUMNS = 40, 100
 ASYNC_COMPLETION_TIMEOUT = 10
 FRAME_MARKER = b"\x1b[?25l"
@@ -163,12 +162,16 @@ def start_session(config_root: str) -> tuple[tuple[int, int], bytearray]:
             "COLUMNS": str(COLUMNS),
             "LINES": str(ROWS),
             "XDG_CONFIG_HOME": config_root,
+            "SOPRA_REPO_ROOT": str(ROOT),
+            "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
+            "ZDOTDIR": str(ROOT / "examples/isolated"),
         }
     )
     pid, master = pty.fork()
     if pid == 0:
         os.environ.update(env)
-        os.execv(str(START), [str(START)])
+        os.chdir(ROOT)
+        os.execvpe("zsh", ["zsh", "-di"], env)
     flags = fcntl.fcntl(master, fcntl.F_GETFL)
     fcntl.fcntl(master, fcntl.F_SETFL, flags | os.O_NONBLOCK)
     resize(master, ROWS, COLUMNS)

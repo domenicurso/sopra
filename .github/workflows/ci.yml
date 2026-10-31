@@ -55,6 +55,9 @@ jobs:
       - name: Run interactive terminal harness
         run: python3 scripts/terminal-harness.py
 
+      - name: Run hosted shell regressions
+        run: python3 scripts/terminal-host-test.py && python3 scripts/terminal-host-programs-test.py
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:

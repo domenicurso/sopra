@@ -63,3 +63,33 @@ clients wait for a new startup generation before reporting success. Widget pipes
 close during process replacement and their state resets. Shell history and command
 execution remain owned by Zsh. Widget inspection uses the catalog plus retained
 instances, including errors from sources removed after loading.
+
+
+## Hosted session boundary
+
+`src/host` owns the outer terminal and a child Zsh PTY in `sopra shell` mode.
+The existing Zsh bridge and persistent editor worker run against the child PTY;
+Zsh still owns execution, environment changes, jobs, and command history. A
+bootstrap directory loads the user's startup files without modifying them.
+
+A bounded reader queue feeds a vt100 terminal model. A separate writer drains
+queued input, so a large paste cannot block output processing; pending input
+applies backpressure to outer-terminal reads. The host answers child geometry
+queries from its model and forwards terminal palette, title, and clipboard
+operations across the outer boundary. Foreground alternate-screen mouse input
+is routed to the child's requested protocol.
+
+Private encoded preexec/precmd markers delimit command blocks. Each block owns
+its command, original directory, status, duration, and terminal-interpreted plain
+output. Count, line, and byte limits bound retained history. The browser derives
+wrapped rows from logical text, retaining byte-based selection across resizes.
+Search joins soft wraps and preserves explicit line boundaries. The live prompt
+is pinned from the same terminal model while browsing; the child keeps running.
+
+Rerun/reuse actions send a private input message to the editor instead of pasting
+control bytes into ZLE. Rerun enters the normal syntax/submission path, and the
+worker retains and restores any draft on the next edit. The host owns terminal
+mode restoration and hangs up the foreground process group and Zsh on shutdown.
+Parser or I/O errors terminate the hosted session through the same cleanup path.
+Supported controls and compatibility limits are documented in
+[hosted shells](hosted-shell.md).

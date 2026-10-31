@@ -13,3 +13,8 @@ left = "[red]$user[/red] [dim]in[/dim] [bold blue]$path[/bold blue]\n[dim]$[/dim
 right = "[red]$status[/red] · [dim]$duration[/dim] · [cyan]$git[/cyan]"
 transient = "[dim]$[/dim] "
 secondary = "[dim]>[/dim] "
+
+[session]
+max_blocks = 500
+scrollback_lines = 10000
+max_output_bytes = 8388608

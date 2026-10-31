@@ -5,10 +5,15 @@ typeset -g _SOPRA_WIDGET_STATUS=0 _SOPRA_WIDGET_DURATION=''
 
 _sopra_command_started() {
     _SOPRA_COMMAND_STARTED=$EPOCHREALTIME
+    _sopra_host_begin "$1"
 }
 
 _sopra_command_finished() {
     local -i previous_status=$?
+    # Preserve the command status across the host notification.
+    if _sopra_host_active && (( _SOPRA_COMMAND_STARTED > 0 )); then
+        printf '\e]777;sopra;end;%s\a' "$previous_status"
+    fi
     typeset -g _SOPRA_WIDGET_STATUS=$previous_status
     if (( _SOPRA_COMMAND_STARTED > 0 )); then
         typeset -gF 6 _SOPRA_WIDGET_DURATION=$(( EPOCHREALTIME - _SOPRA_COMMAND_STARTED ))

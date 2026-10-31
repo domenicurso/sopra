@@ -20,7 +20,7 @@ impl Terminal {
         }
     }
 
-    fn read_byte(&mut self) -> io::Result<u8> {
+    pub(super) fn read_byte(&mut self) -> io::Result<u8> {
         if let Some(byte) = self.pending_input.pop_front() {
             return Ok(byte);
         }
@@ -34,6 +34,9 @@ impl Terminal {
             return Ok(Key::Escape);
         }
         let prefix = self.read_byte()?;
+        if prefix == b']' {
+            return self.read_session_buffer();
+        }
         if prefix != b'[' && prefix != b'O' {
             return Ok(if prefix.is_ascii_alphabetic() {
                 Key::Alt(prefix as char)
@@ -59,19 +62,10 @@ impl Terminal {
                 break;
             }
         }
-        Ok(match sequence.last().copied() {
-            Some(b'Z') if prefix == b'[' => Key::BackTab,
-            Some(b'A') if sequence == b"1;3A" => Key::AltUp,
-            Some(b'B') if sequence == b"1;3B" => Key::AltDown,
-            Some(b'A') => Key::Up,
-            Some(b'B') => Key::Down,
-            Some(b'C') => Key::Right,
-            Some(b'D') => Key::Left,
-            Some(b'H') => Key::Home,
-            Some(b'F') => Key::End,
-            Some(b'~') if sequence.starts_with(b"3") => Key::Delete,
-            _ => Key::Escape,
-        })
+        if prefix == b'[' && sequence == b"200~" {
+            return self.read_paste();
+        }
+        Ok(decode_key(prefix, &sequence))
     }
 
     fn read_mouse_sequence(&mut self) -> io::Result<Key> {
@@ -111,5 +105,60 @@ impl Terminal {
             .and_then(|text| text.chars().next())
             .map(Key::Character)
             .unwrap_or(Key::Character('�')))
+    }
+
+    fn read_session_buffer(&mut self) -> io::Result<Key> {
+        use base64::Engine;
+        let mut bytes = Vec::new();
+        let mut terminated = false;
+        while bytes.len() < 1_048_576 && self.poll(Duration::from_millis(50))? {
+            let byte = self.read_byte()?;
+            if byte == 7 {
+                terminated = true;
+                break;
+            }
+            bytes.push(byte);
+            if bytes.ends_with(b"\x1b\\") {
+                bytes.truncate(bytes.len() - 2);
+                terminated = true;
+                break;
+            }
+        }
+        if !terminated || std::env::var("_SOPRA_HOSTED").as_deref() != Ok("1") {
+            return Ok(Key::Ignore);
+        }
+        let Some(payload) = bytes.strip_prefix(b"777;sopra;buffer;") else {
+            return Ok(Key::Ignore);
+        };
+        let Some((&mode, payload)) = payload.split_first() else {
+            return Ok(Key::Ignore);
+        };
+        let text = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok());
+        Ok(match text.filter(|text| !text.contains('\0')) {
+            Some(text) if matches!(mode, b'r' | b'e') => Key::SessionBuffer {
+                text,
+                execute: mode == b'r',
+            },
+            _ => Key::Ignore,
+        })
+    }
+}
+
+fn decode_key(prefix: u8, sequence: &[u8]) -> Key {
+    match sequence.last().copied() {
+        Some(b'Z') if prefix == b'[' => Key::BackTab,
+        Some(b'A') if sequence == b"1;3A" => Key::AltUp,
+        Some(b'B') if sequence == b"1;3B" => Key::AltDown,
+        Some(b'A') => Key::Up,
+        Some(b'B') => Key::Down,
+        Some(b'C') => Key::Right,
+        Some(b'D') => Key::Left,
+        Some(b'H') => Key::Home,
+        Some(b'F') => Key::End,
+        Some(b'~') if sequence.starts_with(b"3") => Key::Delete,
+        _ => Key::Escape,
     }
 }

@@ -3,7 +3,7 @@ mod diff;
 mod finish;
 mod resize;
 
-pub(crate) use self::ansi::{region_highlight_style, style_bytes};
+pub(crate) use self::ansi::{move_to, paint_cell, region_highlight_style, style_bytes};
 
 #[cfg(test)]
 mod tests;
@@ -17,7 +17,7 @@ use crate::{
     scene::Frame,
 };
 
-use self::ansi::{mark_prompt_start, move_to, with_terminal_modes};
+use self::ansi::{mark_prompt_start, with_terminal_modes};
 use self::resize::{clear_rows, clear_viewport};
 
 #[derive(Debug, Default)]

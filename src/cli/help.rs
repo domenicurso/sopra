@@ -3,6 +3,10 @@ use std::io;
 
 const COMMANDS: &[(&str, &str)] = &[
     (
+        "shell",
+        "Start a hosted Zsh session with command blocks and searchable scrollback",
+    ),
+    (
         "refresh",
         "Reload config and reconcile widgets, retaining their state",
     ),

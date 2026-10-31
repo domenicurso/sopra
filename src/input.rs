@@ -1,6 +1,7 @@
 mod cursor;
 mod keys;
 mod mouse;
+mod paste;
 mod resize_signal;
 mod terminal;
 
@@ -28,8 +29,10 @@ pub(crate) struct CursorPosition {
     pub(crate) row: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Key {
+    Paste(String),
+    SessionBuffer { text: String, execute: bool },
     Character(char),
     Control(char),
     Alt(char),

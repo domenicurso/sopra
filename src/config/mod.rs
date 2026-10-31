@@ -1,6 +1,8 @@
 use crate::prompt::{template::Template, widgets::settings::Settings};
 mod file;
+mod session;
 pub(crate) use file::path;
+pub(crate) use session::Session as SessionConfig;
 use std::{io, path::PathBuf};
 use toml_edit::{DocumentMut, Item};
 
@@ -18,6 +20,7 @@ pub(crate) struct Config {
     pub(crate) transient: String,
     pub(crate) secondary: String,
     pub(crate) widgets: Settings,
+    pub(crate) session: session::Session,
 }
 
 impl Config {
@@ -33,6 +36,7 @@ impl Config {
         let boolean = |section, name| boolean(value(section, name), section, name);
         let document = file::merge(defaults.clone(), &user);
         let config = Self {
+            session: session::Session::parse(&document)?,
             document,
             cursor_animation: boolean("editor", "cursor_animation")?,
             syntax_highlighting: boolean("editor", "syntax_highlighting")?,
@@ -121,6 +125,9 @@ mod tests {
         assert_eq!(config.widgets.definition("clock").options["format"], "%H");
         for invalid in [
             "prompt=42",
+            "[session]\nmax_blocks=0",
+            "[session]\nscrollback_lines=-1",
+            "[session]\nmax_output_bytes=true",
             "[editor]\ncompletion=false",
             "[unknown]\nkey=true",
             "[prompt]\nleft=42",

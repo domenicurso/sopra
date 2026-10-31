@@ -35,7 +35,7 @@ pub(super) fn cell_at(buffer: &Buffer, column: u16, row: u16) -> Cell {
     buffer.cell((column, row)).cloned().unwrap_or(Cell::EMPTY)
 }
 
-pub(super) fn move_to(output: &mut Vec<u8>, column: u16, row: u16) {
+pub(crate) fn move_to(output: &mut Vec<u8>, column: u16, row: u16) {
     output.extend_from_slice(format!("\x1b[{};{}H", row + 1, column + 1).as_bytes());
 }
 
@@ -52,7 +52,7 @@ pub(super) fn with_terminal_modes(output: &[u8]) -> Vec<u8> {
     frame
 }
 
-pub(super) fn paint_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cell) {
+pub(crate) fn paint_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cell) {
     move_to(output, column, row);
     output.extend_from_slice(b"\x1b[0m");
     paint_style(output, cell);

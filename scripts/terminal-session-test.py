@@ -57,11 +57,11 @@ def test_sopra_resize_round_trip_and_submit() -> None:
     root = Path(__file__).resolve().parent.parent
     config = "[prompt]\nright = 'rprompt'\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n"
     with terminal_config(config) as config_root, TerminalSession(
-        (str(root / "scripts" / "start.sh"),),
+        ("zsh", "-di"),
         rows=30,
         columns=120,
         cwd=str(root),
-        env={"XDG_CONFIG_HOME": config_root},
+        env={"XDG_CONFIG_HOME": config_root, "ZDOTDIR": str(root / "examples/isolated"), "SOPRA_REPO_ROOT": str(root), "SOPRA_BIN": str(root / "target/debug/sopra-worker")},
     ) as terminal:
         terminal.wait_for("rprompt", timeout=10)
         first_prompt = _active_prompt(terminal.screen.lines())

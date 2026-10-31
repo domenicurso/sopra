@@ -42,20 +42,45 @@ impl Loop {
             std::thread::sleep(wait);
             None
         } else if terminal.poll(wait)? {
-            let key = crate::actions::resolve(terminal.read_key()?);
-            self.next_frame = Instant::now();
-            if key == Action::Enter && !editor.widgets.active() {
-                syntax.request(&editor.buffer)?;
-                None
-            } else {
-                syntax.cancel();
-                editor.handle_input(key, terminal, &mut self.renderer, &mut self.resize_epoch)?
-            }
+            self.input(editor, terminal, syntax)?
         } else {
             None
         };
         self.observe_resize(terminal.resize_epoch());
         Ok(result)
+    }
+
+    fn input(
+        &mut self,
+        editor: &mut EditorState,
+        terminal: &mut Terminal,
+        syntax: &mut super::super::submission::Checker,
+    ) -> io::Result<Option<RunResult>> {
+        let input = terminal.read_key()?;
+        if let crate::input::Key::SessionBuffer { text, execute } = input {
+            syntax.cancel();
+            editor.replace_from_session(text, execute);
+            if execute {
+                syntax.request(&editor.buffer)?;
+            }
+            self.next_frame = Instant::now();
+            return Ok(None);
+        }
+        if let crate::input::Key::Paste(text) = input {
+            syntax.cancel();
+            editor.insert_paste(&text);
+            self.next_frame = Instant::now();
+            return Ok(None);
+        }
+        let key = crate::actions::resolve(input);
+        self.next_frame = Instant::now();
+        Ok(if key == Action::Enter && !editor.widgets.active() {
+            syntax.request(&editor.buffer)?;
+            None
+        } else {
+            syntax.cancel();
+            editor.handle_input(key, terminal, &mut self.renderer, &mut self.resize_epoch)?
+        })
     }
 
     fn observe_resize(&mut self, latest: usize) {

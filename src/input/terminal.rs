@@ -53,7 +53,7 @@ impl Terminal {
             pending_input: pending.into(),
         };
         terminal.mouse_enabled = true;
-        terminal.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h")?;
+        terminal.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h")?;
         terminal.flush()?;
         Ok(terminal)
     }
@@ -137,7 +137,7 @@ impl Terminal {
     pub(crate) fn restore(&mut self) -> io::Result<()> {
         let mouse_result = if self.mouse_enabled {
             self.mouse_enabled = false;
-            self.write_all(b"\x1b[?1006l\x1b[?1002l\x1b[?1000l")
+            self.write_all(b"\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?2004l")
                 .and_then(|()| self.flush())
         } else {
             Ok(())

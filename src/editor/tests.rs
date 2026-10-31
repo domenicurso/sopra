@@ -135,3 +135,33 @@ fn word_editing_and_yank_keep_the_buffer_byte_safe() {
     state.handle_key(Action::Yank);
     assert_eq!(state.buffer(), "git status");
 }
+
+#[test]
+fn rerunning_replaces_multiline_input_and_retains_its_cursor_and_draft() {
+    let mut editor = editor("echo draft\nsecond line");
+    editor.cursor = 3;
+    editor.replace_from_session("echo 'é'".into(), true);
+    assert_eq!(editor.buffer, "echo 'é'");
+    assert_eq!(editor.cursor, editor.buffer.len());
+    let draft = editor.take_draft();
+    assert!(
+        draft.is_some_and(|draft| draft.buffer == "echo draft\nsecond line" && draft.cursor == 3)
+    );
+}
+
+#[test]
+fn paste_replaces_selected_text_without_pairing_or_submitting_newlines() {
+    use crate::input::MouseKind;
+    let mut editor = editor("hello world");
+    let now = std::time::Instant::now();
+    editor
+        .text_selection
+        .mouse(MouseKind::Press, 6, &editor.buffer, now);
+    editor
+        .text_selection
+        .mouse(MouseKind::Drag, 11, &editor.buffer, now);
+    editor.insert_paste("'é'\nnext(");
+    assert_eq!(editor.buffer, "hello 'é'\nnext(");
+    assert_eq!(editor.cursor, editor.buffer.len());
+    assert!(editor.text_selection.range().is_none());
+}

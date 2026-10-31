@@ -8,6 +8,7 @@ pub(super) enum Command {
     Config(ConfigCommand),
     Doctor,
     Widgets,
+    Shell,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum ConfigCommand {
@@ -31,6 +32,7 @@ pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
         ["refresh"] => Command::Refresh,
         ["restart"] => Command::Restart,
         ["doctor"] => Command::Doctor,
+        ["shell"] => Command::Shell,
         ["widgets", "list"] => Command::Widgets,
         ["config", "edit"] => Command::Config(ConfigCommand::Edit),
         ["config", "check"] => Command::Config(ConfigCommand::Check),
@@ -51,6 +53,7 @@ mod tests {
     fn public_commands_reject_extra_arguments_and_private_worker_flags() -> io::Result<()> {
         for (args, expected) in [
             (vec!["refresh"], Command::Refresh),
+            (vec!["shell"], Command::Shell),
             (vec!["restart"], Command::Restart),
             (vec!["config", "edit"], Command::Config(ConfigCommand::Edit)),
             (vec!["config", "show"], Command::Config(ConfigCommand::Show)),
@@ -63,6 +66,7 @@ mod tests {
         }
         for args in [
             vec!["refresh", "extra"],
+            vec!["shell", "extra"],
             vec!["config"],
             vec!["--serve"],
             vec!["unknown"],

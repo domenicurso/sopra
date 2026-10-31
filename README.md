@@ -8,7 +8,6 @@
 **Sopra** provides interactive line editing, syntax highlighting, and contextual completions inside Zsh. Zsh keeps ownership of command execution, shell state, aliases, functions, and environment variables.
 
 ## Status
-
 Sopra is early-stage software at version `0.1.0`. It currently targets interactive Zsh on Unix-like systems; continuous integration covers macOS and Linux. Editing behavior and configuration may change while the integration settles.
 
 ## Install
@@ -46,16 +45,18 @@ source "$PWD/zsh/editor.zsh"
 Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want to run this checkout directly.
 
 ## Features
-
 - Unicode-safe editing with history, word movement, kill/yank operations, and transient command lines.
 - Mouse selection in the command line: drag to select, double-click a word, or triple-click the whole line. Ctrl-C copies selected text when the terminal supports clipboard writes; without a selection it interrupts the command.
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
 
+See [hosted shells](docs/hosted-shell.md) for scrollback, block actions, and terminal compatibility.
+
 ## Commands
 
 | Command | Behavior |
 | --- | --- |
+| `sopra shell` | Launch a hosted Zsh with scrollback, searchable command blocks, and output selection. |
 | `sopra refresh` | Validate and reload config, retaining existing widget instances and history. |
 | `sopra restart` | Replace the worker process and reset widget state. Shell history stays intact. |
 | `sopra config edit` | Open config in `$VISUAL`, then `$EDITOR`, or `vi`; validate and refresh after the editor exits successfully. |

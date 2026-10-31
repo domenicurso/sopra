@@ -19,6 +19,7 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
     fi
 fi
 source "$script_dir/protocol.zsh"
+source "$script_dir/host.zsh"
 source "$script_dir/context.zsh"
 source "$script_dir/history.zsh"
 source "$script_dir/worker.zsh"

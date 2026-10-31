@@ -1,6 +1,9 @@
 _sopra_edit() {
     emulate -L zsh
     local raw
+    if _sopra_host_active; then
+        printf '\e]777;sopra;editing;%s\a' "${CONTEXT:-start}"
+    fi
     local -x SOPRA_BUILTINS SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
     _sopra_shell_context
     local -a editor_args=(--buffer "$BUFFER" --cursor "$CURSOR" --cwd "$PWD")

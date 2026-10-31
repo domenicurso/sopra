@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod control;
 mod editor;
+mod host;
 mod input;
 mod palette;
 mod prompt;
