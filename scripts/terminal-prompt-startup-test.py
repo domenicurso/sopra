@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def exercise(directory: Path, config_root: str) -> None:
     worker = directory / "slow-worker"
     worker.write_text(
-        '#!/bin/sh\nif [ "$1" = --buffer ]; then sleep 0.4; fi\n'
+        '#!/bin/sh\nif [ "$1" = --serve ]; then sleep 0.4; fi\n'
         f'exec {shlex.quote(str(ROOT / "target/debug/sopra-worker"))} "$@"\n')
     worker.chmod(0o755)
     (directory / ".zshrc").write_text(

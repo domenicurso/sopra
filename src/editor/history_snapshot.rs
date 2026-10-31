@@ -5,6 +5,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[path = "history_file.rs"]
+mod file;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Entry {
     pub(super) command: String,
@@ -17,12 +20,15 @@ pub(super) fn read(path: &Path) -> io::Result<Vec<Entry>> {
 
 fn parse(bytes: &[u8]) -> io::Result<Vec<Entry>> {
     let mut fields = bytes.split(|byte| *byte == 0);
-    if fields.next() != Some(b"H2".as_slice()) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid history snapshot header",
-        ));
-    }
+    let file_times = match fields.next() {
+        Some(b"H3") => file::read(fields.next().unwrap_or_default())?,
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid history snapshot header",
+            ));
+        }
+    };
     let times = timestamps(fields.next().unwrap_or_default());
     let mut entries = Vec::new();
     let mut seen = HashSet::new();
@@ -33,10 +39,7 @@ fn parse(bytes: &[u8]) -> io::Result<Vec<Entry>> {
                 "history snapshot is missing a command",
             )
         })?;
-        // The editor cannot faithfully insert invalid UTF-8 or terminal controls.
-        let Some(command) = std::str::from_utf8(command).ok().filter(|text| {
-            !text.trim().is_empty() && !text.chars().any(|c| c.is_control() && c != '\n')
-        }) else {
+        let Some(command) = valid_command(command) else {
             continue;
         };
         if seen.insert(command.to_string()) {
@@ -44,11 +47,19 @@ fn parse(bytes: &[u8]) -> io::Result<Vec<Entry>> {
                 command: command.to_string(),
                 started: std::str::from_utf8(event)
                     .ok()
-                    .and_then(|id| times.get(id).copied()),
+                    .and_then(|id| times.get(id).copied())
+                    .or_else(|| file_times.get(command).copied()),
             });
         }
     }
     Ok(entries)
+}
+
+fn valid_command(bytes: &[u8]) -> Option<&str> {
+    // The editor cannot faithfully insert invalid UTF-8 or terminal controls.
+    std::str::from_utf8(bytes).ok().filter(|text| {
+        !text.trim().is_empty() && !text.chars().any(|c| c.is_control() && c != '\n')
+    })
 }
 
 fn timestamps(bytes: &[u8]) -> HashMap<&str, u64> {
@@ -99,7 +110,7 @@ mod tests {
     fn snapshot_preserves_exact_commands_and_the_newest_duplicate_timestamp() -> std::io::Result<()>
     {
         let entries = parse(
-            b"H2\0 1 10 echo old\n 2 20 echo recent\n 3 30 echo recent\n\0\
+            b"H3\0\0 1 10 echo old\n 2 20 echo recent\n 3 30 echo recent\n\0\
             3\0echo recent\0\
             2\0echo recent\0\
             1\0echo old\necho next\0\
@@ -123,6 +134,6 @@ mod tests {
         assert_eq!(age(Some(1), 7201).as_deref(), Some("2h ago"));
         assert_eq!(age(Some(1), 172801).as_deref(), Some("2d ago"));
         assert!(parse(b"broken\0").is_err());
-        assert!(parse(b"H2\0\0id").is_err());
+        assert!(parse(b"H3\0\0\0id").is_err());
     }
 }

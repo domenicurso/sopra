@@ -1,8 +1,9 @@
 use crate::editor::{ExitReason, RunResult};
 
-pub(crate) fn write_result(result: &RunResult) -> std::io::Result<()> {
-    use std::io::Write;
-
+pub(crate) fn write_result(
+    result: &RunResult,
+    output: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     let action = match result.reason {
         ExitReason::Accepted => "accept",
         ExitReason::Interrupted => "interrupt",
@@ -15,9 +16,8 @@ pub(crate) fn write_result(result: &RunResult) -> std::io::Result<()> {
         .iter()
         .map(|span| span.text.as_str())
         .collect::<String>();
-    let mut stdout = std::io::stdout().lock();
     writeln!(
-        stdout,
+        output,
         "K1\t{action}\t{}\t{}\t{}\t{}\t{}\t{}",
         result.cursor,
         nonempty_hex(result.buffer.as_bytes()),

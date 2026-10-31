@@ -25,11 +25,12 @@ _sopra_parse_result() {
     local raw=$1
     local -a fields
     IFS=$'\t' read -rA fields <<< "$raw"
+    (( ${#fields} == 8 )) || return 1
     [[ ${fields[1]-} == K1 && ${fields[2]-} == (accept|interrupt|tab|eof|directory) ]] || return 1
     [[ ${fields[3]-} == <-> ]] || return 1
-    _sopra_hex_decode "${fields[7]:--}" || return 1
+    _sopra_hex_decode "${fields[7]}" || return 1
     typeset -g _SOPRA_RESULT_DISPLAY=$_SOPRA_RESULT_BUFFER
-    typeset -g _SOPRA_RESULT_DISPLAY_HIGHLIGHTS=${fields[8]:--}
+    typeset -g _SOPRA_RESULT_DISPLAY_HIGHLIGHTS=${fields[8]}
     _sopra_hex_decode "${fields[6]-}" || return 1
     typeset -g _SOPRA_RESULT_DIRECTORY=$_SOPRA_RESULT_BUFFER
     _sopra_hex_decode "${fields[4]-}" || return 1

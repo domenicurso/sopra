@@ -24,6 +24,7 @@ source "$script_dir/context.zsh"
 source "$script_dir/history.zsh"
 source "$script_dir/prompt.zsh"
 source "$script_dir/worker.zsh"
+source "$script_dir/session.zsh"
 _sopra_prompt_defaults
 if [[ -z ${_SOPRA_CONFIG_CURSOR_ANIMATION+x} ]]; then
     typeset -g _SOPRA_CONFIG_CURSOR_ANIMATION=1
@@ -53,6 +54,7 @@ _sopra_clear_highlights() {
 }
 
 _sopra_line_init() {
+    _sopra_server_start || return 1
     local _sopra_transient_prompt=$_SOPRA_CONFIG_TRANSIENT_PROMPT
     _sopra_shell_prompt "$_SOPRA_CONFIG_SECONDARY_PROMPT"
     PS2=$REPLY

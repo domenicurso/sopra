@@ -12,3 +12,4 @@ libc = "0.2"
 neo_frizbee = "0.11"
 notify = "6"
 unicode-width = "0.2"
+sopra-shell-context = { path = "../shell-context" }

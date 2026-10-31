@@ -137,11 +137,12 @@ fn valid_name_char(character: char) -> bool {
 }
 
 fn names() -> BTreeSet<String> {
-    let mut names = std::env::vars_os()
-        .filter_map(|(name, _)| name.into_string().ok())
+    let mut names = sopra_shell_context::vars_os()
+        .into_keys()
+        .filter_map(|name| name.into_string().ok())
         .filter(|name| valid_name(name) && visible_shell_variable(name))
         .collect::<BTreeSet<_>>();
-    if let Ok(raw) = std::env::var("SOPRA_VARIABLES") {
+    if let Ok(raw) = sopra_shell_context::var("SOPRA_VARIABLES") {
         names.extend(
             raw.lines()
                 .filter(|name| valid_name(name) && visible_shell_variable(name))
@@ -152,7 +153,7 @@ fn names() -> BTreeSet<String> {
 }
 
 fn arrays() -> BTreeSet<String> {
-    std::env::var("SOPRA_ARRAYS")
+    sopra_shell_context::var("SOPRA_ARRAYS")
         .unwrap_or_default()
         .lines()
         .filter(|name| valid_name(name) && visible_shell_variable(name))

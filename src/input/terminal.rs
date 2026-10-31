@@ -26,7 +26,7 @@ pub(crate) struct Terminal {
 }
 
 impl Terminal {
-    pub(crate) fn open() -> io::Result<Self> {
+    pub(crate) fn open(palette: Option<TerminalPalette>) -> io::Result<Self> {
         let resize_signal = resize_signal::ResizeSignal::install()?;
         let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
         let saved_mode = get_termios(tty.as_raw_fd())?;
@@ -39,7 +39,10 @@ impl Terminal {
         raw_mode.c_cc[libc::VMIN] = 1;
         raw_mode.c_cc[libc::VTIME] = 0;
         set_termios(tty.as_raw_fd(), &raw_mode)?;
-        let (palette, pending) = TerminalPalette::query(tty.as_raw_fd());
+        let (palette, pending) = palette.map_or_else(
+            || TerminalPalette::query(tty.as_raw_fd()),
+            |palette| (palette, Vec::new()),
+        );
         let mut terminal = Self {
             tty,
             saved_mode,

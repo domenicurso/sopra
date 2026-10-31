@@ -15,13 +15,13 @@ impl Widget for TextWidget {
 }
 
 pub(super) fn widgets() -> Vec<Box<dyn Widget>> {
-    let status = std::env::var("SOPRA_WIDGET_STATUS")
+    let status = sopra_shell_context::var("SOPRA_WIDGET_STATUS")
         .ok()
         .and_then(|value| value.parse::<i32>().ok())
         .filter(|value| *value != 0)
         .map(|value| value.to_string())
         .unwrap_or_default();
-    let duration = std::env::var("SOPRA_WIDGET_DURATION")
+    let duration = sopra_shell_context::var("SOPRA_WIDGET_DURATION")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| value.is_finite() && *value >= 0.0)
@@ -40,7 +40,7 @@ pub(super) fn widgets() -> Vec<Box<dyn Widget>> {
 }
 
 fn env_text(name: &str) -> String {
-    std::env::var(name)
+    sopra_shell_context::var(name)
         .unwrap_or_default()
         .chars()
         .filter(|character| !character.is_control())

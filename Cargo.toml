@@ -9,7 +9,7 @@ readme = "README.md"
 default-run = "sopra-worker"
 
 [workspace]
-members = ["crates/completion"]
+members = ["crates/completion", "crates/shell-context"]
 resolver = "3"
 
 [[bin]]
@@ -23,6 +23,7 @@ notify = "6"
 neo_frizbee = "0.11"
 ratatui = { version = "0.29", default-features = false }
 sopra-completion = { path = "crates/completion" }
+sopra-shell-context = { path = "crates/shell-context" }
 unicode-segmentation = "1.12"
 unicode-width = "0.2"
 toml_edit = "0.25.17"

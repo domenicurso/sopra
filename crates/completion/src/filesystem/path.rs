@@ -88,7 +88,7 @@ fn path_root<'a>(path: &'a str, cwd: &Path) -> Option<(PathBuf, String, &'a str)
         return Some((PathBuf::from("/"), "/".to_string(), remainder));
     }
     if path == "~" || path.starts_with("~/") {
-        let home = PathBuf::from(std::env::var_os("HOME")?);
+        let home = PathBuf::from(sopra_shell_context::var_os("HOME")?);
         return Some((
             home,
             "~/".to_string(),

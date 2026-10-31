@@ -36,7 +36,7 @@ _sopra_edit() {
         SOPRA_AUTOSUGGESTIONS="${_SOPRA_CONFIG_AUTOSUGGESTIONS:-1}" \
         SOPRA_AUTOSUGGESTION_FORMAT="$autosuggestion_format" \
         SOPRA_AUTOSUGGESTION_METADATA_FORMAT="$metadata_format" \
-        "$SOPRA_BIN" "${editor_args[@]}" --history-file <(_sopra_history_snapshot) </dev/tty
+        _sopra_worker_session "${editor_args[@]}" --history-file =(_sopra_history_snapshot) </dev/tty
     ) || return 1
     _sopra_parse_result "$raw"
 }
@@ -69,9 +69,15 @@ _sopra_editor_args() {
 _sopra_history_snapshot() {
     zmodload zsh/parameter || return 1
     local -a events=(${(Onk)history})
-    printf 'H2\0'
+    local oldest=${events[-1]:-0}
+    printf 'H3\0%s\0' "${HISTFILE:-}"
+    if [[ -r ${HISTFILE:-} ]]; then
+        # Persisted timestamps are cheaper to read in Rust than to reformat in
+        # fc for every prompt. Only the newest event may not be saved yet.
+        oldest=${events[1]:-0}
+    fi
     if (( ${#events} )); then
-        fc -l -t '%s' "$events[-1]" "$events[1]"
+        fc -l -t '%s' "$oldest" "$events[1]"
     fi
     printf '\0'
     local event

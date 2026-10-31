@@ -1,7 +1,8 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{Arc, RwLock},
 };
 
 use super::command_discovery::{add_exported_commands, add_named_commands, add_path_commands};
@@ -104,10 +105,26 @@ impl CommandEntry {
     }
 }
 
-static CATALOG: OnceLock<Vec<CommandEntry>> = OnceLock::new();
+struct Catalog {
+    inputs: [Option<OsString>; 4],
+    entries: Arc<[CommandEntry]>,
+}
 
-pub(crate) fn catalog() -> &'static [CommandEntry] {
-    CATALOG.get_or_init(build).as_slice()
+static CATALOG: RwLock<Option<Catalog>> = RwLock::new(None);
+
+pub(crate) fn catalog() -> Arc<[CommandEntry]> {
+    let inputs = ["PATH", "SOPRA_COMMANDS", "SOPRA_ALIASES", "SOPRA_FUNCTIONS"]
+        .map(sopra_shell_context::var_os);
+    let mut catalog = CATALOG.write().unwrap_or_else(|error| error.into_inner());
+    if let Some(catalog) = catalog.as_ref().filter(|catalog| catalog.inputs == inputs) {
+        return Arc::clone(&catalog.entries);
+    }
+    let entries: Arc<[CommandEntry]> = build().into();
+    *catalog = Some(Catalog {
+        inputs,
+        entries: Arc::clone(&entries),
+    });
+    entries
 }
 
 fn build() -> Vec<CommandEntry> {
@@ -123,7 +140,7 @@ fn build() -> Vec<CommandEntry> {
         );
     }
     if !add_exported_commands(&mut commands)
-        && let Some(path) = std::env::var_os("PATH")
+        && let Some(path) = sopra_shell_context::var_os("PATH")
     {
         for directory in std::env::split_paths(&path) {
             add_path_commands(&mut commands, &directory);

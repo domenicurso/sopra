@@ -11,7 +11,7 @@ pub(super) struct Path {
 
 impl Path {
     pub(super) fn new(cwd: PathBuf) -> Self {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let home = sopra_shell_context::var_os("HOME").map(PathBuf::from);
         let boundary = home.filter(|home| cwd.starts_with(home));
         Self {
             ancestors: cwd
@@ -34,10 +34,10 @@ struct PathStyles {
 impl PathStyles {
     fn from_environment() -> Self {
         Self {
-            before: std::env::var("SOPRA_PATH_BEFORE").unwrap_or_else(|_| "{text}".into()),
-            selected: std::env::var("SOPRA_PATH_SELECTED")
+            before: sopra_shell_context::var("SOPRA_PATH_BEFORE").unwrap_or_else(|_| "{text}".into()),
+            selected: sopra_shell_context::var("SOPRA_PATH_SELECTED")
                 .unwrap_or_else(|_| "[reverse]{text}[/]".into()),
-            after: std::env::var("SOPRA_PATH_AFTER").unwrap_or_else(|_| "[dim]{text}[/]".into()),
+            after: sopra_shell_context::var("SOPRA_PATH_AFTER").unwrap_or_else(|_| "[dim]{text}[/]".into()),
         }
     }
 }
@@ -109,7 +109,7 @@ impl Widget for Path {
 }
 
 fn display_path(path: &FsPath) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = sopra_shell_context::var_os("HOME").map(PathBuf::from);
     let text = if let Some(relative) = home
         .as_deref()
         .and_then(|home| path.strip_prefix(home).ok())

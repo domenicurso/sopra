@@ -30,10 +30,10 @@ impl GitStatus {
         };
         Self {
             text,
-            format: std::env::var("SOPRA_GIT_STATUS_FORMAT")
+            format: sopra_shell_context::var("SOPRA_GIT_STATUS_FORMAT")
                 .unwrap_or_else(|_| "[[{items}]".into()),
-            separator: std::env::var("SOPRA_GIT_STATUS_SEPARATOR").unwrap_or_else(|_| "|".into()),
-            item_format: std::env::var("SOPRA_GIT_STATUS_ITEM_FORMAT")
+            separator: sopra_shell_context::var("SOPRA_GIT_STATUS_SEPARATOR").unwrap_or_else(|_| "|".into()),
+            item_format: sopra_shell_context::var("SOPRA_GIT_STATUS_ITEM_FORMAT")
                 .unwrap_or_else(|_| "{item}".into()),
         }
     }

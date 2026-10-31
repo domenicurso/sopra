@@ -1,8 +1,10 @@
 use std::{
     collections::{BTreeMap, btree_map::Entry},
-    env, fs,
+    fs,
     path::{Path, PathBuf},
 };
+
+use sopra_shell_context as env;
 
 use super::command_catalog::{CommandEntry, catalog};
 
@@ -16,7 +18,8 @@ pub(crate) fn resolve(program: &str, cwd: &Path) -> Option<(String, Option<PathB
         };
         return is_executable(&path).then(|| (path.display().to_string(), Some(path)));
     }
-    let entry = catalog().iter().find(|entry| entry.name == program)?;
+    let entries = catalog();
+    let entry = entries.iter().find(|entry| entry.name == program)?;
     if matches!(entry.detail, "alias" | "function") {
         return None;
     }

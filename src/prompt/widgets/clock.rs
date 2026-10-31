@@ -11,7 +11,7 @@ pub(super) struct Clock {
 
 impl Clock {
     pub(super) fn new() -> Self {
-        let configured = std::env::var("SOPRA_CLOCK_FORMAT").unwrap_or_else(|_| "%H:%M:%S".into());
+        let configured = sopra_shell_context::var("SOPRA_CLOCK_FORMAT").unwrap_or_else(|_| "%H:%M:%S".into());
         Self {
             format: CString::new(configured).unwrap_or_default(),
         }

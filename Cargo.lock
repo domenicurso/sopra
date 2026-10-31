@@ -865,6 +865,7 @@ dependencies = [
  "notify",
  "ratatui",
  "sopra-completion",
+ "sopra-shell-context",
  "toml_edit",
  "unicode-segmentation",
  "unicode-width 0.2.0",
@@ -878,8 +879,13 @@ dependencies = [
  "libc",
  "neo_frizbee",
  "notify",
+ "sopra-shell-context",
  "unicode-width 0.2.0",
 ]
+
+[[package]]
+name = "sopra-shell-context"
+version = "0.1.0"
 
 [[package]]
 name = "static_assertions"

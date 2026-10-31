@@ -124,7 +124,11 @@ With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift
 
 ## How it works
 
-Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. The Zsh bridge passes the current buffer, cursor, prompt, working directory, and completion context to the private Rust worker; Sopra returns the edited buffer and the action Zsh should perform. The shell-native `sopra --help` command shows the configuration path. Zsh then accepts the command and executes it using the existing shell environment.
+Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. Each interactive shell starts one private Rust worker and keeps it alive across commands. The Zsh bridge sends the current buffer, cursor, prompt, working directory, and environment snapshot over a private Unix socket; Sopra returns the edited buffer and the action Zsh should perform. The shell-native `sopra --help` command shows the configuration path. Zsh then accepts the command and executes it using the existing shell environment.
+
+The shared `sopra-shell-context` crate owns environment snapshots; prompts, widgets, and the completion engine consume it independently.
+
+The worker acquires the terminal only while editing and restores it before returning control to Zsh, so foreground programs receive terminal input normally. The worker retains the terminal palette across edits; shell and completion context refresh on every request without changing the worker’s process environment. The bridge stops the worker on shell exit, and the worker monitors its owning shell.
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 

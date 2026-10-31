@@ -20,6 +20,7 @@ pub(crate) fn run_stdout(command: &mut Command) -> Option<String> {
 }
 
 fn run_with_stderr(command: &mut Command, capture_stderr: bool) -> Option<String> {
+    command.env_clear().envs(sopra_shell_context::vars_os());
     isolate(command);
     command.stdin(Stdio::null()).stdout(Stdio::piped());
     command.stderr(if capture_stderr {

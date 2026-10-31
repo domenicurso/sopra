@@ -1,0 +1,7 @@
+[package]
+name = "sopra-shell-context"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Shell environment snapshots shared by Sopra's editor and completion engine"
+repository = "https://github.com/domenicurso/sopra"

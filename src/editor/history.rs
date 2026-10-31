@@ -40,13 +40,13 @@ impl History {
         if let Some(path) = path {
             history.entries = snapshot::read(path)?;
         }
-        history.enabled = std::env::var("SOPRA_AUTOSUGGESTIONS").map_or(true, |value| {
+        history.enabled = sopra_shell_context::var("SOPRA_AUTOSUGGESTIONS").map_or(true, |value| {
             !matches!(value.to_lowercase().as_str(), "0" | "false" | "off" | "no")
         });
-        if let Ok(format) = std::env::var("SOPRA_AUTOSUGGESTION_FORMAT") {
+        if let Ok(format) = sopra_shell_context::var("SOPRA_AUTOSUGGESTION_FORMAT") {
             history.format = format;
         }
-        if let Ok(format) = std::env::var("SOPRA_AUTOSUGGESTION_METADATA_FORMAT") {
+        if let Ok(format) = sopra_shell_context::var("SOPRA_AUTOSUGGESTION_METADATA_FORMAT") {
             history.metadata_format = format;
         }
         Ok(history)

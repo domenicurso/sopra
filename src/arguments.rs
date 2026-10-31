@@ -17,8 +17,11 @@ pub(crate) struct Args {
 
 impl Args {
     pub(crate) fn parse() -> Result<Self, String> {
+        Self::from_args(env::args_os().skip(1))
+    }
+
+    pub(crate) fn from_args(mut arguments: impl Iterator<Item = OsString>) -> Result<Self, String> {
         let mut args = Self::defaults();
-        let mut arguments = env::args_os().skip(1);
         while let Some(argument) = arguments.next() {
             let argument = argument.to_string_lossy();
             if is_help_argument(&argument) {
