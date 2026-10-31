@@ -15,6 +15,4 @@ transient = "[dim]$[/dim] "
 secondary = "[dim]>[/dim] "
 
 [session]
-max_blocks = 500
 scrollback_lines = 10000
-max_output_bytes = 8388608

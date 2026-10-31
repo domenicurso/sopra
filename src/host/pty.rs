@@ -21,7 +21,6 @@ impl Shell {
         command.cwd(std::env::current_dir()?);
         command.env("ZDOTDIR", bootstrap.directory.path());
         command.env("SOPRA_BIN", std::env::current_exe()?);
-        command.env("_SOPRA_HOSTED", "1");
         command.env_remove("_SOPRA_SERVER_SOCKET");
         command.env_remove("_SOPRA_LOADED");
         // The virtual terminal supports xterm's core protocols, not host-specific graphics extensions.

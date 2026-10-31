@@ -19,7 +19,6 @@ pub(super) struct Session {
     completion: Option<CompletionEngine>,
     history: History,
     syntax: crate::editor::submission::Checker,
-    draft: Option<crate::editor::Draft>,
 }
 
 impl Session {
@@ -36,17 +35,10 @@ impl Session {
             widgets: None,
             history: History::default(),
             syntax: crate::editor::submission::Checker::default(),
-            draft: None,
         })
     }
 
-    pub(super) fn run(&mut self, mut args: Args) -> Result<RunResult, Box<dyn Error>> {
-        if args.buffer.is_empty()
-            && let Some(draft) = self.draft.take()
-        {
-            args.cursor = draft.buffer[..draft.cursor].chars().count();
-            args.buffer = draft.buffer;
-        }
+    pub(super) fn run(&mut self, args: Args) -> Result<RunResult, Box<dyn Error>> {
         let mut terminal = Terminal::open(self.palette)?;
         self.palette = Some(terminal.palette());
         self.cwd = args.cwd.clone();
@@ -65,20 +57,6 @@ impl Session {
             cursor,
             self.completion.take(),
         );
-        self.prepare_editor(&mut editor, secondary);
-        let result = editor.run(&mut terminal, &mut self.syntax);
-        if let Some(draft) = editor.take_draft() {
-            self.draft = Some(draft);
-        }
-        let (widgets, completion, history) = editor.into_services();
-        self.widgets = Some(primary.unwrap_or(widgets));
-        self.completion = completion;
-        self.history = history;
-        terminal.restore()?;
-        result.map_err(Into::into)
-    }
-
-    fn prepare_editor(&mut self, editor: &mut EditorState, secondary: bool) {
         editor.set_history(std::mem::take(&mut self.history));
         editor.set_transient_prompt(if secondary {
             self.config.secondary.clone()
@@ -86,6 +64,13 @@ impl Session {
             self.config.transient.clone()
         });
         editor.set_secondary_prompt(self.config.secondary.clone());
+        let result = editor.run(&mut terminal, &mut self.syntax);
+        let (widgets, completion, history) = editor.into_services();
+        self.widgets = Some(primary.unwrap_or(widgets));
+        self.completion = completion;
+        self.history = history;
+        terminal.restore()?;
+        result.map_err(Into::into)
     }
 
     fn widgets_for_edit(&mut self, args: &Args) -> std::io::Result<(Widgets, Option<Widgets>)> {

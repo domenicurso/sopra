@@ -1,75 +1,38 @@
-use super::{blocks::Blocks, callbacks::Callbacks, protocol::Event};
-use crate::config::SessionConfig;
+use super::callbacks::Callbacks;
 use portable_pty::PtySize;
-use std::{io, num::NonZeroU16};
+use std::num::NonZeroU16;
 
 pub(super) struct Model {
     pub(super) terminal: vt100::Parser<Callbacks>,
-    pub(super) blocks: Blocks,
-    pub(super) prompt: Option<u16>,
-    pub(super) executing: bool,
-    pub(super) secondary: bool,
     pub(super) size: PtySize,
-    pub(super) revision: u64,
 }
 impl Model {
-    pub(super) fn new(size: PtySize, limits: SessionConfig) -> Self {
+    pub(super) fn new(size: PtySize, lines: usize) -> Self {
         let (rows, cols) = dimensions(size);
         Self {
-            terminal: vt100::Parser::new_with_callbacks(
-                rows,
-                cols,
-                limits.scrollback_lines,
-                Callbacks::default(),
-            ),
-            blocks: Blocks::new(limits),
-            prompt: None,
-            executing: false,
-            secondary: false,
+            terminal: vt100::Parser::new_with_callbacks(rows, cols, lines, Callbacks::default()),
             size,
-            revision: 0,
         }
     }
-    pub(super) fn process(&mut self, bytes: &[u8]) -> io::Result<()> {
-        // OSC terminators are transaction boundaries: command output preceding an end marker
-        // must be captured before the next prompt, even if both arrive in one PTY read.
-        for chunk in bytes.split_inclusive(|byte| *byte == 7 || *byte == b'\\') {
-            self.blocks.process(chunk);
-            self.terminal.process(chunk);
-            for event in std::mem::take(&mut self.terminal.callbacks_mut().events) {
-                match event {
-                    Event::Executing => {
-                        self.executing = true;
-                        self.prompt = None;
-                    }
-                    Event::Begin { command, cwd } => {
-                        self.revision += 1;
-                        self.executing = true;
-                        self.prompt = None;
-                        self.blocks.begin(command, cwd, self.size);
-                    }
-                    Event::End(status) => {
-                        self.revision += 1;
-                        self.blocks.finish(status)?;
-                        self.executing = false;
-                    }
-                    Event::Editing { secondary } => self.secondary = secondary,
-                    Event::Prompt(row) => self.prompt = Some(row),
-                }
-            }
-        }
-        Ok(())
+    pub(super) fn process(&mut self, bytes: &[u8]) {
+        self.terminal.process(bytes);
     }
     pub(super) fn resize(&mut self, size: PtySize) {
+        let offset = self.terminal.screen().scrollback();
         let (rows, cols) = dimensions(size);
         self.terminal.set_size(rows, cols);
+        self.terminal.screen_mut().set_scrollback(offset);
         self.size = size;
-        self.prompt = self.prompt.map(|row| row.min(size.rows.saturating_sub(1)));
     }
-}
-pub(super) fn parser(size: PtySize, scrollback: usize) -> vt100::Parser {
-    let (rows, cols) = dimensions(size);
-    vt100::Parser::new(rows, cols, scrollback)
+    pub(super) fn scroll(&mut self, delta: isize) {
+        let screen = self.terminal.screen_mut();
+        if !screen.alternate_screen() {
+            screen.set_scrollback(screen.scrollback().saturating_add_signed(delta));
+        }
+    }
+    pub(super) fn live(&mut self) {
+        self.terminal.screen_mut().set_scrollback(0);
+    }
 }
 fn dimensions(size: PtySize) -> (NonZeroU16, NonZeroU16) {
     (
@@ -82,22 +45,66 @@ fn dimensions(size: PtySize) -> (NonZeroU16, NonZeroU16) {
 mod tests {
     use super::*;
     #[test]
-    fn blocks_capture_progress_and_unicode_without_prompt_redraws() -> io::Result<()> {
-        let limits = SessionConfig {
-            max_blocks: 2,
-            scrollback_lines: 100,
-            max_output_bytes: 4096,
-        };
-        let mut model = Model::new(PtySize::default(), limits);
-        let stream = b"\x1b]777;sopra;begin;6563686f;2f746d70\x07old\r\x1b[Knew\r\n\x1b]777;sopra;end;7\x07prompt";
-        for byte in stream {
-            model.process(&[*byte])?;
+    fn scrolling_shows_the_original_output_and_typing_returns_to_the_live_screen() {
+        let mut model = Model::new(
+            PtySize {
+                rows: 4,
+                cols: 40,
+                ..PtySize::default()
+            },
+            100,
+        );
+        model.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n$ draft");
+        let live = model.terminal.screen().contents();
+        model.scroll(3);
+        assert!(model.terminal.screen().contents().starts_with("one\ntwo\n"));
+        model.scroll(isize::MAX);
+        assert_eq!(
+            model.terminal.screen().scrollback(),
+            model.terminal.screen().scrollback_len()
+        );
+        model.live();
+        assert_eq!(model.terminal.screen().contents(), live);
+    }
+    #[test]
+    fn arriving_output_keeps_the_scrolled_view_anchored() {
+        let mut model = Model::new(
+            PtySize {
+                rows: 3,
+                cols: 40,
+                ..PtySize::default()
+            },
+            100,
+        );
+        model.process(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        model.scroll(2);
+        let earlier = model.terminal.screen().contents();
+        model.process(b"\r\nsix\r\nseven");
+        assert_eq!(model.terminal.screen().contents(), earlier);
+        assert_eq!(model.terminal.screen().scrollback(), 4);
+        model.live();
+        assert!(model.terminal.screen().contents().ends_with("seven"));
+    }
+    #[test]
+    fn alternate_screen_is_not_scrolled_and_history_is_bounded() {
+        let mut model = Model::new(
+            PtySize {
+                rows: 2,
+                cols: 20,
+                ..PtySize::default()
+            },
+            3,
+        );
+        for _ in 0..30 {
+            model.process(b"line\r\n");
         }
-        let block = &model.blocks.entries[0];
-        assert_eq!(block.command, "echo");
-        assert_eq!(block.output, "new");
-        assert_eq!(block.status, Some(7));
-        assert!(!model.executing);
-        Ok(())
+        assert_eq!(model.terminal.screen().scrollback_len(), 3);
+        model.process(b"\x1b[?1049hprogram");
+        model.scroll(3);
+        assert_eq!(model.terminal.screen().scrollback(), 0);
+        assert!(model.terminal.screen().contents().contains("program"));
+        model.process(b"\x1b[?1049l");
+        model.scroll(3);
+        assert_eq!(model.terminal.screen().scrollback(), 3);
     }
 }

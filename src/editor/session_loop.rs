@@ -57,15 +57,6 @@ impl Loop {
         syntax: &mut super::super::submission::Checker,
     ) -> io::Result<Option<RunResult>> {
         let input = terminal.read_key()?;
-        if let crate::input::Key::SessionBuffer { text, execute } = input {
-            syntax.cancel();
-            editor.replace_from_session(text, execute);
-            if execute {
-                syntax.request(&editor.buffer)?;
-            }
-            self.next_frame = Instant::now();
-            return Ok(None);
-        }
         if let crate::input::Key::Paste(text) = input {
             syntax.cancel();
             editor.insert_paste(&text);

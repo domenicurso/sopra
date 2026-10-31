@@ -2,7 +2,6 @@ use crate::prompt::{template::Template, widgets::settings::Settings};
 mod file;
 mod session;
 pub(crate) use file::path;
-pub(crate) use session::Session as SessionConfig;
 use std::{io, path::PathBuf};
 use toml_edit::{DocumentMut, Item};
 
@@ -125,9 +124,8 @@ mod tests {
         assert_eq!(config.widgets.definition("clock").options["format"], "%H");
         for invalid in [
             "prompt=42",
-            "[session]\nmax_blocks=0",
             "[session]\nscrollback_lines=-1",
-            "[session]\nmax_output_bytes=true",
+            "[session]\nscrollback_lines=0",
             "[editor]\ncompletion=false",
             "[unknown]\nkey=true",
             "[prompt]\nleft=42",

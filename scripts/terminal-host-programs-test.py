@@ -7,7 +7,7 @@ import signal
 import sys
 import time
 
-from terminal_host import browse, hosted, submit, wait_until
+from terminal_host import scroll_up, hosted, submit, wait_until
 
 
 PROGRAM = '''import os, sys, termios, tty
@@ -36,15 +36,13 @@ def test_foreground_program() -> None:
         wait_until(terminal, lambda: (root / "received").exists())
         assert (root / "received").read_bytes() == b"\x1b[<64;12;8Mq"
         terminal.read(0.3)
-        browse(terminal)
-        assert "Session history" in terminal.screen.text()
-        terminal.key("ESC")
-        terminal.read(0.1)
+        assert "rprompt" in terminal.screen.text(), terminal.screen.text()
         submit(terminal, "sleep 30")
         terminal.key("CTRL-C")
         terminal.read(0.4)
-        browse(terminal)
-        assert "exit 130" in terminal.screen.text(), terminal.screen.text()
+        submit(terminal, "touch interrupted")
+        wait_until(terminal, lambda: (root / "interrupted").exists())
+
 
 
 def test_shutdown() -> None:
@@ -76,14 +74,10 @@ def test_literal_paste_and_long_output() -> None:
         wait_until(terminal, lambda: (root / "submitted").exists())
         terminal.read(0.1)
         submit(terminal, "for i in {1..1000}; do print row-$i; done")
-        browse(terminal)
-        terminal.send(b"/")
-        terminal.read(0.05)
-        terminal.send_text("row-999")
-        terminal.key("ENTER")
-        terminal.read(0.2)
-        assert "row-999" in terminal.screen.text(), terminal.screen.text()
-        assert "matches" in terminal.screen.text(), terminal.screen.text()
+        scroll_up(terminal)
+        assert "row-990" in terminal.screen.text(), terminal.screen.text()
+        assert "rprompt" not in terminal.screen.text(), terminal.screen.text()
+
 
 
 def test_duplex_backpressure() -> None:

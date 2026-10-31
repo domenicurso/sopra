@@ -79,17 +79,13 @@ queries from its model and forwards terminal palette, title, and clipboard
 operations across the outer boundary. Foreground alternate-screen mouse input
 is routed to the child's requested protocol.
 
-Private encoded preexec/precmd markers delimit command blocks. Each block owns
-its command, original directory, status, duration, and terminal-interpreted plain
-output. Count, line, and byte limits bound retained history. The browser derives
-wrapped rows from logical text, retaining byte-based selection across resizes.
-Search joins soft wraps and preserves explicit line boundaries. The live prompt
-is pinned from the same terminal model while browsing; the child keeps running.
+The same terminal grid supplies the live screen and scrollback viewport. Wheel
+and page keys move that viewport without adding UI or relocating the prompt.
+Typing returns to the live screen before input reaches the child; mouse clicks
+at the live bottom use the child's requested protocol. The configured line limit
+bounds in-memory scrollback independently of Zsh's persisted command history.
 
-Rerun/reuse actions send a private input message to the editor instead of pasting
-control bytes into ZLE. Rerun enters the normal syntax/submission path, and the
-worker retains and restores any draft on the next edit. The host owns terminal
-mode restoration and hangs up the foreground process group and Zsh on shutdown.
-Parser or I/O errors terminate the hosted session through the same cleanup path.
-Supported controls and compatibility limits are documented in
-[hosted shells](hosted-shell.md).
+The host owns terminal mode restoration and hangs up the foreground process
+group and Zsh on shutdown. Parser or I/O errors terminate the hosted session
+through the same cleanup path. Supported controls and compatibility limits are
+documented in [hosted shells](hosted-shell.md).

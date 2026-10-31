@@ -1,4 +1,4 @@
-use super::{browser::Browser, layout, model::Model, terminal::Terminal, view};
+use super::{cells, model::Model, terminal::Terminal};
 use ratatui::buffer::Buffer;
 use std::io;
 
@@ -7,13 +7,14 @@ pub(super) struct Painter {
     previous: Option<Buffer>,
 }
 impl Painter {
-    pub(super) fn render(
-        &mut self,
-        model: &Model,
-        browser: Option<&Browser>,
-        terminal: &mut Terminal,
-    ) -> io::Result<()> {
-        let buffer = view::frame(model, browser);
+    pub(super) fn render(&mut self, model: &Model, terminal: &mut Terminal) -> io::Result<()> {
+        let mut buffer = Buffer::empty(ratatui::layout::Rect::new(
+            0,
+            0,
+            model.size.cols,
+            model.size.rows,
+        ));
+        cells::copy_screen(&mut buffer, model.terminal.screen());
         let mut bytes = b"\x1b[?2026h\x1b[?7l\x1b[?25l".to_vec();
         let empty = Buffer::empty(buffer.area);
         let previous = self
@@ -32,16 +33,9 @@ impl Painter {
             crate::render::paint_cell(&mut bytes, column, row, cell);
         }
         let screen = model.terminal.screen();
-        let (mut row, column) = screen.cursor_position();
-        if browser.is_some() {
-            let layout = layout::Layout::new(model);
-            row = layout.prompt_top
-                + row
-                    .saturating_sub(layout.prompt_source)
-                    .min(layout.pinned.saturating_sub(1));
-        }
+        let (row, column) = screen.cursor_position();
         crate::render::move_to(&mut bytes, column, row.min(model.size.rows - 1));
-        if !screen.hide_cursor() && browser.is_none() {
+        if !screen.hide_cursor() && screen.scrollback() == 0 {
             bytes.extend_from_slice(b"\x1b[?25h");
         }
         bytes.extend_from_slice(if screen.application_cursor() {

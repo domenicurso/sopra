@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Iterator
 from collections.abc import Callable
 import tempfile
-import os
-import shlex
 import time
 
 from terminal_session import TerminalSession
@@ -32,16 +30,10 @@ def hosted() -> Iterator[tuple[TerminalSession, Path]]:
         config.mkdir()
         (config / "config.toml").write_text(CONFIG)
         (root / ".zshrc").write_text("HISTFILE=/dev/null\nSAVEHIST=0\n")
-        bin_dir = root / "bin"
-        bin_dir.mkdir()
-        for name in ["open", "xdg-open"]:
-            opener = bin_dir / name
-            opener.write_text(f"#!/bin/sh\nprintf '%s' \"$1\" > {shlex.quote(str(root / 'opened'))}\n")
-            opener.chmod(0o755)
         with TerminalSession(
             (str(ROOT / "target/debug/sopra-worker"), "shell"),
             cwd=str(root), rows=24, columns=120,
-            env={"ZDOTDIR": directory, "XDG_CONFIG_HOME": directory, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+            env={"ZDOTDIR": directory, "XDG_CONFIG_HOME": directory},
         ) as terminal:
             terminal.wait_for("rprompt", timeout=5)
             terminal.read(0.1)
@@ -55,10 +47,9 @@ def submit(terminal: TerminalSession, command: str) -> None:
     terminal.read(0.4)
 
 
-def browse(terminal: TerminalSession) -> None:
+def scroll_up(terminal: TerminalSession) -> None:
     # The pointer may be over the live prompt; the wheel must still scroll history.
     terminal.send(b"\x1b[<64;10;24M")
-    terminal.wait_for("Session history")
     terminal.read(0.1)
 
 

@@ -3,9 +3,7 @@ use toml_edit::DocumentMut;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Session {
-    pub(crate) max_blocks: usize,
     pub(crate) scrollback_lines: usize,
-    pub(crate) max_output_bytes: usize,
 }
 impl Session {
     pub(super) fn parse(document: &DocumentMut) -> io::Result<Self> {
@@ -21,9 +19,7 @@ impl Session {
                 })
         };
         Ok(Self {
-            max_blocks: number("max_blocks")?,
             scrollback_lines: number("scrollback_lines")?,
-            max_output_bytes: number("max_output_bytes")?,
         })
     }
 }

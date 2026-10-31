@@ -32,7 +32,6 @@ pub(crate) struct CursorPosition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Key {
     Paste(String),
-    SessionBuffer { text: String, execute: bool },
     Character(char),
     Control(char),
     Alt(char),

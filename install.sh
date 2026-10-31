@@ -43,7 +43,6 @@ install -m 0644 "$source_dir/zsh/editor.zsh" "$SOPRA_PREFIX/share/sopra/editor.z
 install -m 0644 "$source_dir/zsh/session.zsh" "$SOPRA_PREFIX/share/sopra/session.zsh"
 install -m 0644 "$source_dir/zsh/worker.zsh" "$SOPRA_PREFIX/share/sopra/worker.zsh"
 install -m 0644 "$source_dir/zsh/context.zsh" "$SOPRA_PREFIX/share/sopra/context.zsh"
-install -m 0644 "$source_dir/zsh/host.zsh" "$SOPRA_PREFIX/share/sopra/host.zsh"
 install -m 0644 "$source_dir/zsh/history.zsh" "$SOPRA_PREFIX/share/sopra/history.zsh"
 install -m 0644 "$source_dir/zsh/protocol.zsh" "$SOPRA_PREFIX/share/sopra/protocol.zsh"
 

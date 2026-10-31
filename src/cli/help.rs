@@ -4,7 +4,7 @@ use std::io;
 const COMMANDS: &[(&str, &str)] = &[
     (
         "shell",
-        "Start a hosted Zsh session with command blocks and searchable scrollback",
+        "Start a hosted Zsh session with ordinary wheel scrollback",
     ),
     (
         "refresh",

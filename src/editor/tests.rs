@@ -137,19 +137,6 @@ fn word_editing_and_yank_keep_the_buffer_byte_safe() {
 }
 
 #[test]
-fn rerunning_replaces_multiline_input_and_retains_its_cursor_and_draft() {
-    let mut editor = editor("echo draft\nsecond line");
-    editor.cursor = 3;
-    editor.replace_from_session("echo 'é'".into(), true);
-    assert_eq!(editor.buffer, "echo 'é'");
-    assert_eq!(editor.cursor, editor.buffer.len());
-    let draft = editor.take_draft();
-    assert!(
-        draft.is_some_and(|draft| draft.buffer == "echo draft\nsecond line" && draft.cursor == 3)
-    );
-}
-
-#[test]
 fn paste_replaces_selected_text_without_pairing_or_submitting_newlines() {
     use crate::input::MouseKind;
     let mut editor = editor("hello world");

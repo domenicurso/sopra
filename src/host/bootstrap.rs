@@ -26,7 +26,7 @@ impl Bootstrap {
             .ok_or_else(|| io::Error::other("HOME and ZDOTDIR are unset"))?;
         let original = PathBuf::from(original);
         let env = format!(
-            "typeset -gx _SOPRA_HOST_SHELL_PID=$$\ntypeset -g ZDOTDIR={}\n[[ ! -r $ZDOTDIR/.zshenv ]] || source \"$ZDOTDIR/.zshenv\"\ntypeset -gx _SOPRA_USER_ZDOTDIR=$ZDOTDIR\nZDOTDIR={}\n",
+            "typeset -g ZDOTDIR={}\n[[ ! -r $ZDOTDIR/.zshenv ]] || source \"$ZDOTDIR/.zshenv\"\ntypeset -gx _SOPRA_USER_ZDOTDIR=$ZDOTDIR\nZDOTDIR={}\n",
             quote(&original),
             quote(directory.path())
         );

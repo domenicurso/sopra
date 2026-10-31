@@ -1,19 +1,10 @@
-use super::protocol::{self, Event};
-
 #[derive(Default)]
 pub(super) struct Callbacks {
-    pub(super) events: Vec<Event>,
     pub(super) replies: Vec<u8>,
     pub(super) terminal: Vec<u8>,
 }
 impl vt100::Callbacks for Callbacks {
-    fn unhandled_osc(&mut self, screen: &mut vt100::Screen, params: &[&[u8]]) {
-        if let Some(event) = protocol::event(params) {
-            self.events.push(event);
-        }
-        if params.first() == Some(&b"133".as_slice()) && params.get(1) == Some(&b"A".as_slice()) {
-            self.events.push(Event::Prompt(screen.cursor_position().0));
-        }
+    fn unhandled_osc(&mut self, _screen: &mut vt100::Screen, params: &[&[u8]]) {
         if matches!(params.first(), Some(&b"10" | &b"11" | &b"12" | &b"4"))
             && params.contains(&b"?".as_slice())
         {

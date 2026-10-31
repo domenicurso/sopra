@@ -66,11 +66,9 @@ pub(crate) struct EditorConfig {
     pub(crate) palette: TerminalPalette,
 }
 
-mod session_buffer;
-pub(crate) use session_buffer::Draft;
+mod paste;
 
 pub(crate) struct EditorState {
-    draft: Option<Draft>,
     buffer: String,
     layout: crate::text::layout::Cache,
     history: History,
@@ -120,7 +118,6 @@ impl EditorState {
         let completions = completion_state::State::new(&config, completion);
         let (prompt, rprompt) = widgets.render();
         Self {
-            draft: None,
             buffer: config.buffer,
             layout: crate::text::layout::Cache::default(),
             history: History::default(),

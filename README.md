@@ -50,13 +50,13 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
 
-See [hosted shells](docs/hosted-shell.md) for scrollback, block actions, and terminal compatibility.
+See [hosted shells](docs/hosted-shell.md) for scrollback and terminal compatibility.
 
 ## Commands
 
 | Command | Behavior |
 | --- | --- |
-| `sopra shell` | Launch a hosted Zsh with scrollback, searchable command blocks, and output selection. |
+| `sopra shell` | Launch Zsh with ordinary wheel scrollback and command-line mouse selection. |
 | `sopra refresh` | Validate and reload config, retaining existing widget instances and history. |
 | `sopra restart` | Replace the worker process and reset widget state. Shell history stays intact. |
 | `sopra config edit` | Open config in `$VISUAL`, then `$EDITOR`, or `vi`; validate and refresh after the editor exits successfully. |

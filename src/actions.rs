@@ -73,7 +73,7 @@ pub(crate) fn resolve(key: Key) -> Action {
         Key::AltUp => Action::PreviousSuggestion,
         Key::AltDown => Action::NextSuggestion,
         Key::Ignore => Action::Ignore,
-        Key::Paste(_) | Key::SessionBuffer { .. } => Action::Ignore,
+        Key::Paste(_) => Action::Ignore,
     }
 }
 

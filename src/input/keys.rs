@@ -34,9 +34,6 @@ impl Terminal {
             return Ok(Key::Escape);
         }
         let prefix = self.read_byte()?;
-        if prefix == b']' {
-            return self.read_session_buffer();
-        }
         if prefix != b'[' && prefix != b'O' {
             return Ok(if prefix.is_ascii_alphabetic() {
                 Key::Alt(prefix as char)
@@ -105,45 +102,6 @@ impl Terminal {
             .and_then(|text| text.chars().next())
             .map(Key::Character)
             .unwrap_or(Key::Character('�')))
-    }
-
-    fn read_session_buffer(&mut self) -> io::Result<Key> {
-        use base64::Engine;
-        let mut bytes = Vec::new();
-        let mut terminated = false;
-        while bytes.len() < 1_048_576 && self.poll(Duration::from_millis(50))? {
-            let byte = self.read_byte()?;
-            if byte == 7 {
-                terminated = true;
-                break;
-            }
-            bytes.push(byte);
-            if bytes.ends_with(b"\x1b\\") {
-                bytes.truncate(bytes.len() - 2);
-                terminated = true;
-                break;
-            }
-        }
-        if !terminated || std::env::var("_SOPRA_HOSTED").as_deref() != Ok("1") {
-            return Ok(Key::Ignore);
-        }
-        let Some(payload) = bytes.strip_prefix(b"777;sopra;buffer;") else {
-            return Ok(Key::Ignore);
-        };
-        let Some((&mode, payload)) = payload.split_first() else {
-            return Ok(Key::Ignore);
-        };
-        let text = base64::engine::general_purpose::STANDARD
-            .decode(payload)
-            .ok()
-            .and_then(|bytes| String::from_utf8(bytes).ok());
-        Ok(match text.filter(|text| !text.contains('\0')) {
-            Some(text) if matches!(mode, b'r' | b'e') => Key::SessionBuffer {
-                text,
-                execute: mode == b'r',
-            },
-            _ => Key::Ignore,
-        })
     }
 }
 
