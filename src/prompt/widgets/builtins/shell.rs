@@ -1,12 +1,11 @@
-use super::Widget;
+use sopra::{Context, Text, Widget};
 
-struct Shell(String);
-
+struct Shell;
 impl Widget for Shell {
-    fn token(&self) -> &str { "{shell}" }
-    fn render(&self) -> String { self.0.clone() }
+    fn render(&mut self, _context: &Context) -> Text {
+        "zsh".into()
+    }
 }
-
-pub(super) fn create(_context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
-    Box::new(Shell("zsh".to_owned()))
+pub(crate) fn create() -> Box<dyn Widget + Send> {
+    Box::new(Shell)
 }

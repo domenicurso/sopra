@@ -17,33 +17,29 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
         typeset -g SOPRA_BIN=$script_dir/../../libexec/sopra-worker
     fi
 fi
-source "$script_dir/config.zsh"
 source "$script_dir/protocol.zsh"
-_sopra_load_prompt_config "$(_sopra_config_path)" || return 1
 source "$script_dir/context.zsh"
 source "$script_dir/history.zsh"
-source "$script_dir/prompt.zsh"
 source "$script_dir/worker.zsh"
 source "$script_dir/session.zsh"
-_sopra_prompt_defaults
-if [[ -z ${_SOPRA_CONFIG_CURSOR_ANIMATION+x} ]]; then
-    typeset -g _SOPRA_CONFIG_CURSOR_ANIMATION=1
-fi
-if [[ -z ${_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING+x} ]]; then
-    typeset -g _SOPRA_CONFIG_SYNTAX_HIGHLIGHTING=1
-fi
-if [[ -z ${_SOPRA_CONFIG_COMPLETION_ENABLED+x} ]]; then
-    typeset -g _SOPRA_CONFIG_COMPLETION_ENABLED=1
-fi
-
 if [[ ! -x $SOPRA_BIN ]]; then
     print -u2 "sopra: executable not found at $SOPRA_BIN"
     return 1
 fi
 
+sopra() {
+    emulate -L zsh
+    if [[ $# == 0 || ( $# == 1 && ${1-} == (--help|-h|help) ) ]]; then
+        "$SOPRA_BIN" --help
+        return $?
+    fi
+    print -u2 -- 'usage: sopra [--help]'
+    return 2
+}
+
 _sopra_prepare_transient() {
-    _sopra_shell_prompt "${_sopra_transient_prompt-$_SOPRA_CONFIG_TRANSIENT_PROMPT}"
-    PROMPT=$REPLY
+    PROMPT=$_SOPRA_RESULT_PROMPT
+    PS2=$_SOPRA_RESULT_SECONDARY
     RPROMPT=''
     # A pending resize can make ZLE redraw its cached full prompt on accept.
     zle .reset-prompt
@@ -55,17 +51,8 @@ _sopra_clear_highlights() {
 
 _sopra_line_init() {
     _sopra_server_start || return 1
-    local _sopra_transient_prompt=$_SOPRA_CONFIG_TRANSIENT_PROMPT
-    _sopra_shell_prompt "$_SOPRA_CONFIG_SECONDARY_PROMPT"
-    PS2=$REPLY
-    if [[ $CONTEXT == cont ]]; then
-        PROMPT=$_SOPRA_CONFIG_SECONDARY_PROMPT
-        RPROMPT=''
-        _sopra_transient_prompt=$_SOPRA_CONFIG_SECONDARY_PROMPT
-    else
-        PROMPT=$_SOPRA_CONFIG_PROMPT
-        RPROMPT=$_SOPRA_CONFIG_RPROMPT
-    fi
+    PROMPT=''
+    RPROMPT=''
     _sopra_clear_highlights
     while _sopra_edit; do
         BUFFER=$_SOPRA_RESULT_BUFFER
@@ -95,8 +82,8 @@ _sopra_apply_result() {
             ;;
         directory)
             if builtin cd -- "$_SOPRA_RESULT_DIRECTORY"; then
-                PROMPT=$_SOPRA_CONFIG_PROMPT
-                RPROMPT=$_SOPRA_CONFIG_RPROMPT
+                PROMPT=''
+                RPROMPT=''
             fi
             ;;
         tab) zle expand-or-complete ;;
@@ -125,5 +112,6 @@ _sopra_line_finish() {
 
 zle -N zle-line-init _sopra_line_init
 zle -N zle-line-finish _sopra_line_finish
+_sopra_hide_native_prompt() { PROMPT=''; RPROMPT=''; }
 _sopra_hide_native_prompt
 precmd_functions=(${precmd_functions:#_sopra_hide_native_prompt} _sopra_hide_native_prompt)

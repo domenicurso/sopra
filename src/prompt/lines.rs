@@ -21,7 +21,7 @@ pub(crate) fn widths(spans: &[PromptSpan]) -> Vec<usize> {
 mod tests {
     #[test]
     fn widths_preserve_styles_across_line_breaks() {
-        let spans = super::super::parse("[cyan]first\n$ [/]");
+        let spans = super::super::parse("[cyan]first\n$ [/cyan]");
         assert_eq!(super::widths(&spans), [5, 2]);
     }
 }

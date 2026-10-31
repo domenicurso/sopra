@@ -55,7 +55,7 @@ def test_session_keeps_shell_state() -> None:
 
 def test_sopra_resize_round_trip_and_submit() -> None:
     root = Path(__file__).resolve().parent.parent
-    config = "[prompt]\nright = 'rprompt'\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n"
+    config = "[prompt]\nright = 'rprompt'\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n"
     with terminal_config(config) as config_root, TerminalSession(
         (str(root / "scripts" / "start.sh"),),
         rows=30,

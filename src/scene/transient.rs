@@ -14,9 +14,8 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
     let area = Rect::new(0, 0, size.columns, size.rows);
     let spans = crate::prompt::parse(editor.transient_prompt());
     let mut flow =
-        super::text_flow::TextFlow::new(CursorPosition { column: 0, row: 0 }, size.columns);
+        crate::text::flow::TextFlow::new(CursorPosition { column: 0, row: 0 }, size.columns);
     flow.prompt(&spans);
-    let start = flow.cursor();
     flow.command(
         editor.buffer(),
         &crate::prompt::parse(editor.secondary_prompt()),
@@ -26,19 +25,20 @@ pub(super) fn build(editor: &EditorState, size: TerminalSize) -> Scene {
         Box::new(PromptElement {
             column: 0,
             row: 0,
-            spans: if editor.transient_prompt() == "$ " {
-                crate::prompt::parse("\x1b[2m$ ")
-            } else {
-                spans
-            },
+            spans: spans.clone(),
         }),
         Box::new(CommandElement {
-            column: start.column,
-            row: start.row,
-            buffer: editor.buffer().to_string(),
+            layout: std::rc::Rc::new(crate::text::layout::Layout::new(
+                crate::text::layout::Input {
+                    anchor: CursorPosition { column: 0, row: 0 },
+                    columns: size.columns,
+                    prompt: &spans,
+                    secondary: &crate::prompt::parse(editor.secondary_prompt()),
+                    buffer: editor.buffer(),
+                },
+            )),
             spans: editor.transient_syntax(),
             selection: None,
-            secondary: crate::prompt::parse(editor.secondary_prompt()),
         }),
     ];
     Scene::new(

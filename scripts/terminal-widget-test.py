@@ -14,9 +14,9 @@ def exercise_widgets(root: Path, directory: Path) -> None:
     config = directory.parent / "widget-config" / "sopra"
     config.mkdir(parents=True)
     (config / "config.toml").write_text(
-        "[prompt]\nleft = '{path} $ '\nright = '[if git]{git}[dim] : [/][/]{clock}'\n"
-        "transient = '[dim]done>[/] '\n[widgets.clock]\nformat = '%H[dim]:[/]%M[dim]:[/]%S'\n"
-        "[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n"
+        "[prompt]\nleft = '$path $ '\nright = '$git[dim] : [/dim]$clock'\n"
+        "transient = '[dim]done>[/dim] '\n[widgets.clock]\nformat = '%H:%M:%S'\n"
+        "[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n"
     )
     environment = {
         "SOPRA_REPO_ROOT": str(root),
@@ -68,10 +68,8 @@ def exercise_multiline_directory(root: Path, directory: Path) -> None:
     config = directory.parent / "path-config" / "sopra"
     config.mkdir(parents=True)
     (config / "config.toml").write_text(
-        "[prompt]\nleft = \"{path}\\n$ \"\nright = ''\ntransient = '$ '\n"
-        "[editor]\ncompletion = false\ncursor_animation = false\n"
-        "[widgets.path]\nbefore = '[green]{text}[/]'\n"
-        "selected = '[yellow][reverse]{text}[/][/]'\nafter = '[red][dim]{text}[/]'\n"
+        "[prompt]\nleft = \"[blue]$path[/blue]\\n$ \"\nright = ''\ntransient = '$ '\n"
+        "[completion]\nenabled = false\n[editor]\ncursor_animation = false\n"
     )
     environment = {
         "XDG_CONFIG_HOME": str(config.parent),
@@ -91,7 +89,7 @@ def exercise_multiline_directory(root: Path, directory: Path) -> None:
         terminal.send(b"\x07\t")
         terminal.read(0.2)
         output = bytes(terminal.output)
-        assert b"\x1b[32m" in output and b"\x1b[33m" in output and b"\x1b[31m" in output, output
+        assert b"\x1b[7m" in output and b"\x1b[2m" in output, output
         terminal.key("ENTER")
         terminal.read(0.8)
         lines = terminal.screen.lines()

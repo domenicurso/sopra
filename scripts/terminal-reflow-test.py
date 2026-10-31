@@ -19,6 +19,7 @@ class Snapshot(TypedDict):
     lines: list[str]
     base: int
     cursor: list[int]
+    paintedCursors: list[list[int]]
 
 
 class ReflowScreen:
@@ -62,10 +63,12 @@ def assert_prompt(screen: ReflowScreen, command: str = "") -> None:
     assert line.startswith("test $ " + command), line
     assert line.endswith("rprompt") and len(line) == screen.columns, line
     assert row - snapshot["base"] == snapshot["cursor"][1], snapshot
+    # Check the painted cursor as well as the terminal cursor used for recovery.
     assert snapshot["cursor"][0] == len("test $ " + command), snapshot
+    assert snapshot["paintedCursors"] == [[len("test $ " + command), row]], snapshot
 
 
-def sweep(terminal: TerminalSession, screen: ReflowScreen, minimum: int) -> None:
+def sweep(terminal: TerminalSession, screen: ReflowScreen, minimum: int, command: str = "") -> None:
     before = screen.snapshot()
     for width in chain(range(119, minimum - 1, -1), range(minimum + 1, 121)):
         terminal.resize(12, width)
@@ -76,8 +79,12 @@ def sweep(terminal: TerminalSession, screen: ReflowScreen, minimum: int) -> None
     terminal.read(0.2)
     assert_history(screen)
     after = screen.snapshot()
-    assert after["base"] == before["base"], (before, after)
-    assert after["cursor"][1] == before["cursor"][1], (before, after)
+    # A wrapped command at the bottom needs additional viewport rows. The
+    # terminal may keep those rows after expansion, but the prompt must stay
+    # attached to the same scrollback content rather than leave duplicate rows.
+    extra_rows = len("test $ " + command) // minimum
+    assert before["base"] <= after["base"] <= before["base"] + extra_rows, (before, after)
+    assert after["base"] + after["cursor"][1] == before["base"] + before["cursor"][1], (before, after)
 
 
 def run_session(root: Path, screen: ReflowScreen, config_root: str) -> None:
@@ -116,7 +123,7 @@ def run_session(root: Path, screen: ReflowScreen, config_root: str) -> None:
         terminal.send_text(command)
         terminal.read(0.2)
         assert_prompt(screen, command)
-        sweep(terminal, screen, 20)
+        sweep(terminal, screen, 20, command)
         assert_prompt(screen, command)
         terminal.key("ENTER")
         terminal.read(0.3)
@@ -129,7 +136,7 @@ def run_session(root: Path, screen: ReflowScreen, config_root: str) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
-    with terminal_config("[prompt]\nleft = 'test $ '\nright = 'rprompt'\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(
+    with terminal_config("[prompt]\nleft = 'test $ '\nright = 'rprompt'\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(
         ["node", str(root / "scripts/terminal-reflow-screen.cjs")],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

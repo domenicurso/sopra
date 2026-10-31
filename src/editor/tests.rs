@@ -1,5 +1,8 @@
 use super::{EditorConfig, EditorState, ExitReason};
-use crate::input::{CursorPosition, Key, TerminalSize};
+use crate::{
+    actions::Action,
+    input::{CursorPosition, TerminalSize},
+};
 
 fn editor(buffer: &str) -> EditorState {
     EditorState::new(EditorConfig {
@@ -27,30 +30,30 @@ mod lifecycle;
 #[test]
 fn cursor_input_is_character_based_but_state_is_byte_safe() {
     let mut state = editor("a💡b");
-    state.handle_key(Key::Home);
-    state.handle_key(Key::Right);
-    state.handle_key(Key::Character('x'));
+    state.handle_key(Action::Home);
+    state.handle_key(Action::Right);
+    state.handle_key(Action::Character('x'));
     assert_eq!(state.buffer(), "ax💡b");
 }
 
 #[test]
 fn grapheme_navigation_preserves_emoji() {
     let mut state = editor("a👩‍💻b");
-    state.handle_key(Key::Backspace);
+    state.handle_key(Action::Backspace);
     assert_eq!(state.buffer(), "a👩‍💻");
-    state.handle_key(Key::Backspace);
+    state.handle_key(Action::Backspace);
     assert_eq!(state.buffer(), "a");
 }
 
 #[test]
 fn escape_keeps_the_edited_buffer() {
     let mut state = editor("");
-    state.handle_key(Key::Character('g'));
-    state.handle_key(Key::Character('i'));
-    assert!(state.handle_key(Key::Escape).is_none());
+    state.handle_key(Action::Character('g'));
+    state.handle_key(Action::Character('i'));
+    assert!(state.handle_key(Action::Escape).is_none());
     assert_eq!(state.buffer(), "gi");
     assert!(!state.overlay_visible());
-    state.handle_key(Key::Character('t'));
+    state.handle_key(Action::Character('t'));
     assert!(state.overlay_visible());
 }
 
@@ -76,44 +79,44 @@ fn accepted_result_carries_cursor_free_syntax_highlighting() {
 #[test]
 fn paired_quotes_and_brackets_are_inserted_and_skipped() {
     let mut state = editor("");
-    state.handle_key(Key::Character('"'));
+    state.handle_key(Action::Character('"'));
     assert_eq!(state.buffer(), "\"\"");
-    state.handle_key(Key::Character('"'));
+    state.handle_key(Action::Character('"'));
     assert_eq!(state.buffer(), "\"\"");
     let mut brackets = editor("");
-    brackets.handle_key(Key::Character('('));
+    brackets.handle_key(Action::Character('('));
     assert_eq!(brackets.buffer(), "()");
-    brackets.handle_key(Key::Character(')'));
+    brackets.handle_key(Action::Character(')'));
     assert_eq!(brackets.buffer(), "()");
 }
 
 #[test]
 fn comments_do_not_receive_auto_pairs() {
     let mut state = editor("# ");
-    state.handle_key(Key::Character('('));
+    state.handle_key(Action::Character('('));
     assert_eq!(state.buffer(), "# (");
 }
 
 #[test]
 fn eof_deletes_a_character_and_delegates_on_an_empty_line() {
     let mut state = editor("git st");
-    state.handle_key(Key::Home);
-    state.handle_key(Key::Eof);
+    state.handle_key(Action::Home);
+    state.handle_key(Action::Eof);
     assert_eq!(state.buffer(), "it st");
 
-    let result = editor("").handle_key(Key::Eof).expect("EOF result");
+    let result = editor("").handle_key(Action::Eof).expect("EOF result");
     assert_eq!(result.reason, ExitReason::DelegateEof);
 }
 
 #[test]
 fn empty_history_navigation_keeps_the_buffer_and_tab_can_delegate() {
     let mut state = editor("");
-    assert!(state.handle_key(Key::Up).is_none());
-    assert!(state.handle_key(Key::Down).is_none());
+    assert!(state.handle_key(Action::Up).is_none());
+    assert!(state.handle_key(Action::Down).is_none());
     assert_eq!(state.buffer(), "");
     assert_eq!(
         editor("")
-            .handle_key(Key::Tab)
+            .handle_key(Action::Tab)
             .expect("completion result")
             .reason,
         ExitReason::DelegateTab
@@ -123,12 +126,12 @@ fn empty_history_navigation_keeps_the_buffer_and_tab_can_delegate() {
 #[test]
 fn word_editing_and_yank_keep_the_buffer_byte_safe() {
     let mut state = editor("git status");
-    state.handle_key(Key::WordBackspace);
+    state.handle_key(Action::WordBackspace);
     assert_eq!(state.buffer(), "git ");
-    state.handle_key(Key::Yank);
+    state.handle_key(Action::Yank);
     assert_eq!(state.buffer(), "git status");
-    state.handle_key(Key::KillToStart);
+    state.handle_key(Action::KillToStart);
     assert_eq!(state.buffer(), "");
-    state.handle_key(Key::Yank);
+    state.handle_key(Action::Yank);
     assert_eq!(state.buffer(), "git status");
 }

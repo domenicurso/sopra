@@ -7,27 +7,16 @@ impl Terminal {
     pub(crate) fn read_key(&mut self) -> io::Result<Key> {
         let first = self.read_byte()?;
         match first {
-            0x00 => Ok(Key::Eof),
             b'\r' | b'\n' => Ok(Key::Enter),
             b'\t' => Ok(Key::Tab),
-            0x03 => Ok(Key::Cancel),
-            0x01 => Ok(Key::Home),
-            0x02 => Ok(Key::Left),
-            0x05 => Ok(Key::End),
-            0x06 => Ok(Key::Right),
-            0x07 => Ok(Key::PromptWidgets),
-            0x0b => Ok(Key::KillToEnd),
-            0x0c => Ok(Key::Clear),
-            0x0e => Ok(Key::Down),
-            0x10 => Ok(Key::Up),
-            0x15 => Ok(Key::KillToStart),
-            0x17 => Ok(Key::WordBackspace),
-            0x19 => Ok(Key::Yank),
+            byte @ 0x01..=0x1a if byte != 0x08 && byte != 0x1b => {
+                Ok(Key::Control((b'a' + byte - 1) as char))
+            }
             0x08 | 0x7f => Ok(Key::Backspace),
             0x1b => self.read_escape_sequence(),
             byte if byte.is_ascii() && !byte.is_ascii_control() => Ok(Key::Character(byte as char)),
             byte if byte >= 0x80 => self.read_utf8(byte),
-            _ => Ok(Key::Eof),
+            _ => Ok(Key::Ignore),
         }
     }
 
@@ -46,11 +35,10 @@ impl Terminal {
         }
         let prefix = self.read_byte()?;
         if prefix != b'[' && prefix != b'O' {
-            return Ok(match prefix {
-                b'b' => Key::WordLeft,
-                b'f' => Key::WordRight,
-                b'd' => Key::WordBackspace,
-                _ => Key::Escape,
+            return Ok(if prefix.is_ascii_alphabetic() {
+                Key::Alt(prefix as char)
+            } else {
+                Key::Escape
             });
         }
         if prefix == b'[' && self.poll(Duration::from_millis(4))? {
@@ -73,8 +61,8 @@ impl Terminal {
         }
         Ok(match sequence.last().copied() {
             Some(b'Z') if prefix == b'[' => Key::BackTab,
-            Some(b'A') if sequence == b"1;3A" => Key::PreviousSuggestion,
-            Some(b'B') if sequence == b"1;3B" => Key::NextSuggestion,
+            Some(b'A') if sequence == b"1;3A" => Key::AltUp,
+            Some(b'B') if sequence == b"1;3B" => Key::AltDown,
             Some(b'A') => Key::Up,
             Some(b'B') => Key::Down,
             Some(b'C') => Key::Right,

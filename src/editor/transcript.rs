@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn continuation_prefixes_have_their_own_style_and_preserve_unicode() {
-        let spans = submitted_spans("echo café\nprintf hé", &[], "[blue]>[/] ");
+        let spans = submitted_spans("echo café\nprintf hé", &[], "[blue]>[/blue] ");
         let text = spans
             .iter()
             .map(|span| span.text.as_str())

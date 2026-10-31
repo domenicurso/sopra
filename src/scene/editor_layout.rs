@@ -6,10 +6,7 @@ use super::overlay_layout;
 
 pub(super) struct EditorLayout {
     pub(super) area: Rect,
-    pub(super) row: u16,
     pub(super) prompt_row: u16,
-    pub(super) column: u16,
-    pub(super) line_column: u16,
     pub(super) cursor_column: u16,
     pub(super) cursor_row: u16,
     pub(super) end_row: u16,
@@ -27,10 +24,8 @@ impl EditorLayout {
     pub(super) fn new(editor: &EditorState, size: TerminalSize, rprompt_width: usize) -> Self {
         let area = Rect::new(0, 0, size.columns, size.rows);
         let prompt_row = editor.anchor().row.min(size.rows.saturating_sub(1));
-        let column = editor.anchor().column.min(size.columns.saturating_sub(1));
         let (start, cursor, end) = command_positions(editor, size);
         let row = start.row;
-        let line_column = start.column;
         let occupied = if row == prompt_row {
             if end.row > prompt_row {
                 size.columns
@@ -39,8 +34,7 @@ impl EditorLayout {
                     .max(cursor.column.saturating_add(editor.cursor_cell_width()))
             }
         } else {
-            crate::prompt::lines::widths(&crate::prompt::parse(editor.prompt()))[0]
-                .min(size.columns as usize) as u16
+            crate::prompt::lines::widths(editor.prompt())[0].min(size.columns as usize) as u16
         };
         let rprompt_column = rprompt_column(size.columns, occupied, rprompt_width);
         let completion_token_width = editor.completion_token_width();
@@ -49,10 +43,7 @@ impl EditorLayout {
         let overlay_height = placement.as_ref().map_or(0, |value| value.height);
         Self {
             area,
-            row,
             prompt_row,
-            column,
-            line_column,
             cursor_column: cursor.column,
             cursor_row: cursor.row,
             end_row: end.row,
@@ -99,23 +90,12 @@ fn command_positions(
     crate::input::CursorPosition,
     crate::input::CursorPosition,
 ) {
-    let mut flow = super::text_flow::TextFlow::new(
-        crate::input::CursorPosition {
-            row: editor.anchor().row,
-            column: editor.anchor().column,
-        },
-        size.columns,
-    );
-    let prompt = crate::prompt::parse(editor.prompt());
-    flow.prompt(&prompt);
-    let start = flow.cursor();
-    let mut cursor_flow = flow;
-    let secondary = crate::prompt::parse(editor.secondary_prompt());
-    cursor_flow.command(&editor.buffer()[..editor.cursor_byte()], &secondary);
-    let cursor = cursor_flow.cursor();
-    flow.command(editor.buffer(), &secondary);
-    let end = flow.cursor();
-    (start, cursor, end)
+    let layout = editor.text_layout(size);
+    (
+        layout.start,
+        layout.position(editor.cursor_byte()),
+        layout.end,
+    )
 }
 
 fn rprompt_column(columns: u16, occupied_end: u16, width: usize) -> u16 {

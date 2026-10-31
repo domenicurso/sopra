@@ -2,7 +2,7 @@ use super::overlay::{OverlayElement, overlay_width};
 use super::{
     Element, Scene,
     editor_layout::EditorLayout,
-    elements::{CommandElement, CursorElement, PromptElement},
+    elements::{CommandElement, CursorElement, LayoutPrompt, PromptElement},
 };
 use crate::{
     editor::EditorState,
@@ -12,7 +12,7 @@ use ratatui::layout::Rect;
 use std::time::Instant;
 pub(super) fn build(editor: &EditorState, size: TerminalSize, now: Instant) -> Scene {
     let items = editor.visible_items().to_vec();
-    let rprompt = crate::prompt::parse(editor.rprompt());
+    let rprompt = editor.rprompt().to_vec();
     let mut layout = EditorLayout::new(editor, size, crate::prompt::width(&rprompt));
     layout.footer = editor.completion_footer();
     layout.footer_hint = editor.completion_hint().to_string();
@@ -50,18 +50,16 @@ fn editor_elements(
     now: Instant,
 ) -> Vec<Box<dyn Element>> {
     let mut elements: Vec<Box<dyn Element>> = vec![
-        Box::new(PromptElement {
-            column: layout.column,
-            row: layout.prompt_row,
-            spans: crate::prompt::parse(editor.prompt()),
-        }),
+        Box::new(LayoutPrompt(editor.text_layout(
+            crate::input::TerminalSize::new(layout.area.width, layout.area.height),
+        ))),
         Box::new(CommandElement {
-            column: layout.line_column,
-            row: layout.row,
-            buffer: editor.buffer().to_string(),
+            layout: editor.text_layout(crate::input::TerminalSize::new(
+                layout.area.width,
+                layout.area.height,
+            )),
             spans: editor.syntax().to_vec(),
             selection: editor.text_selection(),
-            secondary: crate::prompt::parse(editor.secondary_prompt()),
         }),
     ];
     elements.push(Box::new(super::autosuggestion::Autosuggestion::new(
@@ -71,7 +69,7 @@ fn editor_elements(
         elements.push(Box::new(PromptElement {
             column: layout.rprompt_column,
             row: layout.prompt_row,
-            spans: crate::prompt::parse(editor.rprompt()),
+            spans: editor.rprompt().to_vec(),
         }));
     }
     if layout.overlay_height > 0 {

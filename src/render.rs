@@ -3,7 +3,7 @@ mod diff;
 mod finish;
 mod resize;
 
-pub(crate) use self::ansi::region_highlight_style;
+pub(crate) use self::ansi::{region_highlight_style, style_bytes};
 
 #[cfg(test)]
 mod tests;

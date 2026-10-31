@@ -77,23 +77,30 @@ impl TextSelection {
 }
 
 impl super::EditorState {
-    pub(super) fn prepare_text_selection(&mut self, key: crate::input::Key) -> bool {
-        use crate::input::Key;
+    pub(super) fn prepare_text_selection(&mut self, key: crate::actions::Action) -> bool {
+        use crate::actions::Action;
         let selected = self.text_selection.range();
         match key {
-            Key::Character(_) | Key::Yank | Key::Backspace | Key::Delete | Key::WordBackspace => {
+            Action::Character(_)
+            | Action::Yank
+            | Action::Backspace
+            | Action::Delete
+            | Action::WordBackspace => {
                 if let Some(range) = selected {
                     self.buffer.replace_range(range.clone(), "");
                     self.cursor = range.start;
                     self.text_selection.clear();
                     self.reset_selection();
-                    return matches!(key, Key::Backspace | Key::Delete | Key::WordBackspace);
+                    return matches!(
+                        key,
+                        Action::Backspace | Action::Delete | Action::WordBackspace
+                    );
                 }
                 self.text_selection.clear();
             }
-            Key::Left | Key::Right if selected.is_some() => {
+            Action::Left | Action::Right if selected.is_some() => {
                 let range = selected.unwrap_or(0..0);
-                self.cursor = if key == Key::Left {
+                self.cursor = if key == Action::Left {
                     range.start
                 } else {
                     range.end
@@ -101,20 +108,20 @@ impl super::EditorState {
                 self.text_selection.clear();
                 return true;
             }
-            Key::Escape if selected.is_some() => {
+            Action::Escape if selected.is_some() => {
                 self.text_selection.clear();
                 return true;
             }
-            Key::Left
-            | Key::Right
-            | Key::WordLeft
-            | Key::WordRight
-            | Key::Home
-            | Key::End
-            | Key::KillToStart
-            | Key::KillToEnd
-            | Key::Tab
-            | Key::BackTab => self.text_selection.clear(),
+            Action::Left
+            | Action::Right
+            | Action::WordLeft
+            | Action::WordRight
+            | Action::Home
+            | Action::End
+            | Action::KillToStart
+            | Action::KillToEnd
+            | Action::Tab
+            | Action::BackTab => self.text_selection.clear(),
             _ => {}
         }
         false

@@ -33,7 +33,7 @@ _sopra_worker_session() {
         socket_fd=$REPLY
         print -r -u "$socket_fd" -- "$request"
         IFS= read -r -u "$socket_fd" raw || return 1
-        if [[ $raw != K1$'\t'* ]]; then
+        if [[ $raw != K2$'\t'* ]]; then
             print -u2 -- "sopra: $raw"
             return 1
         fi

@@ -6,11 +6,7 @@ pub(crate) struct Args {
     pub(crate) cursor: usize,
     pub(crate) arm_completion: bool,
     pub(crate) suppress_completion: bool,
-    pub(crate) completion_enabled: bool,
-    pub(crate) syntax_highlighting: bool,
-    pub(crate) cursor_animation: bool,
-    pub(crate) prompt: String,
-    pub(crate) rprompt: String,
+    pub(crate) secondary: bool,
     pub(crate) cwd: PathBuf,
     pub(crate) history_file: Option<PathBuf>,
 }
@@ -39,11 +35,7 @@ impl Args {
             cursor: 0,
             arm_completion: false,
             suppress_completion: false,
-            completion_enabled: true,
-            syntax_highlighting: true,
-            cursor_animation: true,
-            prompt: "$ ".to_string(),
-            rprompt: String::new(),
+            secondary: false,
             cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             history_file: None,
         }
@@ -63,11 +55,7 @@ impl Args {
             }
             "--arm-completion" => self.arm_completion = true,
             "--suppress-completion" => self.suppress_completion = true,
-            "--disable-completion" => self.completion_enabled = false,
-            "--disable-syntax-highlighting" => self.syntax_highlighting = false,
-            "--disable-cursor-animation" => self.cursor_animation = false,
-            "--prompt" => self.prompt = next_value(arguments, argument)?,
-            "--rprompt" => self.rprompt = next_value(arguments, argument)?,
+            "--secondary" => self.secondary = true,
             "--cwd" => self.cwd = PathBuf::from(next_value(arguments, argument)?),
             "--history-file" => {
                 self.history_file = Some(PathBuf::from(next_value(arguments, argument)?))

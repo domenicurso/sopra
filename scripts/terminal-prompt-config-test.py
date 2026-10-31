@@ -14,15 +14,16 @@ from terminal_session import TerminalSession
 def exercise_config(root: Path, config_root: Path) -> None:
     directory = config_root / "sopra"
     directory.mkdir()
-    (directory / "config.toml").write_text('''[editor]
-completion = false
+    (directory / "config.toml").write_text('''[completion]
+enabled = false
+[editor]
 cursor_animation = false
 [prompt]
-left = "[cyan]{user}[/] [dim]$[/] "
-right = "[if status]FAIL={status} [/][if duration]TIME={duration} [/]{clock}"
+left = "[cyan]$user[/cyan] $ "
+right = "[red]$status[/red] · $duration · $clock"
 transient = "done> "
 [widgets.clock]
-format = "%H[dim]:[/]%M"
+format = "%H:%M"
 ''')
     shell_dir = config_root / "zsh"
     shell_dir.mkdir()
@@ -41,15 +42,15 @@ format = "%H[dim]:[/]%M"
         assert re.search(r"\d\d:\d\d", terminal.screen.text()), terminal.screen.lines()
         terminal.send_text("false")
         terminal.key("ENTER")
-        terminal.wait_for("FAIL=1", timeout=10)
+        terminal.wait_for("1 · ", timeout=10)
         terminal.read(0.3)
         assert (config_root / "hook.log").read_text().splitlines()[-1] == "1"
-        assert "TIME=" in terminal.screen.text(), terminal.screen.lines()
+        assert "ms" in terminal.screen.text(), terminal.screen.lines()
         terminal.send_text("sleep 0.2")
         terminal.key("ENTER")
         terminal.read(1)
         active = terminal.screen.lines()[terminal.screen.row]
-        assert "FAIL=" not in active and re.search(r"TIME=\d+ms", active), active
+        assert re.search(r"\d+ms · \d\d:\d\d", active), active
         assert "done> sleep 0.2" in terminal.screen.text(), terminal.screen.lines()
 
 
@@ -65,16 +66,16 @@ def exercise_default_colors(root: Path, config_root: Path) -> None:
         terminal.read(0.5)
         output = bytes(terminal.output)
         assert b"\x1b[31m" in output and b"\x1b[36m" in output, output
-        assert b"\x1b[1m\x1b[36m" in output and b"\x1b[2m" in output, output
+        assert b"\x1b[1m\x1b[34m" in output and b"\x1b[2m" in output, output
         assert " on " in terminal.screen.text(), terminal.screen.lines()
 
 
-def exercise_git_format(root: Path, config_root: Path) -> None:
+def exercise_git_styles(root: Path, config_root: Path) -> None:
     directory = config_root / "custom-git"
     directory.mkdir()
     config = directory / "config" / "sopra"
     config.mkdir(parents=True)
-    (config / "config.toml").write_text("[editor]\ncompletion = false\ncursor_animation = false\n[prompt]\nleft = '{git_status} $ '\nright = ''\n[widgets.git_status]\nformat = '<{items}>'\nitem_format = '[cyan]{item}[/]'\nseparator = ' + '\n")
+    (config / "config.toml").write_text("[completion]\nenabled = false\n[editor]\ncursor_animation = false\n[prompt]\nleft = '[cyan]$git_status[/cyan] $ '\nright = ''\n")
     subprocess.run(("git", "init", "--quiet", str(directory)), check=True)
     (directory / "staged").write_text("staged")
     (directory / "untracked").write_text("untracked")
@@ -85,25 +86,8 @@ def exercise_git_format(root: Path, config_root: Path) -> None:
     }
     command = ("zsh", "-di")
     with TerminalSession(command, rows=12, columns=100, cwd=str(directory), env=env) as terminal:
-        terminal.wait_for("<1! + 2?>", timeout=20)
+        terminal.wait_for("[1!|2?]", timeout=20)
         assert b"\x1b[36m" in terminal.output, terminal.output
-
-
-def exercise_saved_multiline(root: Path, config_root: Path) -> None:
-    prompt = "[cyan]path[/]\n$ "
-    config = config_root / "sopra" / "config.toml"
-    config.write_text('[prompt]\nleft = """[cyan]path[/]\n$ """\n')
-    script = (
-        'source "$SOPRA_REPO_ROOT/zsh/protocol.zsh"; '
-        'source "$SOPRA_REPO_ROOT/zsh/config.zsh"; '
-        '_sopra_load_prompt_config "$(_sopra_config_path)"; '
-        'print -rn -- "$_SOPRA_CONFIG_PROMPT"'
-    )
-    environment = dict(os.environ, XDG_CONFIG_HOME=str(config_root),
-                       SOPRA_REPO_ROOT=str(root), SOPRA_BIN=str(root / "target/debug/sopra-worker"))
-    result = subprocess.run(("zsh", "-f", "-c", script), env=environment,
-                            text=True, capture_output=True, check=True)
-    assert result.stdout == prompt, result.stdout
 
 
 def exercise_ignored_environment(root: Path, config_root: Path) -> None:
@@ -111,7 +95,7 @@ def exercise_ignored_environment(root: Path, config_root: Path) -> None:
     directory.mkdir(parents=True)
     (directory / "config.toml").write_text(
         "[prompt]\nleft = 'config $ '\nright = 'configured'\n"
-        "[editor]\ncompletion = false\ncursor_animation = false\n"
+        "[completion]\nenabled = false\n[editor]\ncursor_animation = false\n"
     )
     environment = {
         "XDG_CONFIG_HOME": str(directory.parent), "SOPRA_REPO_ROOT": str(root),
@@ -144,7 +128,7 @@ def exercise_result_frames(root: Path) -> None:
         f'source "{root}/zsh/protocol.zsh"; '
         "_sopra_parse_result $'K1\\taccept\\t0\\t-\\t-\\t-'; "
         '[[ $? == 1 ]] || exit 1; '
-        "_sopra_parse_result $'K1\\taccept\\t0\\t-\\t-\\t-\\t-\\t-'"
+        "_sopra_parse_result $'K2\\taccept\\t0\\t-\\t-\\t-\\t-\\t-\\t-\\t-'"
     )
     subprocess.run(("zsh", "-f", "-c", script), check=True)
 
@@ -156,8 +140,7 @@ def main() -> None:
         exercise_default_colors(root, Path(temporary))
         exercise_config(root, Path(temporary))
         exercise_ignored_environment(root, Path(temporary))
-        exercise_saved_multiline(root, Path(temporary))
-        exercise_git_format(root, Path(temporary))
+        exercise_git_styles(root, Path(temporary))
         exercise_config_only_command(root)
         exercise_result_frames(root)
     print("prompt config: ok (TOML, status, duration, transient prompt)")

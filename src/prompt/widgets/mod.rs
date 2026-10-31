@@ -1,138 +1,167 @@
+mod background;
 mod custom;
-mod format;
-mod settings;
+mod entry;
+mod events;
+pub(crate) mod settings;
 
 mod builtins {
-    use super::{Widget, WidgetAction, WidgetContext};
     include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
 }
 
+use crate::actions::Action as Key;
+use crate::prompt::{PromptSpan, template::Template};
+use entry::Entry;
+use sopra::Action;
+use sopra::{Event, Key as WidgetKey};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::input::Key;
-
-pub(crate) enum WidgetAction {
-    Ignored,
-    Consumed,
-    ChangeDirectory(PathBuf),
-}
-
-trait Widget {
-    fn token(&self) -> &str;
-    fn render(&self) -> String;
-    fn markup(&self) -> bool {
-        false
-    }
-    fn active(&self) -> bool {
-        false
-    }
-    fn interactive(&self) -> bool {
-        false
-    }
-    fn handle(&mut self, _key: Key) -> WidgetAction {
-        WidgetAction::Ignored
-    }
-}
-
-struct WidgetContext<'a> {
-    cwd: &'a std::path::Path,
-    options: &'a std::collections::BTreeMap<String, String>,
-}
-
-impl WidgetContext<'_> {
-    fn option(&self, key: &str, default: &str) -> String {
-        self.options
-            .get(key)
-            .map_or(default, String::as_str)
-            .to_owned()
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Focus {
+    Idle,
+    Active(usize),
+    Awaiting(usize),
 }
 
 pub(crate) struct Widgets {
-    prompt_template: String,
-    right_template: String,
-    widgets: Vec<Box<dyn Widget>>,
+    prompt_template: Template,
+    right_template: Template,
+    widgets: Vec<Entry>,
+    focused: Focus,
 }
 
 impl Widgets {
+    #[cfg(test)]
     pub(crate) fn new(prompt: String, right: String, cwd: PathBuf) -> Self {
-        let settings = match settings::Settings::read() {
-            Ok(settings) => settings,
-            Err(error) => {
-                return Self {
-                    prompt_template: format!("configuration error: {error}\n$ "),
-                    right_template: String::new(),
-                    widgets: Vec::new(),
-                };
-            }
-        };
+        let settings = settings::Settings::default();
+        // These fixtures use valid templates and built-in widget names.
+        Self::configured(prompt, right, cwd, &settings).expect("valid widget fixture")
+    }
+
+    pub(crate) fn configured(
+        prompt: String,
+        right: String,
+        cwd: PathBuf,
+        settings: &settings::Settings,
+    ) -> std::io::Result<Self> {
+        let prompt = Template::compile(&prompt)?;
+        let right = Template::compile(&right)?;
         let mut widgets = Vec::new();
         for (name, create) in builtins::REGISTRY {
             if referenced(&prompt, &right, name) {
-                let options = settings.options(name);
-                widgets.push(create(&WidgetContext {
-                    cwd: &cwd,
-                    options: &options,
-                }));
+                widgets.push(Entry::new(name, create(), &cwd, settings.definition(name)));
             }
         }
-        widgets.extend(custom::discover((&prompt, &right), &cwd, &settings));
-        Self {
+        widgets.extend(custom::discover((&prompt, &right), &cwd, settings));
+        for name in prompt.references().chain(right.references()) {
+            if !widgets.iter().any(|entry| entry.name == name) {
+                return Err(std::io::Error::other(format!(
+                    "unknown prompt widget: {name}"
+                )));
+            }
+        }
+        Ok(Self {
             prompt_template: prompt,
             right_template: right,
             widgets,
-        }
+            focused: Focus::Idle,
+        })
     }
 
-    pub(crate) fn render(&self) -> (String, String) {
+    pub(crate) fn render(&mut self) -> (Vec<PromptSpan>, Vec<PromptSpan>) {
+        let rendered = self
+            .widgets
+            .iter_mut()
+            .map(|entry| (entry.name.clone(), entry.render()))
+            .collect::<BTreeMap<_, _>>();
         (
-            self.render_template(&self.prompt_template),
-            self.render_template(&self.right_template),
+            self.prompt_template.render(&rendered),
+            self.right_template.render(&rendered),
         )
     }
 
-    fn render_template(&self, template: &str) -> String {
-        format::render(template, &self.widgets)
+    pub(crate) fn update(&mut self, cwd: &std::path::Path, settings: &settings::Settings) {
+        for entry in &mut self.widgets {
+            entry.update(cwd, settings.definition(&entry.name));
+        }
     }
 
     pub(crate) fn active(&self) -> bool {
-        self.widgets.iter().any(|widget| widget.active())
+        self.focused != Focus::Idle
     }
 
-    pub(crate) fn handle(&mut self, key: Key) -> WidgetAction {
-        let active = self.widgets.iter().position(|widget| widget.active());
+    pub(crate) fn pending(&self) -> bool {
+        matches!(self.focused, Focus::Awaiting(_))
+    }
+
+    pub(crate) fn poll_action(&mut self) -> Option<Action> {
+        for (index, entry) in self.widgets.iter().enumerate() {
+            while let Some((event, action)) = entry.widget.poll_action() {
+                if event == Event::Key(WidgetKey::Enter) && self.focused == Focus::Awaiting(index) {
+                    self.focused = if entry.widget.active() {
+                        Focus::Active(index)
+                    } else {
+                        Focus::Idle
+                    };
+                } else if self.focused == Focus::Active(index) && !entry.widget.active() {
+                    self.focused = Focus::Idle;
+                }
+                if matches!(action, Action::ChangeDirectory(_)) {
+                    self.focused = Focus::Idle;
+                    return Some(action);
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn handle(&mut self, key: Key) -> Action {
+        if matches!(self.focused, Focus::Awaiting(_)) {
+            return Action::Consumed;
+        }
+        let active = if let Focus::Active(index) = self.focused {
+            Some(index)
+        } else {
+            None
+        };
         if key == Key::PromptWidgets {
             return self.focus_next(active);
         }
-        if let Some(index) = active {
-            return self.widgets[index].handle(key);
-        }
-        WidgetAction::Ignored
+        let Some(index) = active else {
+            return Action::Ignored;
+        };
+        self.focused = match key {
+            Key::Enter => Focus::Awaiting(index),
+            Key::Escape | Key::Cancel => Focus::Idle,
+            _ => self.focused,
+        };
+        events::event(key).map_or(Action::Ignored, |event| self.widgets[index].handle(event))
     }
 
-    fn focus_next(&mut self, active: Option<usize>) -> WidgetAction {
+    fn focus_next(&mut self, active: Option<usize>) -> Action {
         if let Some(index) = active {
-            self.widgets[index].handle(Key::Escape);
+            self.widgets[index].handle(Event::Key(WidgetKey::Escape));
         }
         let start = active.map_or(0, |index| index + 1);
-        let next = (start..self.widgets.len())
+        let focused = (start..self.widgets.len())
             .chain(0..start)
-            .find(|index| Some(*index) != active && self.widgets[*index].interactive());
-        if let Some(index) = next {
-            return self.widgets[index].handle(Key::PromptWidgets);
+            .find(|index| Some(*index) != active && self.widgets[*index].widget.interactive());
+        self.focused = focused.map_or(Focus::Idle, Focus::Active);
+        if let Some(index) = focused {
+            return self.widgets[index].handle(Event::Activate);
         }
         if active.is_some() {
-            WidgetAction::Consumed
+            Action::Consumed
         } else {
-            WidgetAction::Ignored
+            Action::Ignored
         }
     }
 }
 
-fn referenced(left: &str, right: &str, name: &str) -> bool {
-    [format!("{{{name}}}"), format!("[if {name}]")]
-        .iter()
-        .any(|token| left.contains(token) || right.contains(token))
+fn referenced(left: &Template, right: &Template, name: &str) -> bool {
+    left.references()
+        .chain(right.references())
+        .any(|reference| reference == name)
 }
 
 #[cfg(test)]

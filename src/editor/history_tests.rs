@@ -1,7 +1,8 @@
 use super::{History, snapshot::Entry};
+use crate::actions::Action;
 use crate::{
     editor::{EditorConfig, EditorState},
-    input::{CursorPosition, Key, TerminalSize},
+    input::{CursorPosition, TerminalSize},
     scene::Scene,
 };
 use ratatui::style::Modifier;
@@ -44,26 +45,26 @@ fn suggestions_are_not_input_until_accepted_and_escape_dismisses_them() {
     assert_eq!(spans[0].text, "é 世界");
     assert!(spans[0].style.add_modifier.contains(Modifier::DIM));
     assert_eq!(editor.buffer(), "echo caf");
-    editor.handle_key(Key::Escape);
+    editor.handle_key(Action::Escape);
     assert!(editor.autosuggestion_spans().is_empty());
-    editor.handle_key(Key::Character('é'));
+    editor.handle_key(Action::Character('é'));
     assert!(!editor.autosuggestion_spans().is_empty());
-    editor.handle_key(Key::Left);
+    editor.handle_key(Action::Left);
     assert!(editor.autosuggestion_spans().is_empty());
 }
 
 #[test]
 fn right_end_and_word_right_accept_history_without_splitting_unicode() {
-    for key in [Key::Right, Key::End] {
+    for key in [Action::Right, Action::End] {
         let mut editor = editor("echo caf");
         editor.handle_key(key);
         assert_eq!(editor.buffer(), "echo café 世界");
         assert_eq!(editor.cursor_byte(), editor.buffer().len());
     }
     let mut editor = editor("echo");
-    editor.handle_key(Key::WordRight);
+    editor.handle_key(Action::WordRight);
     assert_eq!(editor.buffer(), "echo café");
-    editor.handle_key(Key::WordRight);
+    editor.handle_key(Action::WordRight);
     assert_eq!(editor.buffer(), "echo café 世界");
 }
 
@@ -71,7 +72,7 @@ fn right_end_and_word_right_accept_history_without_splitting_unicode() {
 fn history_menu_replaces_the_entire_command_without_adding_a_space() {
     let mut editor = editor("echo");
     assert_eq!(editor.visible_items()[0].insert, "echo café 世界");
-    editor.handle_key(Key::Tab);
+    editor.handle_key(Action::Tab);
     assert_eq!(editor.buffer(), "echo café 世界");
 }
 
@@ -98,7 +99,7 @@ fn disabling_inline_hints_keeps_history_completion_available() {
     editor.history.enabled = false;
     assert!(editor.autosuggestion_spans().is_empty());
     assert!(!editor.visible_items().is_empty());
-    editor.handle_key(Key::Right);
+    editor.handle_key(Action::Right);
     assert_eq!(editor.buffer(), "echo");
 }
 
@@ -109,7 +110,7 @@ fn configured_styling_does_not_interpret_history_as_markup() {
         command: "echo [red]literal[/]".to_string(),
         started: None,
     }];
-    editor.history.format = "[italic]{text}[/]".to_string();
+    editor.history.format = "[italic]$text[/italic]".to_string();
     let spans = editor.autosuggestion_spans();
     assert_eq!(
         spans
@@ -141,7 +142,7 @@ fn inline_metadata_follows_the_hint_without_entering_the_command() {
     assert_eq!(line["$ echo café 世 界   ".len()..].trim_end(), "History");
     assert!(frame.buffer[(18, 0)].modifier.contains(Modifier::ITALIC));
     assert_eq!(frame.required_height, 1);
-    editor.handle_key(Key::Right);
+    editor.handle_key(Action::Right);
     assert_eq!(editor.buffer(), "echo café 世界");
     assert!(editor.autosuggestion_metadata().is_empty());
 }
@@ -169,7 +170,7 @@ mod navigation;
 #[test]
 fn metadata_style_is_configurable_independently_of_the_suggestion() {
     let mut editor = editor("echo");
-    editor.history.metadata_format = "[bold]{text}[/]".to_string();
+    editor.history.metadata_format = "[bold]$text[/bold]".to_string();
     let spans = editor.autosuggestion_metadata();
     assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
     assert!(!spans[0].style.add_modifier.contains(Modifier::ITALIC));

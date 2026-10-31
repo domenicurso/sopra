@@ -73,7 +73,8 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     start = len(output)
     send(session[0], b"cd ")
     wait_for_plain(session, output, b"Cargo.toml", 3)
-    if b"ms" not in plain(output[start:]) or b"0.0ms" in plain(output[start:]):
+    wait_for_plain_after(session, output, b"ms", start, 3)
+    if b"0.0ms" in plain(output[start:]):
         fail("completion overlay was not rendered", *session)
     start = len(output)
     repaint_start = output.count(RESIZE_MARKER)
@@ -136,7 +137,8 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     for byte in b"echo escape-kept":
         send(session[0], bytes([byte]))
         read_for(session[0], output, 0.01)
-    wait_for_plain_after(session, output, b"escape-kept", start, 3)
+    # Diff painting may reuse the initial letters from a completion row.
+    wait_for_plain_after(session, output, b"kept", start, 3)
     start = len(output)
     send(session[0], b"\x1b")
     read_for(session[0], output, 0.10)

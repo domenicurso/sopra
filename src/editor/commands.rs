@@ -7,22 +7,22 @@ impl EditorState {
     }
 
     pub(super) fn toggle_overlay(&mut self) {
-        self.overlay_visible = !self.overlay_visible;
+        self.completions.visible = !self.completions.visible;
     }
 
     pub(super) fn hide_overlay(&mut self) {
-        self.overlay_visible = false;
+        self.completions.visible = false;
     }
 
     pub(super) fn show_overlay(&mut self) {
-        self.overlay_visible = true;
+        self.completions.visible = true;
     }
 
     pub(super) fn apply_selected(&mut self) -> bool {
-        let Some(selected) = self.selected else {
+        let Some(selected) = self.completions.focus.selected() else {
             return false;
         };
-        let Some(item) = self.suggestions.get(selected).cloned() else {
+        let Some(item) = self.completions.items.get(selected).cloned() else {
             return false;
         };
         let replace = item.replace;
@@ -135,24 +135,26 @@ impl EditorState {
     }
 
     pub(super) fn reset_selection(&mut self) {
-        self.selected = self.completion_armed.then_some(0);
-        self.suggestion_scroll = 0;
+        self.completions
+            .focus
+            .select(self.completions.focus.armed().then_some(0));
+        self.completions.scroll = 0;
     }
 
     pub(super) fn arm_first_completion(&mut self) -> bool {
-        if self.suggestions.is_empty() || !self.overlay_visible {
+        if self.completions.items.is_empty() || !self.completions.visible {
             return false;
         }
-        self.completion_armed = true;
-        self.selected = Some(0);
-        self.suggestion_scroll = 0;
+        self.completions.focus.set_armed(true);
+        self.completions.focus.select(Some(0));
+        self.completions.scroll = 0;
         true
     }
 
     pub(super) fn disarm_completion(&mut self) {
-        self.completion_armed = false;
-        self.selected = None;
-        self.suggestion_scroll = 0;
+        self.completions.focus.set_armed(false);
+        self.completions.focus.select(None);
+        self.completions.scroll = 0;
     }
 
     pub(super) fn result(&self, reason: ExitReason) -> RunResult {

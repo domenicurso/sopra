@@ -1,0 +1,7 @@
+[package]
+name = "sopra-widget-sdk"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "The shared widget contract for Sopra built-ins and extensions"
+repository = "https://github.com/domenicurso/sopra"

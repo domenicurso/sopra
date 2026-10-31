@@ -18,9 +18,15 @@ async function handle(request) {
   }
   const screen = terminal.buffer.active;
   const lines = [];
+  const paintedCursors = [];
   if (request.op === 'snapshot') {
     for (let row = 0; row < screen.length; row++) {
-      lines.push(screen.getLine(row).translateToString(true));
+      const line = screen.getLine(row);
+      lines.push(line.translateToString(true));
+      for (let column = 0; column < terminal.cols; column++) {
+        const cell = line.getCell(column);
+        if (cell.isBgRGB() || (cell.isInverse() && cell.isBold())) paintedCursors.push([column, row]);
+      }
     }
   }
   const result = {
@@ -28,6 +34,7 @@ async function handle(request) {
     lines,
     base: screen.baseY,
     cursor: [screen.cursorX, screen.cursorY],
+    paintedCursors,
   };
   responses = [];
   process.stdout.write(`${JSON.stringify(result)}\n`);

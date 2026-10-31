@@ -1,12 +1,12 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::{EditorState, RunResult};
-use crate::input::Key;
+use crate::actions::Action;
 use crate::scene::MAX_OVERLAY_ITEMS;
 use sopra_completion::ranking;
 
 impl EditorState {
-    pub(super) fn navigate(&mut self, key: Key) -> Option<RunResult> {
+    pub(super) fn navigate(&mut self, key: Action) -> Option<RunResult> {
         if self.navigate_closed_history(key) {
             return None;
         }
@@ -14,16 +14,16 @@ impl EditorState {
             return None;
         }
         match key {
-            Key::Left => self.move_left(),
-            Key::Right => self.move_right(),
-            Key::WordLeft => self.move_word_left(),
-            Key::WordRight => self.move_word_right(),
-            Key::Home => self.cursor = 0,
-            Key::End => self.cursor = self.buffer.len(),
-            Key::Up if !self.move_selection(-1) && !self.move_vertical(-1) => {
+            Action::Left => self.move_left(),
+            Action::Right => self.move_right(),
+            Action::WordLeft => self.move_word_left(),
+            Action::WordRight => self.move_word_right(),
+            Action::Home => self.cursor = 0,
+            Action::End => self.cursor = self.buffer.len(),
+            Action::Up if !self.move_selection(-1) && !self.move_vertical(-1) => {
                 self.recall_history(-1);
             }
-            Key::Down if !self.move_selection(1) && !self.move_vertical(1) => {
+            Action::Down if !self.move_selection(1) && !self.move_vertical(1) => {
                 self.recall_history(1);
             }
             _ => {}
@@ -92,41 +92,45 @@ impl EditorState {
     }
 
     pub(super) fn move_selection(&mut self, direction: i8) -> bool {
-        let count = self.suggestions.len();
-        if !self.overlay_visible {
+        let count = self.completions.items.len();
+        if !self.completions.visible {
             return false;
         }
         if count == 0 {
-            if self.completion.is_some()
-                && !self.completion_suspended
+            if self.completions.engine.is_some()
+                && !self.completions.suspended()
                 && !self.buffer.trim().is_empty()
                 && !self.buffer.contains('\n')
             {
-                self.completion_armed = true;
+                self.completions.focus.set_armed(true);
             }
             return false;
         }
-        let selected = self.selected.or_else(|| self.history_preview_index());
-        self.completion_armed = true;
-        self.selected = Some(match selected {
+        let selected = self
+            .completions
+            .focus
+            .selected()
+            .or_else(|| self.history_preview_index());
+        self.completions.focus.set_armed(true);
+        self.completions.focus.select(Some(match selected {
             None => 0,
             Some(selected) if direction < 0 => selected.checked_sub(1).unwrap_or(count - 1),
             Some(selected) => (selected + 1) % count,
-        });
+        }));
         self.remember_history_selection();
         self.update_suggestion_scroll();
         true
     }
 
     fn update_suggestion_scroll(&mut self) {
-        let selected = self.selected.unwrap_or_default();
-        let visible = self.suggestions.len().clamp(1, MAX_OVERLAY_ITEMS);
-        let max_start = self.suggestions.len().saturating_sub(visible);
-        if selected >= self.suggestion_scroll + visible.saturating_sub(1) {
+        let selected = self.completions.focus.selected().unwrap_or_default();
+        let visible = self.completions.items.len().clamp(1, MAX_OVERLAY_ITEMS);
+        let max_start = self.completions.items.len().saturating_sub(visible);
+        if selected >= self.completions.scroll + visible.saturating_sub(1) {
             let desired = selected.saturating_sub(visible.saturating_sub(2));
-            self.suggestion_scroll = self.suggestion_scroll.max(desired).min(max_start);
-        } else if selected <= self.suggestion_scroll {
-            self.suggestion_scroll = self.suggestion_scroll.min(selected.saturating_sub(1));
+            self.completions.scroll = self.completions.scroll.max(desired).min(max_start);
+        } else if selected <= self.completions.scroll {
+            self.completions.scroll = self.completions.scroll.min(selected.saturating_sub(1));
         };
     }
 
@@ -135,6 +139,7 @@ impl EditorState {
     }
 }
 
+#[cfg(test)]
 pub(super) fn char_index_to_byte(text: &str, char_index: usize) -> usize {
     text.char_indices()
         .nth(char_index)

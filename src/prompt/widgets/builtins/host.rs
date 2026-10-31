@@ -1,13 +1,21 @@
-use super::Widget;
+use sopra::{Context, Text, Widget};
 
-struct Host(String);
-
+struct Host;
 impl Widget for Host {
-    fn token(&self) -> &str { "{host}" }
-    fn render(&self) -> String { self.0.clone() }
+    fn render(&mut self, context: &Context) -> Text {
+        context
+            .environment
+            .get("SOPRA_WIDGET_HOST")
+            .map(|value| {
+                value
+                    .chars()
+                    .filter(|ch| !ch.is_control())
+                    .collect::<String>()
+            })
+            .unwrap_or_default()
+            .into()
+    }
 }
-
-pub(super) fn create(_context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
-    Box::new(Host(sopra_shell_context::var("SOPRA_WIDGET_HOST").unwrap_or_default()
-        .chars().filter(|character| !character.is_control()).collect()))
+pub(crate) fn create() -> Box<dyn Widget + Send> {
+    Box::new(Host)
 }

@@ -1,4 +1,5 @@
 use super::text_selection::TextSelection;
+use crate::actions::Action;
 use crate::input::MouseKind;
 use std::time::{Duration, Instant};
 
@@ -35,7 +36,7 @@ fn single_click_drag_works_in_both_directions() {
 #[test]
 fn selected_text_is_rendered_and_replaced_after_resize() {
     use crate::{
-        input::{CursorPosition, Key, MouseEvent, TerminalSize},
+        input::{CursorPosition, MouseEvent, TerminalSize},
         scene::Scene,
     };
     use ratatui::style::Modifier;
@@ -47,7 +48,7 @@ fn selected_text_is_rendered_and_replaced_after_resize() {
     assert_eq!(editor.text_selection(), Some(6..11));
     let frame = Scene::for_editor(&editor, TerminalSize::new(40, 20), Instant::now()).render();
     assert!(frame.buffer[(8, 0)].modifier.contains(Modifier::REVERSED));
-    editor.handle_key(Key::Character('X'));
+    editor.handle_key(Action::Character('X'));
     assert_eq!(editor.buffer(), "hello X");
     assert_eq!(editor.text_selection(), None);
 }
@@ -76,7 +77,7 @@ fn test_editor() -> super::EditorState {
 
 #[test]
 fn selected_text_deletes_or_collapses_with_arrow_keys() {
-    use crate::input::Key;
+    use crate::actions::Action;
     let mut editor = test_editor();
     let now = Instant::now();
     editor
@@ -85,7 +86,7 @@ fn selected_text_deletes_or_collapses_with_arrow_keys() {
     editor
         .text_selection
         .mouse(MouseKind::Drag, 11, "hello world", now);
-    editor.handle_key(Key::Left);
+    editor.handle_key(Action::Left);
     assert_eq!(editor.cursor, 6);
     assert_eq!(editor.buffer(), "hello world");
     editor
@@ -94,14 +95,14 @@ fn selected_text_deletes_or_collapses_with_arrow_keys() {
     editor
         .text_selection
         .mouse(MouseKind::Drag, 11, "hello world", now);
-    editor.handle_key(Key::Backspace);
+    editor.handle_key(Action::Backspace);
     assert_eq!(editor.buffer(), "hello ");
     assert_eq!(editor.cursor, 6);
 }
 
 #[test]
 fn multiline_caret_and_mouse_positions_use_the_continuation_prefix() {
-    use crate::input::{CursorPosition, Key};
+    use crate::input::CursorPosition;
     let mut editor = test_editor();
     editor.buffer = "echo café\nprintf hé".into();
     editor.cursor = editor.buffer.len();
@@ -110,8 +111,8 @@ fn multiline_caret_and_mouse_positions_use_the_continuation_prefix() {
         editor.offset_at(CursorPosition { row: 1, column: 2 }),
         "echo café\n".len()
     );
-    assert!(editor.handle_key(Key::Up).is_none());
+    assert!(editor.handle_key(Action::Up).is_none());
     assert_eq!(editor.cursor, "echo café".len());
-    assert!(editor.handle_key(Key::Down).is_none());
+    assert!(editor.handle_key(Action::Down).is_none());
     assert_eq!(editor.cursor, end);
 }

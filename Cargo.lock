@@ -866,6 +866,7 @@ dependencies = [
  "ratatui",
  "sopra-completion",
  "sopra-shell-context",
+ "sopra-widget-sdk",
  "toml_edit",
  "unicode-segmentation",
  "unicode-width 0.2.0",
@@ -885,6 +886,10 @@ dependencies = [
 
 [[package]]
 name = "sopra-shell-context"
+version = "0.1.0"
+
+[[package]]
+name = "sopra-widget-sdk"
 version = "0.1.0"
 
 [[package]]

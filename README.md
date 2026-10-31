@@ -57,58 +57,60 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Edit this file to change the prompt and editor options.
 
 ```toml
+[prompt]
+left = "[red]$user[/red] [dim]in[/dim] [bold blue]$path[/bold blue]\n[dim]$[/dim] "
+right = "[red]$status[/red] · [dim]$duration[/dim] · [cyan]$git[/cyan]"
+transient = "[dim]$[/dim] "
+secondary = "[dim]>[/dim] "
+
+[widgets.clock]
+format = "%H:%M:%S"
+
 [editor]
 cursor_animation = true
 syntax_highlighting = true
-completion = true
 autosuggestions = true
-autosuggestion_format = "[dim]{text}[/]"
-autosuggestion_metadata_format = "[dim][italic]{text}[/][/]"
 
-[prompt]
-left = """\
-    [bold][red]{user}[/][/] \
-    [dim]in[/] \
-    [bold][cyan]{path}[/][/]\n\
-    [dim]$[/] """
-right = "[if git]{git}[dim] : [/][/]{clock}"
-transient = "$ "
-
-[widgets.clock]
-format = "%H[dim]:[/]%M"
-
-[widgets.path]
-before = "{text}"
-selected = "[reverse]{text}[/]"
-after = "[dim]{text}[/]"
-
-[widgets.git_status]
-format = "[dim][[[/]{items}[dim]][/]"
-item_format = "[bold][magenta]{item}[/][/]"
-separator = "[dim]|[/]"
+[completion]
+enabled = true
 ```
 
 `config.toml` is the only configuration file. Restart the shell after editing it.
+Templates use `$widget` references and matching style tags, such as
+`[bold blue]$path[/bold blue]`. Tags can nest. Styles include colors, `bold`,
+`dim`, `italic`, `underline`, and `reverse`. Use `$$` for a literal dollar sign
+before a name, and `[[` for a literal opening bracket. A standalone `$` is literal.
 
-Write custom Rust widgets in `~/.config/sopra/widgets/`; Sopra discovers and compiles them automatically. See [the widget API](docs/widgets.md) for dynamic output, interaction, and styling.
-
-Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
+Text between widget references is a connector: it appears only between nonempty
+values. In the right prompt above, a successful status disappears without leaving
+an initial ` · `; if only Git is available, there are no separators. Missing middle
+values leave one connector, chosen from the text immediately after the preceding
+visible value. Text before the first reference and after the last reference stays
+literal, so prompt characters and final input spacing are preserved.
 
 | Widget | Display |
 | --- | --- |
-| `{path}` | Current directory, abbreviated relative to your home directory. |
-| `{git}` | Current Git branch or detached commit; empty outside a repository. |
-| `{git_status}` | Counts of changed and untracked files and commits ahead or behind. |
-| `{clock}` | Local time, refreshed while editing. |
-| `{status}` | Exit status of the last command when it failed. |
-| `{duration}` | Duration of the last command. |
-| `{user}`, `{host}`, `{shell}` | Current user, host, and shell name. |
+| `path` | Current directory, abbreviated relative to your home directory. |
+| `git` | Git branch and counts of changed/untracked files and commits ahead/behind; empty outside a repository. |
+| `git_status` | The Git counts without the branch. |
+| `clock` | Local time, refreshed while editing. |
+| `status` | Exit status of the last command when it failed. |
+| `duration` | Duration of the last command. |
+| `user`, `host`, `shell` | Current user, host, and shell name. |
 
-Use `\n` in a TOML string to start another prompt row. The right prompt stays on the first row, and the command starts after the last row.
+Use `\n` to start another prompt row. The right prompt stays on the first row,
+and the command starts after the last row. Incomplete input stays in the editor,
+with `secondary` on each continuation line; the primary prompt becomes transient
+only when the entire command is submitted. An execution-disabled Zsh parser checks
+continuations in a background worker; aliases that introduce unfinished syntax
+still use the live shell's continuation handling.
 
-Set `prompt.secondary` in `config.toml` to customize the continuation prompt; it defaults to `> `. Rust keeps incomplete input in the same editor session, so the primary prompt stays visible until the whole command is submitted. Continuation prompts support the same styling tags as the primary prompt. A separate Zsh process with execution disabled checks whether another line is needed; aliases that introduce unfinished syntax still fall back to the live shell’s continuation handling.
-
-Style text with `[default]...[/]` to restore the terminal foreground, `[dim]...[/]`, `[bold]...[/]`, `[italic]...[/]`, `[underline]...[/]`, `[reverse]...[/]`, or a color such as `[cyan]...[/]`. Tags can be nested; `[[` produces a literal `[`. A section such as `[if git]...[/]` appears only when its widget has content, so separators disappear with the widget. Clock formats use the system's `strftime` directives. Git status `format` wraps `{items}`, `item_format` styles each `{item}`, and `separator` is inserted between nonempty counts. All three accept prompt styling tags. During path selection, `before`, `selected`, and `after` format the corresponding portions of the path using `{text}`; they inherit the surrounding prompt style.
+Widgets inherit the color surrounding their reference. They may dim punctuation,
+emphasize text, or reverse a selection, but they don't select their own colors.
+`widgets.*` controls content and behavior: the clock's `format` uses `strftime`,
+and Git accepts `label`, `changed`, `untracked`, `ahead`, `behind`, `open`, `close`,
+and `separator`. Put Rust widgets in `~/.config/sopra/widgets/`; their filenames
+become references automatically. See [the widget SDK](docs/widgets.md).
 
 History autosuggestions show the rest of your most recent matching command as dim text. Up and Down cycle the matches while the completion menu is closed; when it is open, they move through its rows and the inline hint follows the highlighted history command. Alt+Up and Alt+Down cycle history matches in either view. Tab, Right, or End accepts the active history suggestion; Alt+Right accepts the next word. Escape dismisses the hint until you edit the command. Hints are clipped to the current screen row and never enter the command buffer until accepted.
 
@@ -116,19 +118,19 @@ History rows show their age beside the command when Zsh has a timestamp, or “H
 
 Sopra reads the active Zsh history, including commands loaded from your history file and commands run in this session. It does not maintain a separate history file. If `HISTFILE` is unset, the bridge uses `${ZDOTDIR:-$HOME}/.zsh_history` and defaults to saving 10,000 entries. Existing history paths and limits, including an explicit `SAVEHIST=0`, are preserved. Commands are appended during the session, with timestamps; an existing `SHARE_HISTORY` setup keeps its live sharing behavior.
 
-Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `{text}` and the prompt styling tags. Use `editor.autosuggestion_metadata_format` to style inline metadata separately. `editor.completion = false` disables the completion menu independently.
+Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `$text` and the prompt styling tags. Use `editor.autosuggestion_metadata_format` to style inline metadata separately. `completion.enabled = false` disables the completion menu independently.
 
 When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.
 
-With `{path}` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
+With `$path` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
 
 ## How it works
 
-Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. Each interactive shell starts one private Rust worker and keeps it alive across commands. The Zsh bridge sends the current buffer, cursor, prompt, working directory, and environment snapshot over a private Unix socket; Sopra returns the edited buffer and the action Zsh should perform. The shell-native `sopra --help` command shows the configuration path. Zsh then accepts the command and executes it using the existing shell environment.
+Sopra runs as the editor behind Zsh's ZLE integration rather than as a replacement shell. Each interactive shell starts one private Rust worker and keeps it alive across commands. The Zsh bridge sends the current buffer, cursor, working directory, and environment snapshot over a private Unix socket; Sopra returns the edited buffer and the action Zsh should perform. The shell-native `sopra --help` command shows the configuration path. Zsh then accepts the command and executes it using the existing shell environment.
 
-The shared `sopra-shell-context` crate owns environment snapshots; prompts, widgets, and the completion engine consume it independently.
+The shared `sopra-shell-context` crate owns environment snapshots and command lookup; prompts, widgets, syntax highlighting, and completion consume it independently. See [the architecture reference](docs/architecture.md) for ownership and extension boundaries.
 
-The worker acquires the terminal only while editing and restores it before returning control to Zsh, so foreground programs receive terminal input normally. The worker retains the terminal palette and custom widget processes across edits; shell and completion context refresh on every request without changing the worker’s process environment. The bridge stops the worker on shell exit, and the worker monitors its owning shell.
+The worker acquires the terminal only while editing and restores it before returning control to Zsh, so foreground programs receive terminal input normally. The worker retains configuration, history state, completion graphs, the syntax checker, the terminal palette, and widget instances across edits; shell and completion context refresh on every request without changing the worker’s process environment. The bridge stops the worker on shell exit, and the worker monitors its owning shell.
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 

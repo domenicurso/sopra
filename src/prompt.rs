@@ -1,6 +1,7 @@
-pub(crate) mod config;
 pub(crate) mod lines;
-mod markup;
+pub(crate) mod shell;
+pub(crate) mod style;
+pub(crate) mod template;
 pub(crate) mod widgets;
 
 use ratatui::style::{Color, Modifier, Style};
@@ -12,14 +13,29 @@ pub(crate) struct PromptSpan {
 }
 
 pub(crate) fn parse(prompt: &str) -> Vec<PromptSpan> {
-    parse_text(prompt, true)
+    let Ok(template) = template::Template::compile(prompt) else {
+        return parse_text(prompt);
+    };
+    let values = template
+        .references()
+        .map(|name| (name.to_string(), format!("${name}").into()))
+        .collect();
+    template
+        .render(&values)
+        .into_iter()
+        .flat_map(|span| {
+            parse_text(&span.text).into_iter().map(move |mut parsed| {
+                parsed.style = span.style.patch(parsed.style);
+                parsed
+            })
+        })
+        .collect()
 }
 
-fn parse_text(prompt: &str, markup_enabled: bool) -> Vec<PromptSpan> {
+fn parse_text(prompt: &str) -> Vec<PromptSpan> {
     let mut spans = Vec::new();
     let mut style = Style::default();
     let mut text = String::new();
-    let mut style_stack = Vec::new();
     let bytes = prompt.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -27,19 +43,6 @@ fn parse_text(prompt: &str, markup_enabled: bool) -> Vec<PromptSpan> {
             push_span(&mut spans, &mut text, style);
             index = consume_escape(prompt, index, &mut style);
             continue;
-        }
-        if markup_enabled && bytes[index] == b'[' {
-            if prompt[index..].starts_with("[[") {
-                text.push('[');
-                index += 2;
-                continue;
-            }
-            let previous = style;
-            if let Some(length) = markup::apply(&prompt[index..], &mut style, &mut style_stack) {
-                push_span(&mut spans, &mut text, previous);
-                index += length;
-                continue;
-            }
         }
         let character = prompt[index..].chars().next().unwrap_or_default();
         if character == '\n' || !character.is_control() {

@@ -10,12 +10,18 @@ use std::{
     time::Duration,
 };
 
-use crate::{arguments::Args, palette::TerminalPalette, protocol};
+use crate::{arguments::Args, protocol};
 
 pub(crate) fn once() -> Result<(), Box<dyn Error>> {
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
-    let result = session::run(args, &mut None)?;
-    protocol::write_result(&result, &mut std::io::stdout().lock())?;
+    let mut session = session::Session::new()?;
+    let result = session.run(args)?;
+    let prompts = session.shell_prompts()?;
+    protocol::write_result(
+        &result,
+        &mut std::io::stdout().lock(),
+        (&prompts.0, &prompts.1),
+    )?;
     Ok(())
 }
 
@@ -38,10 +44,10 @@ pub(crate) fn serve(socket: &Path, parent: i32) -> Result<(), Box<dyn Error>> {
             }
         }
     });
-    let mut palette = None;
+    let mut session = session::Session::new()?;
     for connection in listener.incoming() {
         let mut connection = connection?;
-        if let Err(error) = edit(&mut connection, &mut palette) {
+        if let Err(error) = edit(&mut connection, &mut session) {
             writeln!(
                 connection,
                 "E1\t{}",
@@ -53,10 +59,7 @@ pub(crate) fn serve(socket: &Path, parent: i32) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn edit(
-    connection: &mut UnixStream,
-    palette: &mut Option<TerminalPalette>,
-) -> Result<(), Box<dyn Error>> {
+fn edit(connection: &mut UnixStream, session: &mut session::Session) -> Result<(), Box<dyn Error>> {
     let mut path = String::new();
     use std::io::Read;
     BufReader::new(&mut *connection)
@@ -68,7 +71,8 @@ fn edit(
     let request = request::read(Path::new(path.trim_end_matches('\n')))?;
     sopra_shell_context::replace(request.environment);
     let args = Args::from_args(request.arguments.into_iter())?;
-    let result = session::run(args, palette)?;
-    protocol::write_result(&result, connection)?;
+    let result = session.run(args)?;
+    let prompts = session.shell_prompts()?;
+    protocol::write_result(&result, connection, (&prompts.0, &prompts.1))?;
     Ok(())
 }

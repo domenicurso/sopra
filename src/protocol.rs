@@ -3,6 +3,7 @@ use crate::editor::{ExitReason, RunResult};
 pub(crate) fn write_result(
     result: &RunResult,
     output: &mut impl std::io::Write,
+    prompts: (&str, &str),
 ) -> std::io::Result<()> {
     let action = match result.reason {
         ExitReason::Accepted => "accept",
@@ -18,7 +19,7 @@ pub(crate) fn write_result(
         .collect::<String>();
     writeln!(
         output,
-        "K1\t{action}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "K2\t{action}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         result.cursor,
         nonempty_hex(result.buffer.as_bytes()),
         match encode_highlights(&result.buffer, &result.highlights) {
@@ -33,7 +34,9 @@ pub(crate) fn write_result(
             }
         ),
         nonempty_hex(display_text.as_bytes()),
-        encode_display_highlights(&result.submitted_spans)
+        encode_display_highlights(&result.submitted_spans),
+        nonempty_hex(prompts.0.as_bytes()),
+        nonempty_hex(prompts.1.as_bytes())
     )
 }
 

@@ -44,8 +44,6 @@ install -m 0644 "$source_dir/zsh/worker.zsh" "$SOPRA_PREFIX/share/sopra/worker.z
 install -m 0644 "$source_dir/zsh/context.zsh" "$SOPRA_PREFIX/share/sopra/context.zsh"
 install -m 0644 "$source_dir/zsh/history.zsh" "$SOPRA_PREFIX/share/sopra/history.zsh"
 install -m 0644 "$source_dir/zsh/protocol.zsh" "$SOPRA_PREFIX/share/sopra/protocol.zsh"
-install -m 0644 "$source_dir/zsh/prompt.zsh" "$SOPRA_PREFIX/share/sopra/prompt.zsh"
-install -m 0644 "$source_dir/zsh/config.zsh" "$SOPRA_PREFIX/share/sopra/config.zsh"
 
 printf '\nSopra was installed under %s\n' "$SOPRA_PREFIX"
 printf 'Add %s/share/sopra/editor.zsh to your interactive Zsh configuration:\n' "$SOPRA_PREFIX"

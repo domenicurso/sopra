@@ -68,7 +68,7 @@ def respects_configuration(directory: Path) -> None:
 
 
 def main() -> None:
-    config = "[prompt]\nleft = 'persist $ '\nright = ''\n[editor]\ncompletion = false\ncursor_animation = false\n"
+    config = "[prompt]\nleft = 'persist $ '\nright = ''\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\n"
     with tempfile.TemporaryDirectory(prefix="sopra-history-persistence-") as temporary:
         directory = Path(temporary)
         (directory / ".zshrc").write_text(f"source '{ROOT}/zsh/editor.zsh'\n")

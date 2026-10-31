@@ -1,0 +1,15 @@
+[editor]
+cursor_animation = true
+syntax_highlighting = true
+autosuggestions = true
+autosuggestion_format = "[dim]$text[/dim]"
+autosuggestion_metadata_format = "[dim italic]$text[/dim italic]"
+
+[completion]
+enabled = true
+
+[prompt]
+left = "[red]$user[/red] [dim]in[/dim] [bold blue]$path[/bold blue]\n[dim]$[/dim] "
+right = "[red]$status[/red] · [dim]$duration[/dim] · [cyan]$git[/cyan]"
+transient = "[dim]$[/dim] "
+secondary = "[dim]>[/dim] "

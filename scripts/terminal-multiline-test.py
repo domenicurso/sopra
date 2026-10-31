@@ -183,12 +183,12 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="sm-", dir="/tmp") as temporary:
         directory = Path(temporary).resolve() / "a" / "b"
         directory.mkdir(parents=True)
-        with terminal_config("[prompt]\nleft = \"{path}\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
+        with terminal_config("[prompt]\nleft = \"$path\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
             exercise(reflow.ReflowScreen(process), directory, config_root)
-    with terminal_config("[prompt]\nleft = \"PRIMARY\\n$ \"\nright = ''\ntransient = '$ '\nsecondary = '[blue]CONT >[/] '\n[editor]\ncompletion = false\ncursor_animation = false\n") as config_root:
+    with terminal_config("[prompt]\nleft = \"PRIMARY\\n$ \"\nright = ''\ntransient = '$ '\nsecondary = '[blue]CONT >[/blue] '\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\n") as config_root:
         exercise_secondary(config_root)
         exercise_continuation_inputs(config_root)
-    with terminal_config("[prompt]\nleft = 'P $ '\nright = ''\n[editor]\ncompletion = false\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root:
+    with terminal_config("[prompt]\nleft = 'P $ '\nright = ''\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root:
         exercise_wrapped_command(config_root)
     print("multiline, wrapped, and secondary prompts: ok")
 

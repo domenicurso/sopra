@@ -15,29 +15,29 @@ WIDGET = r'''
 #[derive(Default)]
 struct Demo { active: bool, initialized: bool }
 impl sopra::Widget for Demo {
-    fn render(&mut self, context: &sopra::Context) -> String {
+    fn render(&mut self, context: &sopra::Context) -> sopra::Text {
         // The fixture supplies a writable pid_file and a named child directory.
         if !self.initialized {
             std::fs::write(&context.options["pid_file"], std::process::id().to_string()).unwrap();
             self.initialized = true;
         }
         format!("first:{}:{}", context.environment.get("DEMO_VALUE").map_or("unset", String::as_str),
-            context.cwd.file_name().unwrap().to_string_lossy())
+            context.cwd.file_name().unwrap().to_string_lossy()).into()
     }
     fn interactive(&self) -> bool { true }
     fn active(&self) -> bool { self.active }
-    fn key(&mut self, key: &str, context: &sopra::Context) -> sopra::Action {
-        match key {
-            "PromptWidgets" => self.active = true,
-            "Enter" => {
+    fn handle(&mut self, event: sopra::Event, context: &sopra::Context) -> sopra::Action {
+        match event {
+            sopra::Event::Activate => self.active = true,
+            sopra::Event::Key(sopra::Key::Enter) => {
                 self.active = false;
                 // The fixture always runs below its temporary parent directory.
                 return sopra::Action::ChangeDirectory(context.cwd.parent().unwrap().into());
             }
-            "Escape" => self.active = false,
+            sopra::Event::Key(sopra::Key::Escape) => self.active = false,
             _ => {}
         }
-        sopra::Action::None
+        sopra::Action::Consumed
     }
 }
 fn main() -> std::io::Result<()> { sopra::run(Demo::default()) }
@@ -63,9 +63,9 @@ def exercise(directory: Path) -> None:
     work = directory / "parent" / "child"
     work.mkdir(parents=True)
     (config / "config.toml").write_text(
-        "[prompt]\nleft = 'ready $ '\nright = '{demo}'\ntransient = '$ '\n"
-        "[editor]\ncompletion = false\ncursor_animation = false\n"
-        f"[widgets.demo]\npid_file = '{pid_file}'\nformat = '[cyan]{{text}}[/]'\n")
+        "[prompt]\nleft = 'ready $ '\nright = '[cyan]$demo[/cyan]'\ntransient = '$ '\n"
+        "[completion]\nenabled = false\n[editor]\ncursor_animation = false\n"
+        f"[widgets.demo]\npid_file = '{pid_file}'\n")
     (shell / ".zshrc").write_text(f"source '{ROOT}/zsh/editor.zsh'\n")
     environment = {"ZDOTDIR": str(shell), "XDG_CONFIG_HOME": str(config.parent),
                    "XDG_CACHE_HOME": str(directory / "cache"),
@@ -125,8 +125,8 @@ def exercise_reload(terminal: TerminalSession, directory: Path, first_pid: str) 
     widget.write_text(WIDGET.replace("first:", "updated:"))
     terminal.wait_for("updated:changed:parent", timeout=30)
     assert all(path.stat().st_mtime_ns == modified for path, modified in cache_times.items())
-    widget.write_text(WIDGET.replace('fn render(&mut self, context: &sopra::Context) -> String {',
-        'fn render(&mut self, context: &sopra::Context) -> String { std::thread::sleep(std::time::Duration::from_secs(10));'))
+    widget.write_text(WIDGET.replace('fn render(&mut self, context: &sopra::Context) -> sopra::Text {',
+        'fn render(&mut self, context: &sopra::Context) -> sopra::Text { std::thread::sleep(std::time::Duration::from_secs(10));'))
     terminal.wait_for("widget error", timeout=30)
     assert "100 ms" in (directory / "cache/sopra/widgets/errors.log").read_text()
     submit(terminal, "echo timeout-isolated")
@@ -146,11 +146,33 @@ def check_shutdown(terminal: TerminalSession, server_pid: str) -> None:
         raise AssertionError("editor worker survived its shell")
 
 
+def exercise_shared_git_sdk(directory: Path) -> None:
+    work = directory / "shared-git"
+    config = work / "config/sopra"
+    widgets = config / "widgets"
+    widgets.mkdir(parents=True)
+    source = (ROOT / "src/prompt/widgets/builtins/git.rs").read_text()
+    (widgets / "git_clone.rs").write_text(source +
+        "\nfn main() -> std::io::Result<()> { sopra::run(Git) }\n")
+    (config / "config.toml").write_text(
+        "[prompt]\nleft = '$git / [yellow]$git_clone[/yellow]'\nright=''\n"
+        "[completion]\nenabled=false\n[editor]\ncursor_animation=false\n"
+        "[widgets.git]\nlabel=''\n[widgets.git_clone]\nlabel=''\n")
+    subprocess.run(("git", "init", "--quiet", "--initial-branch=sdk-branch", str(work)), check=True)
+    env = {"XDG_CONFIG_HOME": str(config.parent), "XDG_CACHE_HOME": str(directory / "cache"),
+           "SOPRA_REPO_ROOT": str(ROOT), "ZDOTDIR": str(ROOT / "examples/isolated"),
+           "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker")}
+    with TerminalSession(("zsh", "-di"), rows=12, columns=100, cwd=str(work), env=env) as terminal:
+        terminal.wait_for("sdk-branch [1?] / sdk-branch [1?]", timeout=30)
+        assert b"\x1b[33m" in terminal.output, terminal.output
+
+
 def main() -> None:
     subprocess.run(["cargo", "build", "--quiet", "--locked"], cwd=ROOT, check=True)
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="sopra-worker-") as temporary:
         exercise(Path(temporary))
+        exercise_shared_git_sdk(Path(temporary))
     print(f"persistent worker: ok (context, handoff, resize, widgets, hot reload, shutdown; {time.monotonic() - started:.1f}s)")
 
 

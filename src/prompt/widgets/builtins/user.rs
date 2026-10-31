@@ -1,13 +1,21 @@
-use super::Widget;
+use sopra::{Context, Text, Widget};
 
-struct User(String);
-
+struct User;
 impl Widget for User {
-    fn token(&self) -> &str { "{user}" }
-    fn render(&self) -> String { self.0.clone() }
+    fn render(&mut self, context: &Context) -> Text {
+        context
+            .environment
+            .get("SOPRA_WIDGET_USER")
+            .map(|value| {
+                value
+                    .chars()
+                    .filter(|ch| !ch.is_control())
+                    .collect::<String>()
+            })
+            .unwrap_or_default()
+            .into()
+    }
 }
-
-pub(super) fn create(_context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
-    Box::new(User(sopra_shell_context::var("SOPRA_WIDGET_USER").unwrap_or_default()
-        .chars().filter(|character| !character.is_control()).collect()))
+pub(crate) fn create() -> Box<dyn Widget + Send> {
+    Box::new(User)
 }

@@ -1,138 +1,145 @@
 # Rust prompt widgets
 
-Put a self-contained Rust file in `~/.config/sopra/widgets/` (or
-`$XDG_CONFIG_HOME/sopra/widgets/`). Its filename becomes its template token:
-`uptime.rs` supplies `{uptime}` without a registration step. Names can contain
-ASCII letters, numbers, and underscores; built-in widget names are reserved.
-Only widgets referenced by a prompt token or conditional are loaded.
+Built-in and user widgets implement the same `sopra::Widget` trait from
+[`sopra-widget-sdk`](../crates/widget-sdk/src/lib.rs). Git, Git status, clock,
+and path are real implementations of that public API, rather than special
+cases in the renderer. Their source lives in
+[`src/prompt/widgets/builtins/`](../src/prompt/widgets/builtins/).
 
-## A dynamic widget
+Put a self-contained Rust file in `~/.config/sopra/widgets/` (or
+`$XDG_CONFIG_HOME/sopra/widgets/`). Its filename becomes its widget name:
+`uptime.rs` supplies `uptime` without registration. Names can contain ASCII
+letters, numbers, and underscores; built-in names are reserved. Only widgets
+referenced by a layout are loaded.
+
+## Dynamic output
 
 Save this as `uptime.rs`:
 
 ```rust
-struct Uptime(std::time::Instant);
+use sopra::{Context, Emphasis, Refresh, Text, Widget};
+use std::time::{Duration, Instant};
 
-impl sopra::Widget for Uptime {
-    fn render(&mut self, context: &sopra::Context) -> String {
-        let label = context.options.get("label").map_or("up", String::as_str);
-        format!("{label} {}s", self.0.elapsed().as_secs())
+struct Uptime(Instant);
+impl Widget for Uptime {
+    fn render(&mut self, context: &Context) -> Text {
+        let label = context.option("label", "up");
+        Text::new()
+            .part(Emphasis::Dim, format!("{label} "))
+            .push(format!("{}s", self.0.elapsed().as_secs()))
+    }
+    fn refresh(&self) -> Refresh {
+        Refresh::Every(Duration::from_secs(1))
     }
 }
 
 fn main() -> std::io::Result<()> {
-    sopra::run(Uptime(std::time::Instant::now()))
+    sopra::run(Uptime(Instant::now()))
 }
 ```
 
-Then use it in `config.toml`:
+Use it in `config.toml`:
 
 ```toml
 [prompt]
-left = "{path}\n$ "
-right = "[if uptime]{uptime}[/]"
-transient = "$ "
+left = "[blue]$path[/blue]\n$ "
+right = "[cyan]$uptime[/cyan]"
+transient = "[dim]$[/dim] "
 
 [widgets.uptime]
 label = "session"
-format = "[dim]{text}[/]"
 ```
 
-The widget supplies plain text. Apply styles around its token or with its
-`format` option, which substitutes `{text}` and accepts the normal prompt tags.
-Brackets in widget output are escaped rather than interpreted as styling.
-An empty result stays empty, so `[if uptime]` can hide adjacent separators.
+Widgets return `Text`: plain text parts with optional colorless `Emphasis`.
+`.push(text)` appends ordinary text; `.part(Emphasis::Dim, text)` dims a part.
+`Emphasis::Bold` emphasizes text and `Emphasis::Selected` reverses foreground and
+background for selection. Every part inherits the template's color. Output is
+never interpreted as template markup, and an empty result disappears along with
+its connecting separators. See [configuration](../README.md#configuration).
 
-## Context and state
-
-The embedded `sopra` module exposes:
+## Context, state, and refresh
 
 - `Context.cwd: PathBuf` is the current shell directory.
-- `Context.options: BTreeMap<String, String>` contains this widget’s TOML
-  settings. String values are decoded; other values use TOML notation.
-- `Context.environment: BTreeMap<String, String>` is the shell’s latest exported
+- `Context.options: BTreeMap<String, String>` contains this widget's TOML
+  options. String values are decoded; other values use TOML notation. The
+  host passes these through without interpreting widget-specific keys.
+- `Context.environment: BTreeMap<String, String>` is the shell's latest exported
   environment, including command context supplied by the bridge.
-- `Widget::render(&mut self, &Context) -> String` supplies the displayed text.
+- `Context::option(name, default)` reads an option with a default.
+- `Widget::render(&mut self, &Context) -> Text` supplies the display.
+- `Widget::refresh() -> Refresh` defaults to `OnContext`: render after context
+  changes or an interaction. `Every(Duration)` also schedules periodic renders.
 
-The widget instance stays alive across command submissions, so struct fields
-can hold timers, selection state, or cached results. Context refreshes when the
-shell requests another edit. Use `context.cwd` and `context.environment` for
-current state; the child process’s own environment is its startup snapshot.
-The API currently uses UTF-8 text and the Rust standard library; separate Cargo
-packages and external crate dependencies are not supported by this file format.
+A custom widget instance stays alive across command submissions, so its fields
+can hold timers or selection state. Built-in instances also stay alive across edits.
+Use the supplied context for fresh shell state; a custom process's own environment is its startup snapshot.
+The SDK uses UTF-8 text and the Rust standard library. Separate Cargo packages
+and external crate dependencies are not supported by the single-file loader.
 
 ## Interaction
 
-An interactive widget implements `interactive() -> bool`, `active() -> bool`,
-and `key(&mut self, &str, &Context) -> sopra::Action`. All have inactive defaults.
-Ctrl-G focuses the first available interactive widget; pressing it again cycles
-to another one. With a single interactive widget, it cancels focus. Active
-widgets receive keys before command editing.
-
-Key names include `PromptWidgets` (activation), `Tab`, `BackTab`, `Enter`,
-`Escape`, `Cancel`, `Left`, `Right`, `Up`, and `Down`. Printable keys use their
-Rust debug spelling, such as `Character('a')`. A minimal parent-folder picker:
+Interactive widgets implement `interactive() -> bool`, `active() -> bool`,
+and `handle(&mut self, Event, &Context) -> Action`. Defaults are inactive and
+return `Action::Ignored`. Ctrl-G activates the first interactive widget and
+cycles through others; with one widget, pressing it again cancels focus.
+Active widgets receive typed `Event::Key(Key)` events before command editing.
 
 ```rust
+use sopra::{Action, Context, Event, Key, Text, Widget};
+
 #[derive(Default)]
 struct Parent { active: bool }
-
-impl sopra::Widget for Parent {
-    fn render(&mut self, context: &sopra::Context) -> String {
-        context.cwd.parent().map_or(String::new(), |p| p.display().to_string())
+impl Widget for Parent {
+    fn render(&mut self, context: &Context) -> Text {
+        context.cwd.parent()
+            .map_or_else(String::new, |p| p.display().to_string()).into()
     }
     fn interactive(&self) -> bool { true }
     fn active(&self) -> bool { self.active }
-    fn key(&mut self, key: &str, context: &sopra::Context) -> sopra::Action {
-        match key {
-            "PromptWidgets" => self.active = true,
-            "Escape" | "Cancel" => self.active = false,
-            "Enter" => {
+    fn handle(&mut self, event: Event, context: &Context) -> Action {
+        match event {
+            Event::Activate => self.active = true,
+            Event::Key(Key::Escape | Key::Cancel) => self.active = false,
+            Event::Key(Key::Enter) => {
                 self.active = false;
                 if let Some(parent) = context.cwd.parent() {
-                    return sopra::Action::ChangeDirectory(parent.to_owned());
+                    return Action::ChangeDirectory(parent.to_owned());
                 }
             }
-            _ => {}
+            _ => return Action::Ignored,
         }
-        sopra::Action::None
+        Action::Consumed
     }
 }
-
 fn main() -> std::io::Result<()> { sopra::run(Parent::default()) }
 ```
 
-`ChangeDirectory` asks the owning Zsh to change directory while retaining the
-command buffer. Use `Action::None` for a key that only changes widget state.
+`Action::Consumed` reports an event handled by the widget.
+`Action::ChangeDirectory` asks Zsh to change directory while retaining the
+command buffer. `Key` includes Tab, BackTab, Enter, Escape, navigation keys,
+and `Character(char)`; no string parsing or Rust debug spellings are involved.
 
 ## Compilation and failures
 
-Sopra provides the SDK when compiling a file with `rustc --edition=2024 -O`.
-A working Rust toolchain must be on `PATH`. Compiled binaries are cached by
-source and SDK contents under `$XDG_CACHE_HOME/sopra/widgets/`, or
-`~/.cache/sopra/widgets/`. Unchanged files reuse the cached binary.
+The file compiler embeds the canonical SDK sources into its build directory;
+built-ins link the same SDK as a workspace crate. There is one trait, context,
+text model, event model, and action model. Built-in factories are discovered
+by `build.rs`; the registry owns no widget-specific options or styling.
 
-Each loaded custom widget owns a background thread and a separate persistent
-process. The thread checks source changes and refreshes output every 250 ms;
-the terminal renders cached text without waiting for compilation. New files
-are discovered at the next prompt. Source changes rebuild and restart that
-widget, resetting its state while leaving the editor running.
+Custom files compile with `rustc --edition=2024 -O`, so a working Rust toolchain
+must be on `PATH`. Binaries are cached by source and SDK contents under
+`$XDG_CACHE_HOME/sopra/widgets/`, or `~/.cache/sopra/widgets/`.
 
-Compilation has a 30-second deadline. Each render or key callback must respond
-within 100 ms; perform slow work in your own background thread and return a
-cached value. Invalid output, a timeout, or a crash stops the widget until its
-source changes. The prompt shows `widget error`, and the cache’s `errors.log`
-records the cause and the compiler log location. Terminal control characters
-and responses over 64 KiB are rejected. These processes run with your user’s
-permissions; this is failure isolation, not a sandbox.
+Each loaded custom widget owns a background thread and a persistent process.
+The thread checks source changes every 250 ms and schedules callbacks according
+to `Refresh`. The terminal reads cached text without waiting for compilation
+or callbacks. New files are discovered at the next prompt; changed files rebuild
+and restart that widget, resetting its state while leaving the editor running.
 
-## Built-in ownership
-
-Every built-in lives in `src/prompt/widgets/builtins/<name>.rs` and owns its
-rendering and interaction state. `build.rs` discovers those files and generates
-the factory registry during compilation. A new built-in implements the internal
-`Widget` trait and a `create(&WidgetContext) -> Box<dyn Widget>` factory in its own file.
-The context contains the working directory and that widget’s own TOML options,
-so adding an option does not require a config field or a Zsh mapping.
-The template renderer owns conditional blocks, escaping, and surrounding
-styles; the registry does not contain widget-specific branches.
+Compilation has a 30-second deadline. Each render or event callback must respond
+within 100 ms; slow work belongs in a widget-owned background thread that updates
+a cached value. Invalid output, timeout, or crash stops the widget until its
+source changes. The prompt shows `widget error`; the cache's `errors.log`
+records the cause and compiler log location. Terminal control characters and
+responses over 64 KiB are rejected. Processes run with your user's permissions;
+this boundary isolates failures and does not sandbox code.

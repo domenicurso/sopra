@@ -11,7 +11,7 @@ fn structured_completion_can_leave_the_cursor_inside_a_pair() {
     )
     .with_suffix("=()", 4);
     state.set_completion_source_for_test(vec![item]);
-    state.handle_key(Key::Tab);
+    state.handle_key(Action::Tab);
     assert_eq!(state.buffer(), "export arr=()");
     assert_eq!(state.result(ExitReason::Accepted).cursor, 11);
 }
@@ -30,7 +30,7 @@ fn attached_value_completion_preserves_the_assignment_key() {
     );
     state.set_completion_source_for_test(vec![item]);
 
-    state.handle_key(Key::Tab);
+    state.handle_key(Action::Tab);
     assert_eq!(state.buffer(), "npm access set mfa=automation ");
 }
 
@@ -47,7 +47,7 @@ fn accepting_a_word_completion_appends_a_space() {
         sopra_completion::CompletionSource::CommandIndex,
     )]);
 
-    state.handle_key(Key::Tab);
+    state.handle_key(Action::Tab);
 
     assert_eq!(state.buffer(), "git status ");
 }
@@ -65,7 +65,7 @@ fn accepting_an_assignment_key_keeps_the_value_attached() {
         sopra_completion::CompletionSource::CommandIndex,
     )]);
 
-    state.handle_key(Key::Tab);
+    state.handle_key(Action::Tab);
 
     assert_eq!(state.buffer(), "npm access set mfa=");
 }
@@ -87,10 +87,10 @@ fn tab_focuses_the_first_completion_before_accepting_it() {
             .collect(),
     );
 
-    state.handle_key(Key::Tab);
+    state.handle_key(Action::Tab);
 
     assert_eq!(state.buffer(), "git ");
-    assert_eq!(state.selected, Some(0));
+    assert_eq!(state.completions.focus.selected(), Some(0));
     assert_eq!(state.completion_hint(), "Tab to accept");
 }
 

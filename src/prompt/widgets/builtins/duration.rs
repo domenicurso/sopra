@@ -1,18 +1,22 @@
-use super::Widget;
+use sopra::{Context, Text, Widget};
 
-struct Duration(String);
-
+struct Duration;
 impl Widget for Duration {
-    fn token(&self) -> &str { "{duration}" }
-    fn render(&self) -> String { self.0.clone() }
+    fn render(&mut self, context: &Context) -> Text {
+        context
+            .environment
+            .get("SOPRA_WIDGET_DURATION")
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(format_duration)
+            .unwrap_or_default()
+            .into()
+    }
+}
+pub(crate) fn create() -> Box<dyn Widget + Send> {
+    Box::new(Duration)
 }
 
-pub(super) fn create(_context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
-    Box::new(Duration(sopra_shell_context::var("SOPRA_WIDGET_DURATION").ok()
-        .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value >= 0.0)
-        .map(format_duration).unwrap_or_default()))
-}
 fn format_duration(seconds: f64) -> String {
     if seconds < 0.001 {
         format!("{:.1}ms", seconds * 1000.0)

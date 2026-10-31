@@ -1,5 +1,6 @@
 mod clipboard;
 mod commands;
+mod completion_state;
 mod completions;
 mod editing;
 mod history;
@@ -9,7 +10,7 @@ mod navigation;
 mod pairs;
 mod position;
 mod session;
-mod submission;
+pub(crate) mod submission;
 #[cfg(test)]
 mod tests;
 mod text_selection;
@@ -18,17 +19,14 @@ mod text_selection_tests;
 mod transcript;
 mod view;
 
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, time::Instant};
 
 use crate::{
     input::{CursorPosition, TerminalSize},
     palette::TerminalPalette,
     syntax::SyntaxSpan,
 };
-use sopra_completion::{CompletionEngine, CompletionItem};
+use sopra_completion::CompletionEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExitReason {
@@ -51,13 +49,16 @@ pub(crate) struct RunResult {
 
 pub(crate) struct EditorConfig {
     pub(crate) buffer: String,
+    #[cfg(test)]
     pub(crate) cursor_chars: usize,
     pub(crate) arm_completion: bool,
     pub(crate) suppress_completion: bool,
     pub(crate) completion_enabled: bool,
     pub(crate) syntax_highlighting: bool,
     pub(crate) cursor_animation: bool,
+    #[cfg(test)]
     pub(crate) prompt: String,
+    #[cfg(test)]
     pub(crate) rprompt: String,
     pub(crate) anchor: CursorPosition,
     pub(crate) size: TerminalSize,
@@ -67,27 +68,17 @@ pub(crate) struct EditorConfig {
 
 pub(crate) struct EditorState {
     buffer: String,
+    layout: crate::text::layout::Cache,
     history: History,
     cursor: usize,
-    prompt: String,
-    rprompt: String,
+    prompt: Vec<crate::prompt::PromptSpan>,
+    rprompt: Vec<crate::prompt::PromptSpan>,
     transient_prompt: String,
     secondary_prompt: String,
     widgets: crate::prompt::widgets::Widgets,
     anchor: CursorPosition,
-    selected: Option<usize>,
     text_selection: text_selection::TextSelection,
-    completion_armed: bool,
-    completion_suspended: bool,
-    suggestion_scroll: usize,
-    overlay_visible: bool,
-    completion_source: Vec<CompletionItem>,
-    suggestions: Vec<CompletionItem>,
-    completion_key: String,
-    latest_local_generation: u64,
-    completion: Option<CompletionEngine>,
-    completion_elapsed: Duration,
-    completion_latency_generation: u64,
+    completions: completion_state::State,
     cwd: PathBuf,
     palette: TerminalPalette,
     syntax: Vec<SyntaxSpan>,
@@ -99,6 +90,7 @@ pub(crate) struct EditorState {
 }
 
 impl EditorState {
+    #[cfg(test)]
     pub(crate) fn new(config: EditorConfig) -> Self {
         let cursor = navigation::char_index_to_byte(&config.buffer, config.cursor_chars);
         let widgets = crate::prompt::widgets::Widgets::new(
@@ -106,20 +98,26 @@ impl EditorState {
             config.rprompt.clone(),
             config.cwd.clone(),
         );
-        let mut state = Self::initialize(config, widgets, cursor);
+        let completion = config
+            .completion_enabled
+            .then(CompletionEngine::new)
+            .flatten();
+        let mut state = Self::initialize(config, widgets, cursor, completion);
         state.request_completion();
         state
     }
 
-    fn initialize(
+    pub(crate) fn initialize(
         config: EditorConfig,
-        widgets: crate::prompt::widgets::Widgets,
+        mut widgets: crate::prompt::widgets::Widgets,
         cursor: usize,
+        completion: Option<CompletionEngine>,
     ) -> Self {
-        let completion_active = config.completion_enabled && !config.suppress_completion;
+        let completions = completion_state::State::new(&config, completion);
         let (prompt, rprompt) = widgets.render();
         Self {
             buffer: config.buffer,
+            layout: crate::text::layout::Cache::default(),
             history: History::default(),
             cursor,
             prompt,
@@ -129,21 +127,7 @@ impl EditorState {
             widgets,
             anchor: config.anchor,
             text_selection: text_selection::TextSelection::default(),
-            selected: (config.arm_completion && completion_active).then_some(0),
-            completion_armed: config.arm_completion && completion_active,
-            completion_suspended: config.suppress_completion || !config.completion_enabled,
-            suggestion_scroll: 0,
-            overlay_visible: config.completion_enabled && !config.suppress_completion,
-            completion_source: Vec::new(),
-            suggestions: Vec::new(),
-            completion_key: String::new(),
-            latest_local_generation: 0,
-            completion: config
-                .completion_enabled
-                .then(CompletionEngine::new)
-                .flatten(),
-            completion_elapsed: Duration::ZERO,
-            completion_latency_generation: 0,
+            completions,
             cwd: config.cwd,
             palette: config.palette,
             syntax: Vec::new(),
@@ -153,6 +137,16 @@ impl EditorState {
             animation_started: Instant::now(),
             last_size: config.size,
         }
+    }
+
+    pub(crate) fn into_services(
+        self,
+    ) -> (
+        crate::prompt::widgets::Widgets,
+        Option<CompletionEngine>,
+        History,
+    ) {
+        (self.widgets, self.completions.engine, self.history)
     }
 
     pub(super) fn note_activity(&mut self) {

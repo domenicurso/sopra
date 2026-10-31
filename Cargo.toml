@@ -9,7 +9,7 @@ readme = "README.md"
 default-run = "sopra-worker"
 
 [workspace]
-members = ["crates/completion", "crates/shell-context"]
+members = ["crates/completion", "crates/shell-context", "crates/widget-sdk"]
 resolver = "3"
 
 [[bin]]
@@ -17,6 +17,7 @@ name = "sopra-worker"
 path = "src/main.rs"
 
 [dependencies]
+sopra = { package = "sopra-widget-sdk", path = "crates/widget-sdk" }
 brush-parser = "0.4"
 libc = "0.2"
 notify = "6"

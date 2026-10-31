@@ -1,25 +1,22 @@
-use unicode_segmentation::UnicodeSegmentation;
-
 use super::EditorState;
-use crate::{input::CursorPosition, scene::text_flow::TextFlow};
+use crate::input::CursorPosition;
 
 impl EditorState {
+    pub(crate) fn text_layout(
+        &self,
+        size: crate::input::TerminalSize,
+    ) -> std::rc::Rc<crate::text::layout::Layout> {
+        self.layout.get(crate::text::layout::Input {
+            anchor: self.anchor,
+            columns: size.columns,
+            prompt: self.prompt(),
+            secondary: &crate::prompt::parse(self.secondary_prompt()),
+            buffer: self.buffer(),
+        })
+    }
+
     pub(super) fn buffer_positions(&self) -> Vec<(usize, CursorPosition)> {
-        let start = self.restore_prompt_position(self.last_size, self.prompt());
-        let mut flow = TextFlow::new(start, self.last_size.columns);
-        let secondary = crate::prompt::parse(self.secondary_prompt());
-        let mut positions = Vec::new();
-        for (byte, grapheme) in self.buffer.grapheme_indices(true) {
-            if grapheme == "\n" {
-                positions.push((byte, flow.cursor()));
-                flow.advance(grapheme);
-                flow.prompt(&secondary);
-            } else if let Some(position) = flow.advance(grapheme) {
-                positions.push((byte, position));
-            }
-        }
-        positions.push((self.buffer.len(), flow.cursor()));
-        positions
+        self.text_layout(self.last_size).positions.clone()
     }
 
     pub(super) fn offset_at(&self, target: CursorPosition) -> usize {

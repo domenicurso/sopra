@@ -8,7 +8,7 @@ use std::{io, path::Path};
 use sopra_completion::{CompletionItem, CompletionKind, CompletionSource};
 
 use super::EditorState;
-use crate::{input::Key, prompt::PromptSpan};
+use crate::{actions::Action, prompt::PromptSpan};
 
 pub(crate) struct History {
     entries: Vec<snapshot::Entry>,
@@ -27,29 +27,27 @@ impl Default for History {
             choice: None,
             recall: None,
             enabled: true,
-            format: "[dim]{text}[/]".to_string(),
-            metadata_format: "[dim][italic]{text}[/][/]".to_string(),
+            format: "[dim]$text[/dim]".to_string(),
+            metadata_format: "[dim italic]$text[/dim italic]".to_string(),
             dismissed: None,
         }
     }
 }
 
 impl History {
-    pub(crate) fn read(path: Option<&Path>) -> io::Result<Self> {
-        let mut history = Self::default();
-        if let Some(path) = path {
-            history.entries = snapshot::read(path)?;
-        }
-        history.enabled = sopra_shell_context::var("SOPRA_AUTOSUGGESTIONS").map_or(true, |value| {
-            !matches!(value.to_lowercase().as_str(), "0" | "false" | "off" | "no")
-        });
-        if let Ok(format) = sopra_shell_context::var("SOPRA_AUTOSUGGESTION_FORMAT") {
-            history.format = format;
-        }
-        if let Ok(format) = sopra_shell_context::var("SOPRA_AUTOSUGGESTION_METADATA_FORMAT") {
-            history.metadata_format = format;
-        }
-        Ok(history)
+    pub(crate) fn refresh(
+        &mut self,
+        path: Option<&Path>,
+        config: &crate::config::Config,
+    ) -> io::Result<()> {
+        self.entries = path.map(snapshot::read).transpose()?.unwrap_or_default();
+        self.choice = None;
+        self.recall = None;
+        self.dismissed = None;
+        self.enabled = config.autosuggestions;
+        self.format = config.autosuggestion_format.clone();
+        self.metadata_format = config.autosuggestion_metadata_format.clone();
+        Ok(())
     }
 
     fn matching<'a>(&'a self, buffer: &'a str) -> impl Iterator<Item = &'a snapshot::Entry> {
@@ -109,23 +107,22 @@ impl EditorState {
         {
             return None;
         }
-        let command =
-            if let Some(item) = self.selected.and_then(|index| self.suggestions.get(index)) {
-                (item.kind == CompletionKind::History).then_some(item.insert.as_str())?
-            } else {
-                self.history.chosen(&self.buffer)?
-            };
+        let command = if let Some(item) = self
+            .completions
+            .focus
+            .selected()
+            .and_then(|index| self.completions.items.get(index))
+        {
+            (item.kind == CompletionKind::History).then_some(item.insert.as_str())?
+        } else {
+            self.history.chosen(&self.buffer)?
+        };
         command.strip_prefix(&self.buffer)
     }
 
     pub(crate) fn autosuggestion_spans(&self) -> Vec<PromptSpan> {
         self.history_suffix().map_or_else(Vec::new, |suffix| {
-            crate::prompt::parse(
-                &self
-                    .history
-                    .format
-                    .replace("{text}", &suffix.replace('[', "[[")),
-            )
+            render_history(&self.history.format, suffix)
         })
     }
 
@@ -139,24 +136,22 @@ impl EditorState {
             .iter()
             .find(|entry| entry.command.strip_prefix(&self.buffer) == Some(suffix));
         entry.map_or_else(Vec::new, |entry| {
-            crate::prompt::parse(
-                &self
-                    .history
-                    .metadata_format
-                    .replace("{text}", &snapshot::description(entry)),
-            )
+            render_history(&self.history.metadata_format, &snapshot::description(entry))
         })
     }
 
-    pub(super) fn accept_history(&mut self, key: Key) -> bool {
-        if !matches!(key, Key::Right | Key::End | Key::WordRight | Key::Tab) {
+    pub(super) fn accept_history(&mut self, key: Action) -> bool {
+        if !matches!(
+            key,
+            Action::Right | Action::End | Action::WordRight | Action::Tab
+        ) {
             return false;
         }
         let Some(suffix) = self.history_suffix() else {
             return false;
         };
         let chosen = format!("{}{}", self.buffer, suffix);
-        let count = if key == Key::WordRight {
+        let count = if key == Action::WordRight {
             let start = suffix.len() - suffix.trim_start().len();
             start
                 + suffix[start..]
@@ -172,6 +167,17 @@ impl EditorState {
         self.reset_selection();
         true
     }
+}
+
+fn render_history(source: &str, value: &str) -> Vec<PromptSpan> {
+    crate::prompt::template::Template::compile(source)
+        .map(|template| {
+            template.render(&std::collections::BTreeMap::from([(
+                "text".into(),
+                value.into(),
+            )]))
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

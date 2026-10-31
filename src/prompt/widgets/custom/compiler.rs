@@ -10,13 +10,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+include!(concat!(env!("OUT_DIR"), "/widget_sdk.rs"));
+
 static BUILDS: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn build(source: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
-    let sdk = include_str!("sdk.rs");
     let mut hash = DefaultHasher::new();
     bytes.hash(&mut hash);
-    sdk.hash(&mut hash);
+    SDK_SOURCES.hash(&mut hash);
     std::env::consts::OS.hash(&mut hash);
     std::env::consts::ARCH.hash(&mut hash);
     let directory = cache_root()?.join(format!("{:016x}", hash.finish()));
@@ -31,11 +32,14 @@ pub(super) fn build(source: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
         BUILDS.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&build)?;
-    fs::write(build.join("sdk.rs"), sdk)?;
+    fs::create_dir_all(build.join("sdk"))?;
+    for (name, contents) in SDK_SOURCES {
+        fs::write(build.join("sdk").join(name), contents)?;
+    }
     fs::write(build.join("widget.rs"), bytes)?;
     fs::write(
         build.join("main.rs"),
-        "mod sopra { include!(\"sdk.rs\"); }\ninclude!(\"widget.rs\");\n",
+        "#[path = \"sdk/lib.rs\"] mod sopra;\ninclude!(\"widget.rs\");\n",
     )?;
     let errors = fs::File::create(build.join("errors.log"))?;
     let mut child = Command::new("rustc")

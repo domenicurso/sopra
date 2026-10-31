@@ -1,33 +1,34 @@
 mod compiler;
 mod process;
 mod runtime;
+mod session;
 mod transport;
-// This file is also embedded as the standalone public SDK compiled with user widgets.
-#[allow(dead_code)]
-mod sdk;
+mod watch;
 
-use super::{Widget, WidgetAction};
-use crate::input::Key;
+use super::{
+    entry::{self, Entry},
+    settings::Settings,
+};
 use runtime::Runtime;
+use sopra::{Action, Context, Event, Refresh, Text, Widget};
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::Arc,
+    time::Duration,
 };
 
-static RUNTIMES: OnceLock<Mutex<BTreeMap<PathBuf, Arc<Runtime>>>> = OnceLock::new();
-
-struct Custom {
-    token: String,
-    format: String,
+struct Remote {
     runtime: Arc<Runtime>,
 }
 
 pub(super) fn discover(
-    templates: (&str, &str),
+    templates: (
+        &crate::prompt::template::Template,
+        &crate::prompt::template::Template,
+    ),
     cwd: &Path,
-    settings: &super::settings::Settings,
-) -> Vec<Box<dyn Widget>> {
+    settings: &Settings,
+) -> Vec<Entry> {
     let Some(root) = settings.root.as_ref() else {
         return Vec::new();
     };
@@ -52,14 +53,17 @@ pub(super) fn discover(
 
 fn load(
     path: PathBuf,
-    settings: &super::settings::Settings,
-    templates: (&str, &str),
+    settings: &Settings,
+    templates: (
+        &crate::prompt::template::Template,
+        &crate::prompt::template::Template,
+    ),
     cwd: &Path,
-) -> Option<Box<dyn Widget>> {
-    let name = path.file_stem()?.to_str()?;
+) -> Option<Entry> {
+    let name = path.file_stem()?.to_str()?.to_owned();
     if path.extension()? != "rs"
-        || !valid_name(name)
-        || !super::referenced(templates.0, templates.1, name)
+        || !valid_name(&name)
+        || !super::referenced(templates.0, templates.1, &name)
     {
         return None;
     }
@@ -69,57 +73,33 @@ fn load(
     {
         return None;
     }
-    let token = format!("{{{name}}}");
-    let options = settings.options(name);
-    let format = options
-        .get("format")
-        .cloned()
-        .unwrap_or_else(|| "{text}".into());
-    let context = context(cwd, &options);
-    let mut runtimes = RUNTIMES
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let runtime = runtimes
-        .entry(path.clone())
-        .or_insert_with(|| Arc::new(Runtime::start(path, context.clone())));
-    runtime.update(context);
-    Some(Box::new(Custom {
-        token,
-        format,
-        runtime: Arc::clone(runtime),
-    }))
+    let definition = settings.definition(&name);
+    let context = entry::context(cwd, definition.options.clone());
+    let runtime = Arc::new(Runtime::start(path, context));
+    Some(Entry::new(
+        &name,
+        Box::new(Remote { runtime }),
+        cwd,
+        definition,
+    ))
 }
 
-impl Widget for Custom {
-    fn token(&self) -> &str {
-        &self.token
-    }
-    fn markup(&self) -> bool {
-        true
-    }
-    fn render(&self) -> String {
-        let text = self.runtime.display().0;
-        if text.is_empty() {
-            return text;
-        }
-        self.format.replace("{text}", &text.replace('[', "[["))
+impl Widget for Remote {
+    fn render(&mut self, context: &Context) -> Text {
+        self.runtime.update(context.clone());
+        self.runtime.display().text
     }
     fn interactive(&self) -> bool {
-        self.runtime.display().2
+        self.runtime.display().interactive
     }
     fn active(&self) -> bool {
-        self.runtime.display().1
+        self.runtime.display().active
     }
-    fn handle(&mut self, key: Key) -> WidgetAction {
-        let (_, active, interactive) = self.runtime.display();
-        if !active && !(interactive && key == Key::PromptWidgets) {
-            return WidgetAction::Ignored;
-        }
-        match self.runtime.key(format!("{key:?}")) {
-            Some(path) => WidgetAction::ChangeDirectory(path),
-            None => WidgetAction::Consumed,
-        }
+    fn refresh(&self) -> Refresh {
+        Refresh::Every(Duration::from_millis(16))
+    }
+    fn handle(&mut self, event: Event, _context: &Context) -> Action {
+        self.runtime.key(event)
     }
 }
 
@@ -128,29 +108,4 @@ fn valid_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-}
-
-fn context(cwd: &Path, options: &BTreeMap<String, String>) -> String {
-    let environment = sopra_shell_context::vars_os()
-        .into_iter()
-        .map(|(name, value)| {
-            (
-                name.to_string_lossy().into_owned(),
-                value.to_string_lossy().into_owned(),
-            )
-        })
-        .collect();
-    format!(
-        "W1\t{}\t{}\t{}",
-        sdk::encode(&cwd.to_string_lossy()),
-        sdk::encode(&pairs(options)),
-        sdk::encode(&pairs(&environment))
-    )
-}
-
-fn pairs(values: &BTreeMap<String, String>) -> String {
-    values
-        .iter()
-        .map(|(key, value)| format!("{key}\0{value}\0"))
-        .collect()
 }

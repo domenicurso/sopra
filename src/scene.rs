@@ -8,7 +8,6 @@ mod overlay_items;
 mod overlay_label;
 mod overlay_layout;
 mod overlay_scrollbar;
-pub(crate) mod text_flow;
 mod transient;
 
 #[cfg(test)]

@@ -1,67 +1,67 @@
-use std::{
-    io,
-    time::{Duration, Instant},
-};
+#[path = "session_loop.rs"]
+mod lifecycle;
+use std::{io, time::Instant};
 
 use super::{EditorState, ExitReason, RunResult};
 use crate::{
-    input::{Key, Terminal, TerminalSize},
+    actions::Action,
+    input::{Terminal, TerminalSize},
     render::Renderer,
     scene::Scene,
 };
 
-const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
-
 impl EditorState {
-    pub(crate) fn run(&mut self, terminal: &mut Terminal) -> io::Result<RunResult> {
-        let mut renderer = Renderer::editor();
-        let mut resize_epoch = terminal.resize_epoch();
-        let mut next_frame = Instant::now();
+    pub(crate) fn run(
+        &mut self,
+        terminal: &mut Terminal,
+        syntax: &mut super::submission::Checker,
+    ) -> io::Result<RunResult> {
+        syntax.cancel();
+        let mut frame = lifecycle::Loop::new(terminal);
         loop {
-            self.poll_completion();
-            let now = Instant::now();
-            if now >= next_frame {
-                self.paint_editor(now, terminal, &mut renderer)?;
-                next_frame = now + FRAME_INTERVAL;
-            }
-
-            let wait = next_frame.saturating_duration_since(Instant::now());
-            let result = if terminal.poll(wait)? {
-                let key = terminal.read_key()?;
-                next_frame = Instant::now();
-                self.handle_input(key, terminal, &mut renderer, &mut resize_epoch)?
-            } else {
-                None
-            };
-            if let Some(result) = result {
-                self.finish(&mut renderer, terminal, result.reason)?;
+            if let Some(result) = frame.step(self, terminal, syntax)? {
+                self.finish(&mut frame.renderer, terminal, result.reason)?;
                 if result.reason == ExitReason::Interrupted {
                     self.start_fresh_line(terminal)?;
-                    renderer = Renderer::editor();
-                    next_frame = Instant::now();
-                    continue;
+                    frame = lifecycle::Loop::new(terminal);
+                } else {
+                    return Ok(result);
                 }
-                return Ok(result);
-            }
-            let latest_resize_epoch = terminal.resize_epoch();
-            if latest_resize_epoch != resize_epoch {
-                resize_epoch = latest_resize_epoch;
-                next_frame = Instant::now();
             }
         }
     }
 
+    fn poll_actions(
+        &mut self,
+        syntax: &mut super::submission::Checker,
+    ) -> io::Result<Option<RunResult>> {
+        self.poll_completion();
+        if let Some(sopra::Action::ChangeDirectory(directory)) = self.widgets.poll_action() {
+            let mut result = self.result(ExitReason::ChangeDirectory);
+            result.directory = Some(directory);
+            return Ok(Some(result));
+        }
+        if let Some(incomplete) = syntax.poll(&self.buffer)? {
+            if incomplete {
+                self.continue_input();
+            } else {
+                return Ok(Some(self.result(ExitReason::Accepted)));
+            }
+        }
+        Ok(None)
+    }
+
     fn handle_input(
         &mut self,
-        key: Key,
+        key: Action,
         terminal: &mut Terminal,
         renderer: &mut Renderer,
         resize_epoch: &mut usize,
     ) -> io::Result<Option<RunResult>> {
-        if key == Key::Cancel && self.copy_selection(terminal)? {
+        if key == Action::Cancel && self.copy_selection(terminal)? {
             return Ok(None);
         }
-        if let Key::Mouse(event) = key {
+        if let Action::Mouse(event) = key {
             let latest = terminal.resize_epoch();
             if latest != *resize_epoch {
                 *resize_epoch = latest;
@@ -70,18 +70,15 @@ impl EditorState {
             self.handle_mouse(event, renderer.origin_row());
             return Ok(None);
         }
-        if key == Key::Enter
-            && !self.widgets.active()
-            && super::submission::needs_continuation(&self.buffer)?
-        {
-            self.buffer.push('\n');
-            self.cursor = self.buffer.len();
-            self.text_selection.clear();
-            self.note_activity();
-            self.request_completion();
-            return Ok(None);
-        }
         Ok(self.handle_key(key))
+    }
+
+    fn continue_input(&mut self) {
+        self.buffer.push('\n');
+        self.cursor = self.buffer.len();
+        self.text_selection.clear();
+        self.note_activity();
+        self.request_completion();
     }
 
     fn paint_editor(
@@ -109,14 +106,15 @@ impl EditorState {
         self.buffer.clear();
         self.text_selection.clear();
         self.cursor = 0;
-        self.selected = None;
-        self.completion_armed = false;
-        self.completion_suspended = self.completion.is_none();
-        self.overlay_visible = self.completion.is_some();
-        self.suggestion_scroll = 0;
-        self.completion_source.clear();
-        self.suggestions.clear();
-        self.completion_key.clear();
+        self.completions.focus.select(None);
+        self.completions.focus.set_armed(false);
+        self.completions
+            .set_suspended(self.completions.engine.is_none());
+        self.completions.visible = self.completions.engine.is_some();
+        self.completions.scroll = 0;
+        self.completions.source.clear();
+        self.completions.items.clear();
+        self.completions.key.clear();
         self.yank.clear();
         self.last_size = terminal.size().unwrap_or(self.last_size);
         self.note_activity();
@@ -133,7 +131,7 @@ impl EditorState {
         let size = terminal.size().unwrap_or(self.last_size);
         let (restore_position, replacement) = match reason {
             ExitReason::Accepted => (
-                self.restore_prompt_position(size, self.transient_prompt()),
+                self.restore_prompt_position(size, &crate::prompt::parse(self.transient_prompt())),
                 Some(Scene::for_transient(self, size).render()),
             ),
             ExitReason::Interrupted => {

@@ -22,6 +22,7 @@ precmd_functions=(_sopra_command_finished ${precmd_functions:#_sopra_command_fin
 preexec_functions=(_sopra_command_started ${preexec_functions:#_sopra_command_started})
 
 _sopra_shell_context() {
+    printf -v SOPRA_BUILTINS '%s\n' "${(@k)builtins}"
     local -a alias_list
     local alias_name
     for alias_name in ${(k)aliases}; do

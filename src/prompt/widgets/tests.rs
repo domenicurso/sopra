@@ -1,94 +1,71 @@
-use super::{WidgetAction, Widgets};
-use crate::input::Key;
-use std::path::PathBuf;
+use super::Widgets;
+use crate::actions::Action;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
-#[test]
-fn path_widget_selects_parents_and_can_cancel() {
-    let mut widgets = Widgets::new("{path} $ ".into(), String::new(), PathBuf::from("/one/two"));
-    assert!(matches!(
-        widgets.handle(Key::PromptWidgets),
-        WidgetAction::Consumed
-    ));
-    assert!(
-        crate::prompt::parse(&widgets.render().0)
+fn wait(widgets: &mut Widgets, expected: &str) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let text = widgets
+            .render()
+            .0
             .iter()
-            .map(|span| span.text.as_str())
-            .collect::<String>()
-            .starts_with("/one/two")
-    );
-    widgets.handle(Key::Tab);
-    assert!(
-        crate::prompt::parse(&widgets.render().0)
-            .iter()
-            .map(|span| span.text.as_str())
-            .collect::<String>()
-            .starts_with("/one/two")
-    );
-    assert!(
-        matches!(widgets.handle(Key::Enter), WidgetAction::ChangeDirectory(path) if path == std::path::Path::new("/one"))
-    );
-    widgets.handle(Key::PromptWidgets);
-    widgets.handle(Key::Escape);
-    assert!(matches!(widgets.handle(Key::Enter), WidgetAction::Ignored));
-}
-
-#[test]
-fn only_registered_tokens_in_the_template_are_expanded() {
-    let mut widgets = Widgets::new(
-        "{path} {unknown}".into(),
-        String::new(),
-        PathBuf::from("/one/{clock}"),
-    );
-    assert_eq!(widgets.render().0, "/one/{clock} {unknown}");
-    widgets = Widgets::new("plain".into(), String::new(), PathBuf::from("/one"));
-    assert!(matches!(
-        widgets.handle(Key::PromptWidgets),
-        WidgetAction::Ignored
-    ));
-}
-
-struct Interactive(bool);
-impl super::Widget for Interactive {
-    fn token(&self) -> &str {
-        "{interactive}"
-    }
-    fn render(&self) -> String {
-        if self.0 { "focused" } else { "idle" }.into()
-    }
-    fn interactive(&self) -> bool {
-        true
-    }
-    fn active(&self) -> bool {
-        self.0
-    }
-    fn handle(&mut self, key: Key) -> WidgetAction {
-        match key {
-            Key::PromptWidgets => self.0 = true,
-            Key::Escape => self.0 = false,
-            Key::Enter => return WidgetAction::ChangeDirectory(PathBuf::from("/chosen")),
-            _ => {}
+            .map(|s| s.text.as_str())
+            .collect::<String>();
+        if text.contains(expected) {
+            return;
         }
-        WidgetAction::Consumed
+        std::thread::sleep(Duration::from_millis(2));
     }
+    panic!("widget did not render {expected:?}");
 }
 
 #[test]
-fn activation_cycles_focus_and_routes_keys_to_the_active_widget() {
-    let mut widgets = Widgets::new(
-        "{path} {interactive}".into(),
-        String::new(),
-        "/one/two".into(),
+fn path_selection_keeps_its_text_and_delivers_directory_actions_asynchronously() {
+    let mut widgets = Widgets::new("$path $ ".into(), String::new(), PathBuf::from("/one/two"));
+    wait(&mut widgets, "/one/two");
+    assert_eq!(
+        widgets.handle(Action::PromptWidgets),
+        sopra::Action::Consumed
     );
-    widgets.widgets.push(Box::new(Interactive(false)));
-    widgets.handle(Key::PromptWidgets);
-    assert!(widgets.widgets[0].active());
-    widgets.handle(Key::PromptWidgets);
-    assert!(!widgets.widgets[0].active());
-    assert!(widgets.render().0.ends_with("focused"));
-    assert!(
-        matches!(widgets.handle(Key::Enter), WidgetAction::ChangeDirectory(path) if path == std::path::Path::new("/chosen"))
-    );
-    widgets.handle(Key::PromptWidgets);
-    assert!(widgets.widgets[0].active());
-    assert!(widgets.render().0.ends_with("idle"));
+    assert!(widgets.active());
+    widgets.handle(Action::Tab);
+    wait(&mut widgets, "/one/two");
+    widgets.handle(Action::Enter);
+    assert!(widgets.active());
+    assert_eq!(widgets.handle(Action::Enter), sopra::Action::Consumed);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(action) = widgets.poll_action() {
+            assert_eq!(action, sopra::Action::ChangeDirectory("/one".into()));
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(!widgets.active());
+}
+
+#[test]
+fn widget_values_are_never_reinterpreted_as_templates() {
+    let mut widgets = Widgets::new("$path".into(), String::new(), "/one/$clock".into());
+    wait(&mut widgets, "/one/$clock");
+    assert!(!widgets.widgets.iter().any(|entry| entry.name == "clock"));
+}
+
+#[test]
+fn unknown_references_and_malformed_templates_report_configuration_errors() {
+    for source in ["$unknown", "[red]$path[/blue]"] {
+        assert!(
+            Widgets::configured(
+                source.into(),
+                String::new(),
+                PathBuf::from("."),
+                &super::settings::Settings::default()
+            )
+            .is_err()
+        );
+    }
 }

@@ -77,7 +77,7 @@ def run(root: Path, config_root: str) -> None:
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
-    config = "[prompt]\nleft = 'test $ '\nright = ''\n[editor]\ncompletion = false\ncursor_animation = false\n"
+    config = "[prompt]\nleft = 'test $ '\nright = ''\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\n"
     with terminal_config(config) as config_root:
         run(root, config_root)
     print("mouse selection: ok (drag, double click, triple click, resize)")

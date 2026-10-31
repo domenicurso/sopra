@@ -45,7 +45,7 @@ def main() -> None:
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"],
                    cwd=ROOT, check=True)
     config = ("[prompt]\nleft = 'ready $ '\nright = ''\ntransient = 'submitted> '\n"
-              "[editor]\ncursor_animation = false\ncompletion = false\n")
+              "[editor]\ncursor_animation = false\n[completion]\nenabled = false\n")
     with tempfile.TemporaryDirectory(prefix="sopra-prompt-startup-") as temporary:
         with terminal_config(config) as config_root:
             exercise(Path(temporary), config_root)

@@ -8,20 +8,23 @@ pub(super) struct Recall {
 
 impl EditorState {
     pub(in crate::editor) fn history_choice_index(&self) -> Option<usize> {
-        self.suggestions.iter().position(|item| {
+        self.completions.items.iter().position(|item| {
             item.kind == CompletionKind::History
                 && Some(&item.insert) == self.history.choice.as_ref()
         })
     }
 
-    pub(in crate::editor) fn navigate_closed_history(&mut self, key: crate::input::Key) -> bool {
-        use crate::input::Key;
-        if !matches!(key, Key::Up | Key::Down)
-            || (self.overlay_visible() && !self.suggestions.is_empty())
+    pub(in crate::editor) fn navigate_closed_history(
+        &mut self,
+        key: crate::actions::Action,
+    ) -> bool {
+        use crate::actions::Action;
+        if !matches!(key, Action::Up | Action::Down)
+            || (self.overlay_visible() && !self.completions.items.is_empty())
         {
             return false;
         }
-        let direction = if key == Key::Up { -1 } else { 1 };
+        let direction = if key == Action::Up { -1 } else { 1 };
         if self.history.recall.is_none() && self.history_suffix().is_some() {
             self.cycle_history(direction);
         } else {
@@ -63,19 +66,22 @@ impl EditorState {
         self.cursor = self.buffer.len();
         self.history.recall = Some(next);
         self.text_selection.clear();
-        self.completion_suspended = true;
+        self.completions.set_suspended(true);
         self.hide_overlay();
     }
 
-    pub(in crate::editor) fn finish_history_recall_for(&mut self, key: crate::input::Key) {
-        if !matches!(key, crate::input::Key::Up | crate::input::Key::Down) {
+    pub(in crate::editor) fn finish_history_recall_for(&mut self, key: crate::actions::Action) {
+        if !matches!(
+            key,
+            crate::actions::Action::Up | crate::actions::Action::Down
+        ) {
             self.history.recall = None;
         }
     }
 
     pub(in crate::editor) fn history_preview_index(&self) -> Option<usize> {
         let suffix = self.history_suffix()?;
-        self.suggestions.iter().position(|item| {
+        self.completions.items.iter().position(|item| {
             item.kind == CompletionKind::History
                 && item.insert.strip_prefix(&self.buffer) == Some(suffix)
         })
@@ -101,14 +107,18 @@ impl EditorState {
         };
         self.history.choice = Some(matches[index].command.clone());
         self.history.dismissed = None;
-        self.selected = self.history_choice_index();
-        self.completion_armed = self.selected.is_some();
+        self.completions.focus.select(self.history_choice_index());
+        self.completions
+            .focus
+            .set_armed(self.completions.focus.selected().is_some());
     }
 
     pub(in crate::editor) fn remember_history_selection(&mut self) {
         if let Some(item) = self
-            .selected
-            .and_then(|index| self.suggestions.get(index))
+            .completions
+            .focus
+            .selected()
+            .and_then(|index| self.completions.items.get(index))
             .filter(|item| item.kind == CompletionKind::History)
         {
             self.history.choice = Some(item.insert.clone());

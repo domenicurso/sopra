@@ -33,9 +33,9 @@ fn suspended_history_completion_waits_for_editing() {
     assert!(state.visible_items().is_empty());
     assert!(!state.overlay_visible());
 
-    state.handle_key(Key::Character('x'));
+    state.handle_key(Action::Character('x'));
 
-    assert!(!state.completion_suspended);
+    assert!(!state.completions.suspended());
     assert!(state.overlay_visible());
 }
 
@@ -69,9 +69,9 @@ fn open_completion_menu_takes_focus_on_arrow_navigation() {
         sopra_completion::CompletionKind::Subcommand,
     )]);
 
-    assert_eq!(state.selected, None);
-    assert!(state.handle_key(Key::Up).is_none());
-    assert_eq!(state.selected, Some(0));
+    assert_eq!(state.completions.focus.selected(), None);
+    assert!(state.handle_key(Action::Up).is_none());
+    assert_eq!(state.completions.focus.selected(), Some(0));
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn armed_completion_keeps_the_first_result_selected_after_refresh() {
     assert!(state.arm_first_completion());
     state.reset_selection();
 
-    assert_eq!(state.selected, Some(0));
+    assert_eq!(state.completions.focus.selected(), Some(0));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn completion_position_does_not_move_when_selection_changes() {
 #[test]
 fn arrow_navigation_remembers_focus_while_completions_load() {
     let mut state = editor("git ");
-    state.handle_key(Key::Up);
+    state.handle_key(Action::Up);
     state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
         "status",
         "",

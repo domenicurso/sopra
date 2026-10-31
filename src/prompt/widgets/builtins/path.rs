@@ -1,116 +1,87 @@
+use sopra::{Action, Context, Event, Key, Text, Widget};
 use std::path::{Path as FsPath, PathBuf};
 
-use super::{Widget, WidgetAction};
-use crate::input::Key;
-
-pub(super) struct Path {
+#[derive(Default)]
+struct Path {
+    cwd: PathBuf,
     ancestors: Vec<PathBuf>,
     selected: Option<usize>,
-    styles: PathStyles,
 }
 
 impl Path {
-    pub(super) fn new(context: &super::WidgetContext<'_>) -> Self {
-        let cwd = context.cwd;
-        let home = sopra_shell_context::var_os("HOME").map(PathBuf::from);
-        let boundary = home.filter(|home| cwd.starts_with(home));
-        Self {
-            ancestors: cwd
-                .ancestors()
-                .take_while(|path| boundary.as_ref().is_none_or(|home| path.starts_with(home)))
-                .map(FsPath::to_path_buf)
-                .collect(),
-            selected: None,
-            styles: PathStyles::configured(context),
+    fn prepare(&mut self, context: &Context) {
+        if self.cwd == context.cwd {
+            return;
         }
-    }
-}
-
-struct PathStyles {
-    before: String,
-    selected: String,
-    after: String,
-}
-
-impl PathStyles {
-    fn configured(context: &super::WidgetContext<'_>) -> Self {
-        Self {
-            before: context.option("before", "{text}"),
-            selected: context.option("selected", "[reverse]{text}[/]"),
-            after: context.option("after", "[dim]{text}[/]"),
-        }
+        self.cwd = context.cwd.clone();
+        let home = context.environment.get("HOME").map(PathBuf::from);
+        let boundary = home.filter(|home| self.cwd.starts_with(home));
+        self.ancestors = self
+            .cwd
+            .ancestors()
+            .take_while(|path| boundary.as_ref().is_none_or(|home| path.starts_with(home)))
+            .map(FsPath::to_path_buf)
+            .collect();
+        self.selected = None;
     }
 }
 
 impl Widget for Path {
-    fn token(&self) -> &str {
-        "{path}"
+    fn interactive(&self) -> bool {
+        true
     }
-    fn interactive(&self) -> bool { true }
     fn active(&self) -> bool {
         self.selected.is_some()
     }
 
-    fn markup(&self) -> bool {
-        true
-    }
-
-    fn render(&self) -> String {
+    fn render(&mut self, context: &Context) -> Text {
+        self.prepare(context);
         let Some(path) = self.ancestors.first() else {
-            return String::new();
+            return Text::new();
         };
-        let label = display_path(path);
+        let label = display_path(path, context);
         let Some(selected) = self.selected else {
-            return label.replace('[', "[[");
+            return label.into();
         };
-        let prefix = display_path(&self.ancestors[selected]);
+        let prefix = display_path(&self.ancestors[selected], context);
         let end = prefix.len().min(label.len());
         let start = prefix.rfind('/').map_or(0, |position| position + 1);
         let start = if start == end { 0 } else { start };
-        [
-            self.styles
-                .before
-                .replace("{text}", &label[..start].replace('[', "[[")),
-            self.styles
-                .selected
-                .replace("{text}", &label[start..end].replace('[', "[[")),
-            self.styles
-                .after
-                .replace("{text}", &label[end..].replace('[', "[[")),
-        ]
-        .concat()
+        Text::new()
+            .part(sopra::Emphasis::Normal, &label[..start])
+            .part(sopra::Emphasis::Selected, &label[start..end])
+            .part(sopra::Emphasis::Dim, &label[end..])
     }
 
-    fn handle(&mut self, key: Key) -> WidgetAction {
-        if self.selected.is_none() {
-            if key == Key::PromptWidgets && !self.ancestors.is_empty() {
-                self.selected = Some(0);
-                return WidgetAction::Consumed;
-            }
-            return WidgetAction::Ignored;
+    fn handle(&mut self, event: Event, context: &Context) -> Action {
+        self.prepare(context);
+        if event == Event::Activate && !self.ancestors.is_empty() {
+            self.selected = Some(0);
+            return Action::Consumed;
         }
-        match key {
-            Key::Tab | Key::Right | Key::Up => {
-                self.selected = Some((self.selected.unwrap_or(0) + 1) % self.ancestors.len());
+        let Some(selected) = self.selected else {
+            return Action::Ignored;
+        };
+        match event {
+            Event::Key(Key::Tab | Key::Right | Key::Up) => {
+                self.selected = Some((selected + 1) % self.ancestors.len());
             }
-            Key::BackTab | Key::Left | Key::Down => {
-                self.selected = Some(
-                    (self.selected.unwrap_or(0) + self.ancestors.len() - 1) % self.ancestors.len(),
-                );
+            Event::Key(Key::BackTab | Key::Left | Key::Down) => {
+                self.selected = Some((selected + self.ancestors.len() - 1) % self.ancestors.len());
             }
-            Key::Enter => {
-                let selected = self.selected.take().unwrap_or(0);
-                return WidgetAction::ChangeDirectory(self.ancestors[selected].clone());
+            Event::Key(Key::Enter) => {
+                self.selected = None;
+                return Action::ChangeDirectory(self.ancestors[selected].clone());
             }
-            Key::Escape | Key::Cancel | Key::PromptWidgets => self.selected = None,
+            Event::Key(Key::Escape | Key::Cancel) => self.selected = None,
             _ => {}
         }
-        WidgetAction::Consumed
+        Action::Consumed
     }
 }
 
-fn display_path(path: &FsPath) -> String {
-    let home = sopra_shell_context::var_os("HOME").map(PathBuf::from);
+fn display_path(path: &FsPath, context: &Context) -> String {
+    let home = context.environment.get("HOME").map(PathBuf::from);
     let text = if let Some(relative) = home
         .as_deref()
         .and_then(|home| path.strip_prefix(home).ok())
@@ -128,10 +99,10 @@ fn display_path(path: &FsPath) -> String {
         .collect()
 }
 
+pub(crate) fn create() -> Box<dyn Widget + Send> {
+    Box::new(Path::default())
+}
+
 #[cfg(test)]
 #[path = "../path_tests.rs"]
 mod tests;
-
-pub(super) fn create(context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
-    Box::new(Path::new(context))
-}

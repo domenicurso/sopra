@@ -63,6 +63,14 @@ pub(super) fn paint_cell(output: &mut Vec<u8>, column: u16, row: u16, cell: &Cel
     });
 }
 
+pub(crate) fn style_bytes(style: Style) -> Vec<u8> {
+    let mut cell = Cell::EMPTY;
+    cell.set_style(style);
+    let mut bytes = Vec::new();
+    paint_style(&mut bytes, &cell);
+    bytes
+}
+
 fn paint_style(output: &mut Vec<u8>, cell: &Cell) {
     let mut params = Vec::new();
     let modifier = cell.modifier;

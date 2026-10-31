@@ -49,8 +49,8 @@ fn multiline_input_starts_at_the_left_edge_after_a_nonzero_anchor() {
     assert_eq!(
         (
             layout.prompt_row,
-            layout.row,
-            layout.line_column,
+            editor.text_layout(TerminalSize::new(40, 24)).start.row,
+            editor.text_layout(TerminalSize::new(40, 24)).start.column,
             layout.cursor_column
         ),
         (0, 1, 2, 5)
