@@ -26,7 +26,7 @@ def assert_mode(screen: ReflowScreen, enabled: bool) -> None:
     snapshot = screen.snapshot()
     assert snapshot["buffer"] == "normal", snapshot
     assert snapshot["mouseTracking"] == ("drag" if enabled else "none"), snapshot
-    assert ("Mouse editing · Esc to exit" in screen.text()) == enabled, snapshot
+    assert ("MOUSE" in screen.text()) == enabled, snapshot
 
 
 def exercise(screen: ReflowScreen, config_root: str) -> None:

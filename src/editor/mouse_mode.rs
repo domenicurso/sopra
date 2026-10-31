@@ -34,15 +34,10 @@ impl EditorState {
         Ok(())
     }
 
-    pub(super) fn mouse_mode_hint(&mut self, columns: u16) {
+    pub(super) fn mouse_mode_hint(&mut self) {
         if self.mouse_editing {
-            let hint = if columns >= 40 {
-                "Mouse editing · Esc to exit"
-            } else {
-                "Mouse · Esc"
-            };
             self.rprompt = vec![crate::prompt::PromptSpan {
-                text: hint.into(),
+                text: "MOUSE".into(),
                 style: ratatui::style::Style::new().dim(),
             }];
         }

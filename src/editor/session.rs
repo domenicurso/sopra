@@ -78,7 +78,7 @@ impl EditorState {
     ) -> io::Result<()> {
         (self.prompt, self.rprompt) = self.widgets.render();
         let size = self.refresh_size(terminal);
-        self.mouse_mode_hint(size.columns);
+        self.mouse_mode_hint();
         let frame = Scene::for_editor(self, size, now).render();
         renderer.render(frame, terminal)?;
         Ok(())
