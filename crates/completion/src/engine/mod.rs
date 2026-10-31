@@ -51,7 +51,12 @@ impl LocalCompletion {
                 None,
             );
         }
-        handled(Vec::new(), false, None)
+        let items = if token.starts_with('-') {
+            Vec::new()
+        } else {
+            self.filesystem.complete(request, token)
+        };
+        handled(items, false, None)
     }
 
     fn complete_command(
@@ -150,27 +155,4 @@ fn is_path_context(token: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::LocalCompletion;
-    use crate::Request;
-
-    #[test]
-    fn filesystem_completion_uses_the_explicit_token_range() {
-        let mut local = LocalCompletion::new();
-        let request = Request {
-            line: "cd ./".to_string(),
-            cursor: 5,
-            context_line: "cd ./".to_string(),
-            context_cursor: 5,
-            replace: 3..5,
-            cwd: PathBuf::from("."),
-            generation: 0,
-            context_key: String::new(),
-        };
-        for item in local.complete(&request).items {
-            assert_eq!(item.replace, 3..5);
-        }
-    }
-}
+mod tests;

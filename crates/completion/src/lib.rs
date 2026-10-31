@@ -17,7 +17,6 @@ pub use model::{
     Completion, CompletionItem, CompletionKind, CompletionResponse, CompletionResponseSource,
     CompletionSource,
 };
-pub use sopra_shell_context::command_available;
 
 pub fn dump_command_graph(command: &str, cwd: &Path) -> Result<String, String> {
     parser::render_command_graph(command, cwd)

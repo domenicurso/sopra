@@ -10,7 +10,7 @@ use std::path::Path;
 
 use ratatui::style::{Color, Modifier, Style};
 
-use sopra_completion::command_available;
+use sopra_shell_context::command_available;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SyntaxKind {
