@@ -91,14 +91,18 @@ def exercise_git_format(root: Path, config_root: Path) -> None:
 
 def exercise_saved_multiline(root: Path, config_root: Path) -> None:
     prompt = "[cyan]path[/]\n$ "
-    (config_root / "sopra" / "settings").write_text(f"prompt_hex={prompt.encode().hex()}\n")
+    config = config_root / "sopra" / "config.toml"
+    config.write_text('[prompt]\nleft = """[cyan]path[/]\n$ """\n')
     script = (
         'source "$SOPRA_REPO_ROOT/zsh/protocol.zsh"; '
-        'source "$SOPRA_REPO_ROOT/zsh/settings.zsh"; '
-        '_sopra_load_settings 1; print -rn -- "$_SOPRA_CONFIG_PROMPT"'
+        'source "$SOPRA_REPO_ROOT/zsh/config.zsh"; '
+        '_sopra_load_prompt_config "$(_sopra_config_path)"; '
+        'print -rn -- "$_SOPRA_CONFIG_PROMPT"'
     )
-    environment = dict(os.environ, XDG_CONFIG_HOME=str(config_root), SOPRA_REPO_ROOT=str(root))
-    result = subprocess.run(("zsh", "-f", "-c", script), env=environment, text=True, capture_output=True, check=True)
+    environment = dict(os.environ, XDG_CONFIG_HOME=str(config_root),
+                       SOPRA_REPO_ROOT=str(root), SOPRA_BIN=str(root / "target/debug/sopra-worker"))
+    result = subprocess.run(("zsh", "-f", "-c", script), env=environment,
+                            text=True, capture_output=True, check=True)
     assert result.stdout == prompt, result.stdout
 
 
@@ -127,27 +131,6 @@ def exercise_ignored_environment(root: Path, config_root: Path) -> None:
         assert "0/" not in terminal.screen.text(), terminal.screen.lines()
 
 
-def exercise_config_precedence(root: Path, config_root: Path) -> None:
-    directory = config_root / "precedence" / "sopra"
-    directory.mkdir(parents=True)
-    (directory / "config.toml").write_text("[prompt]\nleft = 'new'\n[editor]\ncursor_animation = false\n")
-    (directory / "prompt.toml").write_text("[prompt]\nleft = 'legacy'\nright = 'fallback'\n")
-    (directory / "settings").write_text("cursor_animation=1\nsyntax_highlighting=0\n")
-    script = (
-        'source "$SOPRA_REPO_ROOT/zsh/protocol.zsh"; source "$SOPRA_REPO_ROOT/zsh/settings.zsh"; '
-        '_sopra_load_prompt_config "$(_sopra_config_path)"; '
-        '_sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"; '
-        '_sopra_load_settings; print -r -- "$_SOPRA_CONFIG_PROMPT|$_SOPRA_CONFIG_RPROMPT|$_SOPRA_CONFIG_CURSOR_ANIMATION|$_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING"'
-    )
-    env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "XDG_CONFIG_HOME": str(directory.parent),
-           "SOPRA_REPO_ROOT": str(root), "SOPRA_BIN": str(root / "target/debug/sopra-worker"),
-           "SOPRA_PROMPT": "environment", "SOPRA_RPROMPT": "environment",
-           "SOPRA_CURSOR_ANIMATION": "1", "SOPRA_SYNTAX_HIGHLIGHTING": "1"}
-    result = subprocess.run(("zsh", "-f", "-c", script), env=env, text=True, capture_output=True, check=True)
-    assert result.stdout.strip() == "new|fallback|0|0", result.stdout
-
-
-
 def exercise_config_only_command(root: Path) -> None:
     worker = root / "target/debug/sopra-worker"
     help_result = subprocess.run((str(worker), "--help"), text=True, capture_output=True, check=True)
@@ -165,7 +148,6 @@ def main() -> None:
         exercise_ignored_environment(root, Path(temporary))
         exercise_saved_multiline(root, Path(temporary))
         exercise_git_format(root, Path(temporary))
-        exercise_config_precedence(root, Path(temporary))
         exercise_config_only_command(root)
     print("prompt config: ok (TOML, status, duration, transient prompt)")
 

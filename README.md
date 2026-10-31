@@ -88,7 +88,7 @@ item_format = "[bold][magenta]{item}[/][/]"
 separator = "[dim]|[/]"
 ```
 
-Existing `prompt.toml` and `settings` files remain supported. Values missing from `config.toml` fall back to the older files, so you can move them over at your own pace. Restart the shell after editing configuration directly.
+`config.toml` is the only configuration file. Restart the shell after editing it.
 
 Configure prompt and editor behavior in TOML. Changes take effect when you start a new shell.
 

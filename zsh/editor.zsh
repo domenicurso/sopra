@@ -17,11 +17,9 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
         typeset -g SOPRA_BIN=$script_dir/../../libexec/sopra-worker
     fi
 fi
-source "$script_dir/settings.zsh"
+source "$script_dir/config.zsh"
 source "$script_dir/protocol.zsh"
 _sopra_load_prompt_config "$(_sopra_config_path)"
-_sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"
-_sopra_load_settings
 source "$script_dir/context.zsh"
 source "$script_dir/history.zsh"
 source "$script_dir/prompt.zsh"
