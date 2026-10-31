@@ -78,6 +78,9 @@ without an active session. The installer provides `sopra` in the installation
 prefix's `bin` directory, and the Zsh integration exposes the same CLI through a
 shell function.
 
+Help and widget listings adapt to the terminal width, and `config show` highlights
+TOML. Redirected output stays plain; `NO_COLOR` also disables terminal styling.
+
 ## Configuration
 
 Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Edit this file to change the prompt and editor options.

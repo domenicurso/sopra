@@ -2,7 +2,7 @@
   "name": "sopra-terminal-checks",
   "private": true,
   "scripts": {
-    "test:cli": "python3 terminal-cli-test.py",
+    "test:cli": "python3 terminal-cli-test.py && python3 terminal-cli-output-test.py",
     "test:reflow": "python3 terminal-reflow-test.py",
     "test:multiline": "python3 terminal-multiline-test.py",
     "test:widgets": "python3 terminal-widget-test.py",

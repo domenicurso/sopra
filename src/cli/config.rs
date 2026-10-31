@@ -38,7 +38,10 @@ pub(super) fn run(command: ConfigCommand) -> io::Result<()> {
             } else {
                 Config::read_from(&path()?)?.effective()
             };
-            print!("{source}");
+            super::output::print(&super::toml::render(
+                &source,
+                &super::output::Output::detect(),
+            ))?;
         }
         ConfigCommand::Edit => edit()?,
     }

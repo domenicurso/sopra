@@ -1,13 +1,17 @@
 mod arguments;
 mod config;
 mod doctor;
+mod help;
+mod output;
+mod toml;
+mod widgets;
 use crate::control::{self, Client};
 use arguments::{Command, ConfigCommand};
 use std::error::Error;
 
 pub(crate) fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn Error>> {
     match arguments::parse(&arguments)? {
-        Command::Help => print!("{}", include_str!("help.txt")),
+        Command::Help => help::print()?,
         Command::Version => println!("sopra {}", env!("CARGO_PKG_VERSION")),
         Command::Refresh => print!("{}", Client::current()?.request(control::Command::Refresh)?),
         Command::Restart => {
@@ -22,7 +26,7 @@ pub(crate) fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn Erro
                 let config = crate::config::Config::read()?;
                 crate::prompt::widgets::inspection::list(&config.widgets, None)?
             };
-            print!("{output}");
+            output::print(&widgets::render(&output, &output::Output::detect()))?;
         }
         Command::Doctor => doctor::run()?,
     }
