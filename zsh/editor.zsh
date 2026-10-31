@@ -23,6 +23,7 @@ _sopra_load_prompt_config "$(_sopra_config_path)"
 _sopra_load_prompt_config "${$(_sopra_config_path):h}/prompt.toml"
 _sopra_load_settings
 source "$script_dir/context.zsh"
+source "$script_dir/history.zsh"
 source "$script_dir/prompt.zsh"
 source "$script_dir/worker.zsh"
 _sopra_prompt_defaults

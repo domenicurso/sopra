@@ -114,7 +114,9 @@ History autosuggestions show the rest of your most recent matching command as di
 
 History rows show their age beside the command when Zsh has a timestamp, or “History” when the time is unknown. Ages under a minute show seconds, such as `12s ago`. The inline suggestion shows the same metadata in dim italics after its text when there is room; metadata is never inserted into the command. Without a matching inline suggestion or focused completion, Up and Down recall command history in place; Down restores your draft after returning past the newest entry. Multiline cursor movement takes priority within an existing command.
 
-Sopra reads the active Zsh history, including commands loaded from your history file and commands run in this session. It does not maintain a separate history file. Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `{text}` and the prompt styling tags. Use `editor.autosuggestion_metadata_format` to style inline metadata separately. `editor.completion = false` disables the completion menu independently.
+Sopra reads the active Zsh history, including commands loaded from your history file and commands run in this session. It does not maintain a separate history file. If `HISTFILE` is unset, the bridge uses `${ZDOTDIR:-$HOME}/.zsh_history` and defaults to saving 10,000 entries. Existing history paths and limits, including an explicit `SAVEHIST=0`, are preserved. Commands are appended during the session, with timestamps; an existing `SHARE_HISTORY` setup keeps its live sharing behavior.
+
+Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `{text}` and the prompt styling tags. Use `editor.autosuggestion_metadata_format` to style inline metadata separately. `editor.completion = false` disables the completion menu independently.
 
 When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.
 

@@ -124,7 +124,7 @@ def main() -> None:
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=ROOT, check=True)
     with tempfile.TemporaryDirectory(prefix="sopra-history-shell-") as zdotdir:
         (Path(zdotdir) / ".zshrc").write_text(
-            f"HISTSIZE=200\nSAVEHIST=0\nsource '{ROOT}/zsh/editor.zsh'\n"
+            f"HISTFILE='{zdotdir}/history'\nHISTSIZE=200\nSAVEHIST=0\nsource '{ROOT}/zsh/editor.zsh'\n"
             "print -s -- 'echo history-older'\nprint -s -- 'echo history-newest'\n")
         config = "[prompt]\nleft = 'test $ '\nright = ''\n[editor]\ncursor_animation = false\n"
         with terminal_config(config) as config_root:
