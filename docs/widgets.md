@@ -80,7 +80,7 @@ and external crate dependencies are not supported by the single-file loader.
 
 Interactive widgets implement `interactive() -> bool`, `active() -> bool`,
 and `handle(&mut self, Event, &Context) -> Action`. Defaults are inactive and
-return `Action::Ignored`. Ctrl-G activates the first interactive widget and
+return `Action::Ignored`. Alt+G activates the first interactive widget and
 cycles through others; with one widget, pressing it again cancels focus.
 Active widgets receive typed `Event::Key(Key)` events before command editing.
 

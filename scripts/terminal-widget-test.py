@@ -29,19 +29,14 @@ def exercise_widgets(root: Path, directory: Path) -> None:
     with TerminalSession(("zsh", "-di"), rows=20, columns=100, cwd=str(directory), env=environment) as terminal:
         terminal.wait_for(" $ ", timeout=20)
         terminal.read(0.5)
-        assert "feature%clock : " in terminal.screen.text(), terminal.screen.lines()
-        first = re.search(r"\b\d\d:\d\d:\d\d\b", terminal.screen.text())
-        assert first, terminal.screen.lines()
-        terminal.read(1.5)
-        second = re.search(r"\b\d\d:\d\d:\d\d\b", terminal.screen.text())
-        assert second and first.group() != second.group(), terminal.screen.lines()
+        exercise_clock(terminal)
         terminal.resize(20, 80)
         terminal.read(0.3)
         terminal.resize(20, 100)
         terminal.read(0.3)
         terminal.send_text("echo preserved")
         terminal.read(0.2)
-        terminal.send(b"\x07\t\x1b[Z\t")
+        terminal.send(b"\x1bg\t\x1b[Z\t")
         terminal.read(0.2)
         assert str(directory) in terminal.screen.text(), terminal.screen.lines()
         terminal.key("ENTER")
@@ -56,12 +51,21 @@ def exercise_widgets(root: Path, directory: Path) -> None:
         terminal.key("ENTER")
         terminal.read(0.5)
         assert str(directory.parent) in terminal.screen.lines(), terminal.screen.lines()
-        terminal.send(b"\x07\t\r")
+        terminal.send(b"\x1bg\t\r")
         terminal.read(0.8)
         terminal.send_text("pwd")
         terminal.key("ENTER")
         terminal.read(0.5)
         assert str(directory.parent.parent) in terminal.screen.lines(), terminal.screen.lines()
+
+
+def exercise_clock(terminal: TerminalSession) -> None:
+    assert "feature%clock : " in terminal.screen.text(), terminal.screen.lines()
+    first = re.search(r"\b\d\d:\d\d:\d\d\b", terminal.screen.text())
+    assert first, terminal.screen.lines()
+    terminal.read(1.5)
+    second = re.search(r"\b\d\d:\d\d:\d\d\b", terminal.screen.text())
+    assert second and first.group() != second.group(), terminal.screen.lines()
 
 
 def exercise_multiline_directory(root: Path, directory: Path) -> None:
@@ -86,7 +90,7 @@ def exercise_multiline_directory(root: Path, directory: Path) -> None:
         terminal.read(0.4)
         terminal.send_text("echo preserved")
         terminal.read(0.1)
-        terminal.send(b"\x07\t")
+        terminal.send(b"\x1bg\t")
         terminal.read(0.2)
         output = bytes(terminal.output)
         assert b"\x1b[7m" in output and b"\x1b[2m" in output, output

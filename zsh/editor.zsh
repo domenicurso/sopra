@@ -83,7 +83,11 @@ _sopra_apply_result() {
             fi
             ;;
         tab) zle expand-or-complete ;;
-        eof) zle .eof; return 1 ;;
+        eof)
+            # EOF is handled by ZLE's input loop rather than an invokable widget.
+            zle -U $'\x04'
+            return 1
+            ;;
     esac
     return 0
 }

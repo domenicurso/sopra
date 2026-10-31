@@ -28,6 +28,3 @@ sopra-shell-context = { path = "crates/shell-context" }
 unicode-segmentation = "1.12"
 unicode-width = "0.2"
 toml_edit = "0.25.17"
-vt100 = "0.18.1"
-portable-pty = "0.9"
-tempfile = "3"

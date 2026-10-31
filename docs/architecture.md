@@ -65,27 +65,9 @@ execution remain owned by Zsh. Widget inspection uses the catalog plus retained
 instances, including errors from sources removed after loading.
 
 
-## Hosted session boundary
-
-`src/host` owns the outer terminal and a child Zsh PTY in `sopra shell` mode.
-The existing Zsh bridge and persistent editor worker run against the child PTY;
-Zsh still owns execution, environment changes, jobs, and command history. A
-bootstrap directory loads the user's startup files without modifying them.
-
-A bounded reader queue feeds a vt100 terminal model. A separate writer drains
-queued input, so a large paste cannot block output processing; pending input
-applies backpressure to outer-terminal reads. The host answers child geometry
-queries from its model and forwards terminal palette, title, and clipboard
-operations across the outer boundary. Foreground alternate-screen mouse input
-is routed to the child's requested protocol.
-
-The same terminal grid supplies the live screen and scrollback viewport. Wheel
-and page keys move that viewport without adding UI or relocating the prompt.
-Typing returns to the live screen before input reaches the child; mouse clicks
-at the live bottom use the child's requested protocol. The configured line limit
-bounds in-memory scrollback independently of Zsh's persisted command history.
-
-The host owns terminal mode restoration and hangs up the foreground process
-group and Zsh on shutdown. Parser or I/O errors terminate the hosted session
-through the same cleanup path. Supported controls and compatibility limits are
-documented in [hosted shells](hosted-shell.md).
+The terminal owns scrollback and search. Sopra paints the active command on the
+primary screen and never hosts or repaints a virtual terminal. Mouse reporting
+starts disabled; Ctrl+G toggles command-line mouse editing, while Esc, submission,
+and editor exit release capture. The editor owns the mode and selection, and the
+terminal resource owns enabling and restoring reporting. Alt+G activates prompt
+widgets independently of mouse editing.

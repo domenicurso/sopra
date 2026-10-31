@@ -104,7 +104,7 @@ def exercise_interaction(terminal: TerminalSession, directory: Path, first_pid: 
         terminal.read(0.005)
     terminal.read(0.3)
     assert terminal.screen.text().count("ready $") == 1, terminal.screen.text()
-    terminal.send(b"\x07")
+    terminal.send(b"\x1bg")
     terminal.read(0.3)
     terminal.key("ENTER")
     terminal.wait_for("first:changed:parent", timeout=10)

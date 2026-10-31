@@ -65,13 +65,37 @@ impl Loop {
         }
         let key = crate::actions::resolve(input);
         self.next_frame = Instant::now();
+        if editor.mouse_mode_input(key, terminal)? {
+            return Ok(None);
+        }
+        if let Action::Mouse(event) = key {
+            if editor.mouse_editing {
+                self.mouse_input(editor, terminal, event)?;
+            }
+            return Ok(None);
+        }
         Ok(if key == Action::Enter && !editor.widgets.active() {
             syntax.request(&editor.buffer)?;
             None
         } else {
             syntax.cancel();
-            editor.handle_input(key, terminal, &mut self.renderer, &mut self.resize_epoch)?
+            editor.handle_input(key, terminal)?
         })
+    }
+
+    fn mouse_input(
+        &mut self,
+        editor: &mut EditorState,
+        terminal: &mut Terminal,
+        event: crate::input::MouseEvent,
+    ) -> io::Result<()> {
+        let latest = terminal.resize_epoch();
+        if latest != self.resize_epoch {
+            self.resize_epoch = latest;
+            editor.paint_editor(Instant::now(), terminal, &mut self.renderer)?;
+        }
+        editor.handle_mouse(event, self.renderer.origin_row());
+        Ok(())
     }
 
     fn observe_resize(&mut self, latest: usize) {

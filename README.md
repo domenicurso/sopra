@@ -46,17 +46,16 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 
 ## Features
 - Unicode-safe editing with history, word movement, kill/yank operations, and transient command lines.
-- Mouse selection in the command line: drag to select, double-click a word, or triple-click the whole line. Ctrl-C copies selected text when the terminal supports clipboard writes; without a selection it interrupts the command.
+- Press Ctrl+G to toggle command-line mouse editing, then drag to select, double-click a word, or triple-click the whole line. Esc returns to native terminal selection and scrolling. Ctrl-C copies selected text when the terminal supports clipboard writes; without a selection it interrupts the command.
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
 
-See [hosted shells](docs/hosted-shell.md) for scrollback and terminal compatibility.
+Sopra uses the terminal’s primary screen, so Ghostty retains native scrollback and search. Mouse reporting is enabled only during command-line mouse editing; leave that mode to scroll normally.
 
 ## Commands
 
 | Command | Behavior |
 | --- | --- |
-| `sopra shell` | Launch Zsh with ordinary wheel scrollback and command-line mouse selection. |
 | `sopra refresh` | Validate and reload config, retaining existing widget instances and history. |
 | `sopra restart` | Replace the worker process and reset widget state. Shell history stays intact. |
 | `sopra config edit` | Open config in `$VISUAL`, then `$EDITOR`, or `vi`; validate and refresh after the editor exits successfully. |
@@ -151,9 +150,9 @@ Sopra reads the active Zsh history, including commands loaded from your history 
 
 Set `editor.autosuggestions = false` to hide inline suggestions while keeping history completions, or change `editor.autosuggestion_format` using `$text` and the prompt styling tags. Use `editor.autosuggestion_metadata_format` to style inline metadata separately. `completion.enabled = false` disables the completion menu independently.
 
-When mouse reporting is active, your terminal may require holding Shift to select or copy its scrollback.
+Press Ctrl+G again or Esc to leave mouse editing and restore native scrolling and selection. Enter also leaves mouse editing, including when continuing an incomplete command.
 
-With `$path` visible, press Ctrl-G to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
+With `$path` visible, press Alt+G (Option+G on macOS) to focus its rightmost segment, Tab or Shift-Tab to select a segment, and Enter to change directory while preserving the command being edited. Escape cancels selection.
 
 ## How it works
 

@@ -6,6 +6,7 @@ mod editing;
 mod history;
 pub(crate) use history::History;
 mod mouse;
+mod mouse_mode;
 mod navigation;
 mod pairs;
 mod position;
@@ -80,6 +81,7 @@ pub(crate) struct EditorState {
     widgets: crate::prompt::widgets::Widgets,
     anchor: CursorPosition,
     text_selection: text_selection::TextSelection,
+    mouse_editing: bool,
     completions: completion_state::State,
     cwd: PathBuf,
     palette: TerminalPalette,
@@ -129,6 +131,7 @@ impl EditorState {
             widgets,
             anchor: config.anchor,
             text_selection: text_selection::TextSelection::default(),
+            mouse_editing: false,
             completions,
             cwd: config.cwd,
             palette: config.palette,

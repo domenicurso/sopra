@@ -52,10 +52,24 @@ impl Terminal {
             palette,
             pending_input: pending.into(),
         };
-        terminal.mouse_enabled = true;
-        terminal.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h")?;
+        terminal.write_all(b"\x1b[?2004h")?;
         terminal.flush()?;
         Ok(terminal)
+    }
+
+    pub(crate) fn set_mouse_reporting(&mut self, enabled: bool) -> io::Result<()> {
+        if self.mouse_enabled != enabled {
+            // An incomplete enable still needs disabling during cleanup.
+            self.mouse_enabled |= enabled;
+            self.write_all(if enabled {
+                b"\x1b[?1000h\x1b[?1002h\x1b[?1006h"
+            } else {
+                b"\x1b[?1006l\x1b[?1002l\x1b[?1000l"
+            })?;
+            self.flush()?;
+            self.mouse_enabled = enabled;
+        }
+        Ok(())
     }
 
     pub(crate) fn palette(&self) -> TerminalPalette {
@@ -135,13 +149,10 @@ impl Terminal {
     }
 
     pub(crate) fn restore(&mut self) -> io::Result<()> {
-        let mouse_result = if self.mouse_enabled {
-            self.mouse_enabled = false;
-            self.write_all(b"\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?2004l")
-                .and_then(|()| self.flush())
-        } else {
-            Ok(())
-        };
+        let mouse_result = self
+            .set_mouse_reporting(false)
+            .and_then(|()| self.write_all(b"\x1b[?2004l"))
+            .and_then(|()| self.flush());
         let mode_result = if self.raw_mode {
             let result = set_termios(self.tty.as_raw_fd(), &self.saved_mode);
             if result.is_ok() {

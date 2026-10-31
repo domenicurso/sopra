@@ -8,4 +8,4 @@ export SOPRA_REPO_ROOT="$repo_root"
 export SOPRA_BIN="$repo_root/target/debug/sopra-worker"
 export ZDOTDIR="$repo_root/examples/isolated"
 
-exec "$SOPRA_BIN" shell
+exec zsh -di

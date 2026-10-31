@@ -29,7 +29,7 @@ pub(super) fn event(key: Key) -> Option<Event> {
         Key::NextSuggestion => W::NextSuggestion,
         Key::Clear => W::Clear,
         Key::Eof => W::Eof,
-        Key::Mouse(_) | Key::Ignore => return None,
+        Key::Mouse(_) | Key::Ignore | Key::ToggleMouseEditing => return None,
     };
     Some(Event::Key(key))
 }

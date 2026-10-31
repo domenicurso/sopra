@@ -3,7 +3,7 @@ mod diff;
 mod finish;
 mod resize;
 
-pub(crate) use self::ansi::{move_to, paint_cell, region_highlight_style, style_bytes};
+pub(crate) use self::ansi::{move_to, region_highlight_style, style_bytes};
 
 #[cfg(test)]
 mod tests;

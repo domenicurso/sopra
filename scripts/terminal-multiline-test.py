@@ -2,24 +2,20 @@
 """Exercise multi-line prompts and path focus with terminal reflow."""
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 import tempfile
 import time
 from itertools import chain
 from pathlib import Path
 
+from terminal_reflow import ReflowScreen
 from terminal_session import TerminalSession
 from terminal_config import terminal_config
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("reflow_test", ROOT / "scripts/terminal-reflow-test.py")
-assert spec and spec.loader
-reflow = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(reflow)
 
 
-def exercise(screen: reflow.ReflowScreen, directory: Path, config_root: str) -> None:
+def exercise(screen: ReflowScreen, directory: Path, config_root: str) -> None:
     env = {
         "SOPRA_REPO_ROOT": str(ROOT), "SOPRA_BIN": str(ROOT / "target/debug/sopra-worker"),
         "ZDOTDIR": str(ROOT / "examples/isolated"), "XDG_CONFIG_HOME": config_root,
@@ -42,7 +38,7 @@ def exercise(screen: reflow.ReflowScreen, directory: Path, config_root: str) -> 
         assert lines[row + 1].rstrip() == "$", before
         terminal.send_text("echo kept")
         terminal.read(0.2)
-        terminal.send(b"\x07")
+        terminal.send(b"\x1bg")
         terminal.read(0.2)
         focused = screen.snapshot()
         assert focused["lines"][row].startswith(str(directory)), focused
@@ -66,7 +62,7 @@ def exercise(screen: reflow.ReflowScreen, directory: Path, config_root: str) -> 
         assert sum(str(directory) in line for line in state["lines"]) == 1, state
 
 
-def exercise_resize(terminal: TerminalSession, screen: reflow.ReflowScreen, directory: Path) -> None:
+def exercise_resize(terminal: TerminalSession, screen: ReflowScreen, directory: Path) -> None:
     viewport_before = screen.snapshot()["base"]
     for width in chain(range(119, 39, -1), range(41, 121)):
         terminal.resize(12, width)
@@ -184,7 +180,7 @@ def main() -> None:
         directory = Path(temporary).resolve() / "a" / "b"
         directory.mkdir(parents=True)
         with terminal_config("[prompt]\nleft = \"$path\\n$ \"\nright = 'RIGHT'\ntransient = '$ '\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\nsyntax_highlighting = false\n") as config_root, subprocess.Popen(["node", str(ROOT / "scripts/terminal-reflow-screen.cjs")], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as process:
-            exercise(reflow.ReflowScreen(process), directory, config_root)
+            exercise(ReflowScreen(process), directory, config_root)
     with terminal_config("[prompt]\nleft = \"PRIMARY\\n$ \"\nright = ''\ntransient = '$ '\nsecondary = '[blue]CONT >[/blue] '\n[completion]\nenabled = false\n[editor]\ncursor_animation = false\n") as config_root:
         exercise_secondary(config_root)
         exercise_continuation_inputs(config_root)

@@ -105,7 +105,7 @@ impl EditorState {
             | Action::Up
             | Action::Down => return self.navigate(key),
             Action::Clear => self.toggle_overlay(),
-            Action::PromptWidgets => {}
+            Action::PromptWidgets | Action::ToggleMouseEditing => {}
             Action::Cancel => return Some(self.result(ExitReason::Interrupted)),
             Action::Escape => {
                 self.history.dismiss(&self.buffer);

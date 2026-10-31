@@ -29,12 +29,6 @@ pub(crate) fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn Erro
             output::print(&widgets::render(&output, &output::Output::detect()))?;
         }
         Command::Doctor => doctor::run()?,
-        Command::Shell => {
-            let code = crate::host::run()?;
-            if code != 0 {
-                std::process::exit(code.min(255) as i32);
-            }
-        }
     }
     Ok(())
 }

@@ -13,6 +13,8 @@ terminal.onData(data => responses.push(Buffer.from(data).toString('base64')));
 async function handle(request) {
   if (request.op === 'feed') {
     await new Promise(resolve => terminal.write(Buffer.from(request.data, 'base64'), resolve));
+  } else if (request.op === 'scroll') {
+    terminal.scrollLines(request.lines);
   } else if (request.op === 'resize') {
     terminal.resize(request.columns, request.rows);
   }
@@ -32,6 +34,10 @@ async function handle(request) {
   const result = {
     responses,
     lines,
+    buffer: screen.type,
+    viewport: screen.viewportY,
+    mouseTracking: terminal.modes.mouseTrackingMode,
+    bracketedPaste: terminal.modes.bracketedPasteMode,
     base: screen.baseY,
     cursor: [screen.cursorX, screen.cursorY],
     paintedCursors,

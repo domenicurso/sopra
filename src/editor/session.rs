@@ -55,19 +55,8 @@ impl EditorState {
         &mut self,
         key: Action,
         terminal: &mut Terminal,
-        renderer: &mut Renderer,
-        resize_epoch: &mut usize,
     ) -> io::Result<Option<RunResult>> {
         if key == Action::Cancel && self.copy_selection(terminal)? {
-            return Ok(None);
-        }
-        if let Action::Mouse(event) = key {
-            let latest = terminal.resize_epoch();
-            if latest != *resize_epoch {
-                *resize_epoch = latest;
-                self.paint_editor(Instant::now(), terminal, renderer)?;
-            }
-            self.handle_mouse(event, renderer.origin_row());
             return Ok(None);
         }
         Ok(self.handle_key(key))
@@ -89,6 +78,7 @@ impl EditorState {
     ) -> io::Result<()> {
         (self.prompt, self.rprompt) = self.widgets.render();
         let size = self.refresh_size(terminal);
+        self.mouse_mode_hint(size.columns);
         let frame = Scene::for_editor(self, size, now).render();
         renderer.render(frame, terminal)?;
         Ok(())
@@ -128,6 +118,7 @@ impl EditorState {
         terminal: &mut Terminal,
         reason: ExitReason,
     ) -> io::Result<()> {
+        self.set_mouse_editing(false, terminal)?;
         let size = terminal.size().unwrap_or(self.last_size);
         let (restore_position, replacement) = match reason {
             ExitReason::Accepted => (
