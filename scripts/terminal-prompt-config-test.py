@@ -120,7 +120,7 @@ def exercise_config_only_command(root: Path) -> None:
     help_result = subprocess.run((str(worker), "--help"), text=True, capture_output=True, check=True)
     assert "config.toml" in help_result.stdout and "settings" not in help_result.stdout
     removed = subprocess.run((str(worker), "--settings"), text=True, capture_output=True)
-    assert removed.returncode != 0 and "unknown argument" in removed.stderr
+    assert removed.returncode != 0 and "unknown command or arguments" in removed.stderr
 
 
 def exercise_result_frames(root: Path) -> None:

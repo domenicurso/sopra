@@ -52,6 +52,32 @@ Keep `SOPRA_BIN` and the `source` command in your Zsh configuration if you want 
 - Live highlighting for commands, strings, variables, numbers, delimiters, and incomplete expressions.
 - Contextual completion for shell commands, aliases, functions, variables, arrays, paths, options, values, and recursive CLI subcommands.
 
+## Commands
+
+| Command | Behavior |
+| --- | --- |
+| `sopra refresh` | Validate and reload config, retaining existing widget instances and history. |
+| `sopra restart` | Replace the worker process and reset widget state. Shell history stays intact. |
+| `sopra config edit` | Open config in `$VISUAL`, then `$EDITOR`, or `vi`; validate and refresh after the editor exits successfully. |
+| `sopra config check` | Check TOML, templates, and widget references without changing the session or running widgets. |
+| `sopra config path` | Print the canonical config path, respecting XDG settings. |
+| `sopra config show` | Print the running session's effective config, including defaults; outside a session, read it from disk. |
+| `sopra widgets list` | List built-in and custom widget sources, whether they are loaded, and runtime errors. |
+| `sopra doctor` | Check worker connectivity, Zsh integration, config, and the Rust compiler. |
+
+Refresh validates before changing the session. Invalid config leaves the working
+settings in place; custom widgets compile asynchronously and report their own
+errors. Restart also validates first, then replaces the process using `exec`, so
+the shell-tracked worker PID stays the same while widget instances reset.
+
+Commands target the current shell through its private exported socket address.
+Run session-changing commands after submitting the command line: an actively
+editing worker rejects them without disturbing the buffer. `doctor` can inspect
+an editing worker. Config checks, file editing, and widget discovery also work
+without an active session. The installer provides `sopra` in the installation
+prefix's `bin` directory, and the Zsh integration exposes the same CLI through a
+shell function.
+
 ## Configuration
 
 Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Edit this file to change the prompt and editor options.
@@ -75,7 +101,8 @@ autosuggestions = true
 enabled = true
 ```
 
-`config.toml` is the only configuration file. Restart the shell after editing it.
+`config.toml` is the only configuration file. Run `sopra refresh` after editing it,
+or use `sopra config edit` to open, validate, and refresh it in one step.
 Templates use `$widget` references and matching style tags, such as
 `[bold blue]$path[/bold blue]`. Tags can nest. Styles include colors, `bold`,
 `dim`, `italic`, `underline`, and `reverse`. Use `$$` for a literal dollar sign

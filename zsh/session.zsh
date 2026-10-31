@@ -8,7 +8,7 @@ _sopra_server_start() {
     zmodload zsh/zselect || return 1
     typeset -g _SOPRA_SERVER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sopra.XXXXXXXX")
     [[ -d $_SOPRA_SERVER_DIR ]] || return 1
-    typeset -g _SOPRA_SERVER_SOCKET=$_SOPRA_SERVER_DIR/socket
+    typeset -gx _SOPRA_SERVER_SOCKET=$_SOPRA_SERVER_DIR/socket
     "$SOPRA_BIN" --serve "$_SOPRA_SERVER_SOCKET" "$$" </dev/null >/dev/null 2>"$_SOPRA_SERVER_DIR/error" &!
     typeset -g _SOPRA_SERVER_PID=$!
     local -i attempt

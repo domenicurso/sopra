@@ -133,8 +133,10 @@ must be on `PATH`. Binaries are cached by source and SDK contents under
 Each loaded custom widget owns a background thread and a persistent process.
 The thread checks source changes every 250 ms and schedules callbacks according
 to `Refresh`. The terminal reads cached text without waiting for compilation
-or callbacks. New files are discovered at the next prompt; changed files rebuild
-and restart that widget, resetting its state while leaving the editor running.
+or callbacks. Use `sopra widgets list` to inspect discovery and runtime errors. After adding
+references to new files in your config, run `sopra refresh`; existing instances
+retain their state, and widgets removed from the layout stop. Changed files
+rebuild and restart that widget, resetting its state while leaving the editor running.
 
 Compilation has a 30-second deadline. Each render or event callback must respond
 within 100 ms; slow work belongs in a widget-owned background thread that updates

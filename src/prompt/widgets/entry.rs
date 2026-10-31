@@ -3,8 +3,10 @@ use sopra::{Action, Context, Event, Text, Widget};
 use std::path::Path;
 
 pub(super) struct Entry {
-    pub widget: super::background::Background,
-    pub name: String,
+    pub(super) widget: super::background::Background,
+    pub(super) name: String,
+    pub(super) source: Option<std::path::PathBuf>,
+    pub(super) runtime: Option<std::sync::Arc<super::custom::runtime::Runtime>>,
 }
 
 impl Entry {
@@ -17,6 +19,8 @@ impl Entry {
         let mut entry = Self {
             widget: super::background::Background::new(widget),
             name: name.into(),
+            source: None,
+            runtime: None,
         };
         entry.update(cwd, definition);
         entry

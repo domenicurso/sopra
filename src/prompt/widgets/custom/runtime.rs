@@ -7,37 +7,62 @@ use std::{
     time::Duration,
 };
 
-pub(super) struct Runtime {
-    context: Arc<Mutex<Context>>,
-    output: Arc<Mutex<Response>>,
+pub(super) enum Status {
+    Loading,
+    Ready,
+    Failed(String),
+}
+
+pub(super) struct State {
+    pub(super) context: Mutex<Context>,
+    pub(super) output: Mutex<Response>,
+    pub(super) status: Mutex<Status>,
+}
+
+pub(in crate::prompt::widgets) struct Runtime {
+    state: Arc<State>,
     events: mpsc::SyncSender<Input>,
 }
 
 impl Runtime {
     pub(super) fn start(source: PathBuf, context: Context) -> Self {
-        let context = Arc::new(Mutex::new(context));
-        let output = Arc::new(Mutex::new(Response::default()));
+        let state = Arc::new(State {
+            context: Mutex::new(context),
+            output: Mutex::new(Response::default()),
+            status: Mutex::new(Status::Loading),
+        });
         let (events, receiver) = mpsc::sync_channel(8);
-        let state = (Arc::clone(&context), Arc::clone(&output));
-        thread::spawn(move || run(source, state, receiver));
-        Self {
-            context,
-            output,
-            events,
-        }
+        let shared = state.clone();
+        thread::spawn(move || run(source, shared, receiver));
+        Self { state, events }
     }
     pub(super) fn update(&self, context: Context) {
         *self
+            .state
             .context
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = context;
     }
     pub(super) fn display(&self) -> Response {
-        self.output
+        self.state
+            .output
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()
     }
+    pub(in crate::prompt::widgets) fn status(&self) -> String {
+        match &*self
+            .state
+            .status
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+        {
+            Status::Loading => "loading".into(),
+            Status::Ready => "loaded".into(),
+            Status::Failed(error) => format!("error: {error}"),
+        }
+    }
+
     pub(super) fn key(&self, event: Event) -> Action {
         let (reply, response) = mpsc::sync_channel(1);
         if self.events.try_send(Input { event, reply }).is_err() {

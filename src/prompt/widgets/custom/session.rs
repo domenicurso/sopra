@@ -1,14 +1,18 @@
-use super::{compiler, watch::Watch};
+use super::{
+    compiler,
+    runtime::{State, Status},
+    watch::Watch,
+};
 use sopra::{Action, Context, Event, Refresh, protocol::Response};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
 
 pub(super) struct Input {
-    pub event: Event,
-    pub reply: mpsc::SyncSender<Action>,
+    pub(super) event: Event,
+    pub(super) reply: mpsc::SyncSender<Action>,
 }
 
 struct Session {
@@ -18,11 +22,7 @@ struct Session {
     checked: Instant,
 }
 
-pub(super) fn run(
-    source: PathBuf,
-    state: (Arc<Mutex<Context>>, Arc<Mutex<Response>>),
-    events: mpsc::Receiver<Input>,
-) {
+pub(super) fn run(source: PathBuf, state: Arc<State>, events: mpsc::Receiver<Input>) {
     let mut session = Session {
         watch: Watch::default(),
         context: None,
@@ -30,7 +30,7 @@ pub(super) fn run(
         checked: Instant::now(),
     };
     loop {
-        session.refresh_source(&source, &state.1);
+        session.refresh_source(&source, &state);
         let wait = session
             .next
             .map_or(Duration::from_millis(250), |next: Instant| {
@@ -43,16 +43,16 @@ pub(super) fn run(
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
         let latest = state
-            .0
+            .context
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
-        session.poll(latest, input, &state.1);
+        session.poll(latest, input, &state);
     }
 }
 
 impl Session {
-    fn refresh_source(&mut self, source: &std::path::Path, output: &Mutex<Response>) {
+    fn refresh_source(&mut self, source: &std::path::Path, state: &State) {
         if Instant::now() < self.checked {
             return;
         }
@@ -60,14 +60,14 @@ impl Session {
             Ok(true) => self.context = None,
             Ok(false) => {}
             Err(error) => {
-                publish_error(output, &error);
+                publish_error(state, &error);
                 self.watch.process = None;
             }
         }
         self.checked = Instant::now() + Duration::from_millis(250);
     }
 
-    fn poll(&mut self, latest: Context, input: Option<Input>, output: &Mutex<Response>) {
+    fn poll(&mut self, latest: Context, input: Option<Input>, state: &State) {
         let due = self.context.as_ref() != Some(&latest)
             || input.is_some()
             || self.next.is_some_and(|next| Instant::now() >= next);
@@ -86,13 +86,20 @@ impl Session {
                 };
                 self.context = Some(latest);
                 let action = std::mem::take(&mut response.action);
-                *output.lock().unwrap_or_else(|error| error.into_inner()) = response;
+                *state
+                    .output
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = response;
+                *state
+                    .status
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Status::Ready;
                 if let Some(input) = input {
                     let _ = input.reply.send(action);
                 }
             }
             Err(error) => {
-                publish_error(output, &error);
+                publish_error(state, &error);
                 self.watch.process = None;
                 self.next = None;
             }
@@ -100,13 +107,20 @@ impl Session {
     }
 }
 
-fn publish_error(output: &Mutex<Response>, error: &std::io::Error) {
+fn publish_error(state: &State, error: &std::io::Error) {
+    *state
+        .status
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = Status::Failed(error.to_string());
     let message = if compiler::record_error(error).is_ok() {
         "widget error"
     } else {
         "widget error: log unavailable"
     };
-    *output.lock().unwrap_or_else(|error| error.into_inner()) = Response {
+    *state
+        .output
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = Response {
         text: message.into(),
         ..Response::default()
     };

@@ -1,41 +1,26 @@
 use crate::prompt::{template::Template, widgets::settings::Settings};
-use std::{fs, io, path::PathBuf};
+mod file;
+pub(crate) use file::path;
+use std::{io, path::PathBuf};
 use toml_edit::{DocumentMut, Item};
 
 #[derive(Clone)]
 pub(crate) struct Config {
-    pub cursor_animation: bool,
-    pub syntax_highlighting: bool,
-    pub completion: bool,
-    pub autosuggestions: bool,
-    pub autosuggestion_format: String,
-    pub autosuggestion_metadata_format: String,
-    pub left: String,
-    pub right: String,
-    pub transient: String,
-    pub secondary: String,
-    pub widgets: Settings,
+    document: DocumentMut,
+    pub(crate) cursor_animation: bool,
+    pub(crate) syntax_highlighting: bool,
+    pub(crate) completion: bool,
+    pub(crate) autosuggestions: bool,
+    pub(crate) autosuggestion_format: String,
+    pub(crate) autosuggestion_metadata_format: String,
+    pub(crate) left: String,
+    pub(crate) right: String,
+    pub(crate) transient: String,
+    pub(crate) secondary: String,
+    pub(crate) widgets: Settings,
 }
 
 impl Config {
-    pub(crate) fn read() -> io::Result<Self> {
-        let root = sopra_shell_context::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| {
-                sopra_shell_context::var_os("HOME").map(|home| PathBuf::from(home).join(".config"))
-            })
-            .map(|path| path.join("sopra"));
-        let source = match root
-            .as_ref()
-            .map(|root| fs::read_to_string(root.join("config.toml")))
-        {
-            Some(Ok(source)) => source,
-            Some(Err(error)) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-            _ => String::new(),
-        };
-        Self::parse(&source, root)
-    }
-
     fn parse(source: &str, root: Option<PathBuf>) -> io::Result<Self> {
         let user = source.parse::<DocumentMut>().map_err(io::Error::other)?;
         let defaults = include_str!("defaults.toml")
@@ -46,7 +31,9 @@ impl Config {
             |section, name| field(&user, section, name).or_else(|| field(&defaults, section, name));
         let string = |section, name| string(value(section, name), section, name);
         let boolean = |section, name| boolean(value(section, name), section, name);
+        let document = file::merge(defaults.clone(), &user);
         let config = Self {
+            document,
             cursor_animation: boolean("editor", "cursor_animation")?,
             syntax_highlighting: boolean("editor", "syntax_highlighting")?,
             autosuggestions: boolean("editor", "autosuggestions")?,

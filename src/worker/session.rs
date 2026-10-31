@@ -1,3 +1,4 @@
+mod controls;
 use crate::{
     arguments::Args,
     config::Config,
@@ -11,6 +12,8 @@ use std::error::Error;
 
 pub(super) struct Session {
     config: Config,
+    config_path: std::path::PathBuf,
+    cwd: std::path::PathBuf,
     palette: Option<TerminalPalette>,
     widgets: Option<Widgets>,
     completion: Option<CompletionEngine>,
@@ -20,10 +23,13 @@ pub(super) struct Session {
 
 impl Session {
     pub(super) fn new() -> Result<Self, Box<dyn Error>> {
-        let config = Config::read()?;
+        let config_path = crate::config::path()?;
+        let config = Config::read_from(&config_path)?;
         let completion = config.completion.then(CompletionEngine::new).flatten();
         Ok(Self {
             config,
+            config_path,
+            cwd: std::env::current_dir()?,
             completion,
             palette: None,
             widgets: None,
@@ -35,6 +41,7 @@ impl Session {
     pub(super) fn run(&mut self, args: Args) -> Result<RunResult, Box<dyn Error>> {
         let mut terminal = Terminal::open(self.palette)?;
         self.palette = Some(terminal.palette());
+        self.cwd = args.cwd.clone();
         let secondary = args.secondary;
         let (widgets, primary) = self.widgets_for_edit(&args)?;
         self.history
@@ -111,6 +118,10 @@ impl Session {
             cwd: args.cwd,
             palette: terminal.palette(),
         })
+    }
+
+    pub(super) fn config_path(&self) -> &std::path::Path {
+        &self.config_path
     }
 
     pub(super) fn shell_prompts(&self) -> std::io::Result<(String, String)> {

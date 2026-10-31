@@ -1,7 +1,9 @@
 mod actions;
 mod animation;
 mod arguments;
+mod cli;
 mod config;
+mod control;
 mod editor;
 mod input;
 mod palette;
@@ -15,7 +17,14 @@ mod worker;
 
 use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("sopra: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     let mut arguments = std::env::args_os().skip(1);
     match arguments.next().as_deref().and_then(|value| value.to_str()) {
         Some("--serve") => {
@@ -25,8 +34,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .ok_or("--serve needs a parent PID")?
                 .to_string_lossy()
                 .parse()?;
+            if arguments.next().is_some() {
+                return Err("unexpected worker arguments".into());
+            }
             worker::serve(std::path::Path::new(&socket), parent)
         }
-        _ => worker::once(),
+        Some("--buffer" | "--cursor" | "--cwd" | "--secondary" | "--history-file") => {
+            worker::once()
+        }
+        _ => cli::run(std::env::args_os().skip(1).collect()),
     }
 }

@@ -1,0 +1,12 @@
+Usage: sopra <command>
+
+  refresh         Reload config and reconcile widgets, retaining their state
+  restart         Replace the worker and reset widget state
+  config edit     Open config.toml in $VISUAL or $EDITOR, validate, then refresh
+  config check    Validate config, templates, and widget references
+  config path     Print the canonical config path
+  config show     Print effective configuration, including defaults
+  widgets list    List discovered widgets, source paths, and runtime errors
+  doctor          Diagnose the worker, Zsh integration, config, and Rust compiler
+  --version       Show Sopra's version
+  --help          Show this help

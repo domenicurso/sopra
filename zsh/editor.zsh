@@ -2,6 +2,7 @@ if [[ -n ${_SOPRA_LOADED:-} ]]; then
     return 0
 fi
 typeset -g _SOPRA_LOADED=1
+unset _SOPRA_SERVER_SOCKET
 
 if [[ ! -o interactive ]]; then
     return 0
@@ -29,12 +30,7 @@ fi
 
 sopra() {
     emulate -L zsh
-    if [[ $# == 0 || ( $# == 1 && ${1-} == (--help|-h|help) ) ]]; then
-        "$SOPRA_BIN" --help
-        return $?
-    fi
-    print -u2 -- 'usage: sopra [--help]'
-    return 2
+    "$SOPRA_BIN" "$@"
 }
 
 _sopra_prepare_transient() {

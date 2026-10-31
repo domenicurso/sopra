@@ -36,8 +36,9 @@ curl -fsSL "$archive_url" | tar -xzf - --strip-components=1 -C "$source_dir"
 printf 'Building Sopra...\n'
 (cd "$source_dir" && cargo build --release --locked --bin sopra-worker)
 
-mkdir -p "$SOPRA_PREFIX/libexec" "$SOPRA_PREFIX/share/sopra"
+mkdir -p "$SOPRA_PREFIX/bin" "$SOPRA_PREFIX/libexec" "$SOPRA_PREFIX/share/sopra"
 install -m 0755 "$source_dir/target/release/sopra-worker" "$SOPRA_PREFIX/libexec/sopra-worker"
+ln -sfn ../libexec/sopra-worker "$SOPRA_PREFIX/bin/sopra"
 install -m 0644 "$source_dir/zsh/editor.zsh" "$SOPRA_PREFIX/share/sopra/editor.zsh"
 install -m 0644 "$source_dir/zsh/session.zsh" "$SOPRA_PREFIX/share/sopra/session.zsh"
 install -m 0644 "$source_dir/zsh/worker.zsh" "$SOPRA_PREFIX/share/sopra/worker.zsh"

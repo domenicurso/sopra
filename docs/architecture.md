@@ -48,3 +48,18 @@ feeds the existing parse, and editing an earlier incomplete prefix restarts it.
 The service returns a continuation decision or an I/O error. Input typed during
 that decision stays queued in the terminal so it cannot overtake the newline or
 be consumed from the next foreground program. Painting and resizing continue.
+
+The public CLI uses a framed control protocol on that shell's existing Unix
+socket. A listener thread handles health requests independently of editing and
+admits one stateful request at a time; changes during editing are rejected before
+queuing, so timed-out clients cannot trigger delayed mutations. The session owner
+applies config changes between edits. Refresh validates before reconciling widget
+instances and commits the new config only after reconciliation succeeds. Config
+checks use the same parser and widget catalog without starting a runtime.
+
+Restart validates the config, acknowledges the request, then executes the worker
+binary over the existing process. The owning shell keeps its PID and socket path;
+clients wait for a new startup generation before reporting success. Widget pipes
+close during process replacement and their state resets. Shell history and command
+execution remain owned by Zsh. Widget inspection uses the catalog plus retained
+instances, including errors from sources removed after loading.

@@ -20,10 +20,6 @@ impl Args {
         let mut args = Self::defaults();
         while let Some(argument) = arguments.next() {
             let argument = argument.to_string_lossy();
-            if is_help_argument(&argument) {
-                print_usage();
-                std::process::exit(0);
-            }
             args.read_argument(&argument, &mut arguments)?;
         }
         Ok(args)
@@ -74,27 +70,4 @@ fn next_value(
         .next()
         .map(|value| value.to_string_lossy().into_owned())
         .ok_or_else(|| format!("{flag} needs a value"))
-}
-
-fn print_usage() {
-    println!(
-        "sopra\n\nSopra is configured in ~/.config/sopra/config.toml, or in $XDG_CONFIG_HOME/sopra/config.toml when XDG_CONFIG_HOME is set."
-    );
-}
-
-fn is_help_argument(argument: &str) -> bool {
-    matches!(argument, "--help" | "-h" | "help")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_help_argument;
-
-    #[test]
-    fn accepts_all_public_help_spellings() {
-        for argument in ["--help", "-h", "help"] {
-            assert!(is_help_argument(argument));
-        }
-        assert!(!is_help_argument("settings"));
-    }
 }

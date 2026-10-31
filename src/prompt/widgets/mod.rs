@@ -1,7 +1,10 @@
 mod background;
+pub(crate) mod catalog;
+mod configuration;
 mod custom;
 mod entry;
 mod events;
+pub(crate) mod inspection;
 pub(crate) mod settings;
 
 mod builtins {
@@ -14,6 +17,7 @@ use entry::Entry;
 use sopra::Action;
 use sopra::{Event, Key as WidgetKey};
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -36,36 +40,6 @@ impl Widgets {
         let settings = settings::Settings::default();
         // These fixtures use valid templates and built-in widget names.
         Self::configured(prompt, right, cwd, &settings).expect("valid widget fixture")
-    }
-
-    pub(crate) fn configured(
-        prompt: String,
-        right: String,
-        cwd: PathBuf,
-        settings: &settings::Settings,
-    ) -> std::io::Result<Self> {
-        let prompt = Template::compile(&prompt)?;
-        let right = Template::compile(&right)?;
-        let mut widgets = Vec::new();
-        for (name, create) in builtins::REGISTRY {
-            if referenced(&prompt, &right, name) {
-                widgets.push(Entry::new(name, create(), &cwd, settings.definition(name)));
-            }
-        }
-        widgets.extend(custom::discover((&prompt, &right), &cwd, settings));
-        for name in prompt.references().chain(right.references()) {
-            if !widgets.iter().any(|entry| entry.name == name) {
-                return Err(std::io::Error::other(format!(
-                    "unknown prompt widget: {name}"
-                )));
-            }
-        }
-        Ok(Self {
-            prompt_template: prompt,
-            right_template: right,
-            widgets,
-            focused: Focus::Idle,
-        })
     }
 
     pub(crate) fn render(&mut self) -> (Vec<PromptSpan>, Vec<PromptSpan>) {

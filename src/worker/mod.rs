@@ -1,14 +1,9 @@
 mod request;
+mod restart;
+mod server;
 mod session;
 
-use std::{
-    error::Error,
-    io::{BufRead, BufReader, Write},
-    os::unix::net::{UnixListener, UnixStream},
-    path::Path,
-    thread,
-    time::Duration,
-};
+use std::{error::Error, io::Write, os::unix::net::UnixStream, path::Path, thread, time::Duration};
 
 use crate::{arguments::Args, protocol};
 
@@ -34,7 +29,6 @@ pub(crate) fn serve(socket: &Path, parent: i32) -> Result<(), Box<dyn Error>> {
     if group < 0 || unsafe { libc::setpgid(0, group) } != 0 {
         return Err(std::io::Error::last_os_error().into());
     }
-    let listener = UnixListener::bind(socket)?;
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_secs(1));
@@ -45,30 +39,61 @@ pub(crate) fn serve(socket: &Path, parent: i32) -> Result<(), Box<dyn Error>> {
         }
     });
     let mut session = session::Session::new()?;
-    for connection in listener.incoming() {
-        let mut connection = connection?;
-        if let Err(error) = edit(&mut connection, &mut session) {
-            writeln!(
-                connection,
-                "E1\t{}",
-                error.to_string().replace(['\n', '\r'], " ")
-            )?;
+    let health = crate::control::Health::new(session.config_path().to_owned(), parent)?;
+    let connections = server::listen(socket, health)?;
+    for mut connection in connections {
+        match dispatch(&mut connection, &mut session) {
+            Ok(Next::Restart) => {
+                drop(session);
+                return Err(restart::replace(socket, parent).into());
+            }
+            Ok(Next::Continue) => {}
+            Err(error) => eprintln!("sopra: {error}"),
         }
-        connection.flush()?;
     }
     Ok(())
 }
 
-fn edit(connection: &mut UnixStream, session: &mut session::Session) -> Result<(), Box<dyn Error>> {
-    let mut path = String::new();
-    use std::io::Read;
-    BufReader::new(&mut *connection)
-        .take(4097)
-        .read_line(&mut path)?;
-    if path.len() > 4096 || !path.ends_with('\n') {
-        return Err("invalid session request path".into());
+enum Next {
+    Continue,
+    Restart,
+}
+
+fn dispatch(
+    connection: &mut server::Connection,
+    session: &mut session::Session,
+) -> Result<Next, Box<dyn Error>> {
+    match &connection.operation {
+        server::Operation::Edit(path) => {
+            if let Err(error) = edit(&mut connection.stream, session, path) {
+                writeln!(
+                    connection.stream,
+                    "E1\t{}",
+                    error.to_string().replace(['\n', '\r'], " ")
+                )?;
+            }
+            connection.stream.flush()?;
+        }
+        server::Operation::Control(command) => {
+            let result = session.control(*command);
+            let next = if *command == crate::control::Command::Restart && result.is_ok() {
+                Next::Restart
+            } else {
+                Next::Continue
+            };
+            crate::control::write_response(&mut connection.stream, result)?;
+            return Ok(next);
+        }
     }
-    let request = request::read(Path::new(path.trim_end_matches('\n')))?;
+    Ok(Next::Continue)
+}
+
+fn edit(
+    connection: &mut UnixStream,
+    session: &mut session::Session,
+    path: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let request = request::read(path)?;
     sopra_shell_context::replace(request.environment);
     let args = Args::from_args(request.arguments.into_iter())?;
     let result = session.run(args)?;
