@@ -18,18 +18,17 @@ fn reads_prompt_and_editor_values() -> io::Result<()> {
         Some("[italic]{text}[/]")
     );
     assert_eq!(config.right.as_deref(), Some("[dim]{clock}[/]"));
-    assert_eq!(config.clock_format.as_deref(), Some("%H:%M"));
     assert_eq!(config.secondary.as_deref(), Some("[dim]> [/] "));
     fs::remove_file(file)
 }
 #[test]
 fn invalid_field_types_report_the_field() -> io::Result<()> {
-    let doc = parse("[widgets.clock]\nformat = 42\n")?;
-    let result = read_string(&doc, &["widgets", "clock", "format"]);
+    let doc = parse("[prompt]\nleft = 42\n")?;
+    let result = read_string(&doc, &["prompt", "left"]);
     assert!(
         result
             .err()
-            .is_some_and(|error| error.to_string().contains("widgets.clock.format"))
+            .is_some_and(|error| error.to_string().contains("prompt.left"))
     );
     let doc = parse("[prompt]\nleft = \"\\u0000\"\n")?;
     assert!(

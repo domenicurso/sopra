@@ -19,7 +19,7 @@ if [[ -z ${SOPRA_BIN:-} ]]; then
 fi
 source "$script_dir/config.zsh"
 source "$script_dir/protocol.zsh"
-_sopra_load_prompt_config "$(_sopra_config_path)"
+_sopra_load_prompt_config "$(_sopra_config_path)" || return 1
 source "$script_dir/context.zsh"
 source "$script_dir/history.zsh"
 source "$script_dir/prompt.zsh"

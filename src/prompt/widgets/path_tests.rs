@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 #[test]
 fn focus_styles_segments_without_changing_path_text() {
-    let mut path = Path::new(PathBuf::from("/tmp/alpha/beta"));
+    let cwd = PathBuf::from("/tmp/alpha/beta");
+    let options = std::collections::BTreeMap::new();
+    let mut path = Path::new(&super::super::WidgetContext { cwd: &cwd, options: &options });
     path.styles = PathStyles {
         before: "[green]{text}[/]".into(),
         selected: "[yellow][reverse]{text}[/][/]".into(),

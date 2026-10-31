@@ -1,9 +1,11 @@
-mod clock;
-mod context;
+mod custom;
 mod format;
-mod git;
-mod git_status;
-mod path;
+mod settings;
+
+mod builtins {
+    use super::{Widget, WidgetAction, WidgetContext};
+    include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
+}
 
 use std::path::PathBuf;
 
@@ -16,7 +18,7 @@ pub(crate) enum WidgetAction {
 }
 
 trait Widget {
-    fn token(&self) -> &'static str;
+    fn token(&self) -> &str;
     fn render(&self) -> String;
     fn markup(&self) -> bool {
         false
@@ -24,8 +26,25 @@ trait Widget {
     fn active(&self) -> bool {
         false
     }
+    fn interactive(&self) -> bool {
+        false
+    }
     fn handle(&mut self, _key: Key) -> WidgetAction {
         WidgetAction::Ignored
+    }
+}
+
+struct WidgetContext<'a> {
+    cwd: &'a std::path::Path,
+    options: &'a std::collections::BTreeMap<String, String>,
+}
+
+impl WidgetContext<'_> {
+    fn option(&self, key: &str, default: &str) -> String {
+        self.options
+            .get(key)
+            .map_or(default, String::as_str)
+            .to_owned()
     }
 }
 
@@ -37,23 +56,27 @@ pub(crate) struct Widgets {
 
 impl Widgets {
     pub(crate) fn new(prompt: String, right: String, cwd: PathBuf) -> Self {
-        let git_enabled = prompt.contains("{git}")
-            || right.contains("{git}")
-            || prompt.contains("[if git]")
-            || right.contains("[if git]");
-        let git = git::Git::new(&cwd, git_enabled);
-        let status_enabled = prompt.contains("{git_status}")
-            || right.contains("{git_status}")
-            || prompt.contains("[if git_status]")
-            || right.contains("[if git_status]");
-        let git_status = git_status::GitStatus::new(&cwd, status_enabled);
-        let mut widgets = context::widgets();
-        widgets.extend([
-            Box::new(clock::Clock::new()) as Box<dyn Widget>,
-            Box::new(git),
-            Box::new(git_status),
-            Box::new(path::Path::new(cwd)),
-        ]);
+        let settings = match settings::Settings::read() {
+            Ok(settings) => settings,
+            Err(error) => {
+                return Self {
+                    prompt_template: format!("configuration error: {error}\n$ "),
+                    right_template: String::new(),
+                    widgets: Vec::new(),
+                };
+            }
+        };
+        let mut widgets = Vec::new();
+        for (name, create) in builtins::REGISTRY {
+            if referenced(&prompt, &right, name) {
+                let options = settings.options(name);
+                widgets.push(create(&WidgetContext {
+                    cwd: &cwd,
+                    options: &options,
+                }));
+            }
+        }
+        widgets.extend(custom::discover((&prompt, &right), &cwd, &settings));
         Self {
             prompt_template: prompt,
             right_template: right,
@@ -77,69 +100,40 @@ impl Widgets {
     }
 
     pub(crate) fn handle(&mut self, key: Key) -> WidgetAction {
-        for widget in &mut self.widgets {
-            let present = self.prompt_template.contains(widget.token())
-                || self.right_template.contains(widget.token());
-            if present || widget.active() {
-                let action = widget.handle(key);
-                if !matches!(action, WidgetAction::Ignored) {
-                    return action;
-                }
-            }
+        let active = self.widgets.iter().position(|widget| widget.active());
+        if key == Key::PromptWidgets {
+            return self.focus_next(active);
+        }
+        if let Some(index) = active {
+            return self.widgets[index].handle(key);
         }
         WidgetAction::Ignored
     }
+
+    fn focus_next(&mut self, active: Option<usize>) -> WidgetAction {
+        if let Some(index) = active {
+            self.widgets[index].handle(Key::Escape);
+        }
+        let start = active.map_or(0, |index| index + 1);
+        let next = (start..self.widgets.len())
+            .chain(0..start)
+            .find(|index| Some(*index) != active && self.widgets[*index].interactive());
+        if let Some(index) = next {
+            return self.widgets[index].handle(Key::PromptWidgets);
+        }
+        if active.is_some() {
+            WidgetAction::Consumed
+        } else {
+            WidgetAction::Ignored
+        }
+    }
+}
+
+fn referenced(left: &str, right: &str, name: &str) -> bool {
+    [format!("{{{name}}}"), format!("[if {name}]")]
+        .iter()
+        .any(|token| left.contains(token) || right.contains(token))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{WidgetAction, Widgets};
-    use crate::input::Key;
-    use std::path::PathBuf;
-
-    #[test]
-    fn path_widget_selects_parents_and_can_cancel() {
-        let mut widgets =
-            Widgets::new("{path} $ ".into(), String::new(), PathBuf::from("/one/two"));
-        assert!(matches!(
-            widgets.handle(Key::PromptWidgets),
-            WidgetAction::Consumed
-        ));
-        assert!(
-            crate::prompt::parse(&widgets.render().0)
-                .iter()
-                .map(|span| span.text.as_str())
-                .collect::<String>()
-                .starts_with("/one/two")
-        );
-        widgets.handle(Key::Tab);
-        assert!(
-            crate::prompt::parse(&widgets.render().0)
-                .iter()
-                .map(|span| span.text.as_str())
-                .collect::<String>()
-                .starts_with("/one/two")
-        );
-        assert!(
-            matches!(widgets.handle(Key::Enter), WidgetAction::ChangeDirectory(path) if path == std::path::Path::new("/one"))
-        );
-        widgets.handle(Key::PromptWidgets);
-        widgets.handle(Key::Escape);
-        assert!(matches!(widgets.handle(Key::Enter), WidgetAction::Ignored));
-    }
-
-    #[test]
-    fn only_registered_tokens_in_the_template_are_expanded() {
-        let mut widgets = Widgets::new(
-            "{path} {unknown}".into(),
-            String::new(),
-            PathBuf::from("/one/{clock}"),
-        );
-        assert_eq!(widgets.render().0, "/one/{clock} {unknown}");
-        widgets = Widgets::new("plain".into(), String::new(), PathBuf::from("/one"));
-        assert!(matches!(
-            widgets.handle(Key::PromptWidgets),
-            WidgetAction::Ignored
-        ));
-    }
-}
+mod tests;

@@ -10,7 +10,8 @@ pub(super) struct Path {
 }
 
 impl Path {
-    pub(super) fn new(cwd: PathBuf) -> Self {
+    pub(super) fn new(context: &super::WidgetContext<'_>) -> Self {
+        let cwd = context.cwd;
         let home = sopra_shell_context::var_os("HOME").map(PathBuf::from);
         let boundary = home.filter(|home| cwd.starts_with(home));
         Self {
@@ -20,7 +21,7 @@ impl Path {
                 .map(FsPath::to_path_buf)
                 .collect(),
             selected: None,
-            styles: PathStyles::from_environment(),
+            styles: PathStyles::configured(context),
         }
     }
 }
@@ -32,20 +33,20 @@ struct PathStyles {
 }
 
 impl PathStyles {
-    fn from_environment() -> Self {
+    fn configured(context: &super::WidgetContext<'_>) -> Self {
         Self {
-            before: sopra_shell_context::var("SOPRA_PATH_BEFORE").unwrap_or_else(|_| "{text}".into()),
-            selected: sopra_shell_context::var("SOPRA_PATH_SELECTED")
-                .unwrap_or_else(|_| "[reverse]{text}[/]".into()),
-            after: sopra_shell_context::var("SOPRA_PATH_AFTER").unwrap_or_else(|_| "[dim]{text}[/]".into()),
+            before: context.option("before", "{text}"),
+            selected: context.option("selected", "[reverse]{text}[/]"),
+            after: context.option("after", "[dim]{text}[/]"),
         }
     }
 }
 
 impl Widget for Path {
-    fn token(&self) -> &'static str {
+    fn token(&self) -> &str {
         "{path}"
     }
+    fn interactive(&self) -> bool { true }
     fn active(&self) -> bool {
         self.selected.is_some()
     }
@@ -128,5 +129,9 @@ fn display_path(path: &FsPath) -> String {
 }
 
 #[cfg(test)]
-#[path = "path_tests.rs"]
+#[path = "../path_tests.rs"]
 mod tests;
+
+pub(super) fn create(context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
+    Box::new(Path::new(context))
+}

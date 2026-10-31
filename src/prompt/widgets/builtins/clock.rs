@@ -10,8 +10,8 @@ pub(super) struct Clock {
 }
 
 impl Clock {
-    pub(super) fn new() -> Self {
-        let configured = sopra_shell_context::var("SOPRA_CLOCK_FORMAT").unwrap_or_else(|_| "%H:%M:%S".into());
+    pub(super) fn new(context: &super::WidgetContext<'_>) -> Self {
+        let configured = context.option("format", "%H:%M:%S");
         Self {
             format: CString::new(configured).unwrap_or_default(),
         }
@@ -19,7 +19,7 @@ impl Clock {
 }
 
 impl Widget for Clock {
-    fn token(&self) -> &'static str {
+    fn token(&self) -> &str {
         "{clock}"
     }
     fn markup(&self) -> bool {
@@ -59,4 +59,8 @@ impl Widget for Clock {
             .to_string_lossy()
             .into_owned()
     }
+}
+
+pub(super) fn create(_context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
+    Box::new(Clock::new(_context))
 }

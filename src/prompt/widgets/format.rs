@@ -87,7 +87,7 @@ mod tests {
 
     struct Text(&'static str);
     impl Widget for Text {
-        fn token(&self) -> &'static str {
+        fn token(&self) -> &str {
             "{git}"
         }
         fn render(&self) -> String {

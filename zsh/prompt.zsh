@@ -11,27 +11,6 @@ _sopra_prompt_defaults() {
     if [[ -z ${_SOPRA_CONFIG_RPROMPT+x} ]]; then
         typeset -g _SOPRA_CONFIG_RPROMPT='[if git][dim]on [/][bold][cyan]{git}[/][/][if git_status] {git_status}[/][/]'
     fi
-    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_FORMAT+x} ]]; then
-        typeset -g _SOPRA_CONFIG_GIT_STATUS_FORMAT='[dim][[[/]{items}[dim]][/]'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_SEPARATOR+x} ]]; then
-        typeset -g _SOPRA_CONFIG_GIT_STATUS_SEPARATOR='[dim]|[/]'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT+x} ]]; then
-        typeset -g _SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT='[bold][magenta]{item}[/][/]'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_PATH_BEFORE+x} ]]; then
-        typeset -g _SOPRA_CONFIG_PATH_BEFORE='{text}'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_PATH_SELECTED+x} ]]; then
-        typeset -g _SOPRA_CONFIG_PATH_SELECTED='[reverse]{text}[/]'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_PATH_AFTER+x} ]]; then
-        typeset -g _SOPRA_CONFIG_PATH_AFTER='[dim]{text}[/]'
-    fi
-    if [[ -z ${_SOPRA_CONFIG_CLOCK_FORMAT+x} ]]; then
-        typeset -g _SOPRA_CONFIG_CLOCK_FORMAT='%H:%M:%S'
-    fi
     if [[ -z ${_SOPRA_CONFIG_SECONDARY_PROMPT+x} ]]; then
         typeset -g _SOPRA_CONFIG_SECONDARY_PROMPT='> '
     fi

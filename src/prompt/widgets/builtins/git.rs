@@ -5,10 +5,7 @@ use super::Widget;
 pub(super) struct Git(String);
 
 impl Git {
-    pub(super) fn new(cwd: &Path, enabled: bool) -> Self {
-        if !enabled {
-            return Self(String::new());
-        }
+    pub(super) fn new(cwd: &Path) -> Self {
         let branch = git(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"])
             .or_else(|| git(cwd, &["rev-parse", "--short", "HEAD"]))
             .unwrap_or_default();
@@ -22,7 +19,7 @@ impl Git {
 }
 
 impl Widget for Git {
-    fn token(&self) -> &'static str {
+    fn token(&self) -> &str {
         "{git}"
     }
     fn render(&self) -> String {
@@ -32,6 +29,7 @@ impl Widget for Git {
 
 fn git(cwd: &Path, arguments: &[&str]) -> Option<String> {
     let output = Command::new("git")
+        .env_clear().envs(sopra_shell_context::vars_os())
         .current_dir(cwd)
         .args(arguments)
         .output()
@@ -44,4 +42,8 @@ fn git(cwd: &Path, arguments: &[&str]) -> Option<String> {
             .trim_end()
             .to_string(),
     )
+}
+
+pub(super) fn create(context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
+    Box::new(Git::new(context.cwd))
 }

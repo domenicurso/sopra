@@ -139,6 +139,16 @@ def exercise_config_only_command(root: Path) -> None:
     assert removed.returncode != 0 and "unknown argument" in removed.stderr
 
 
+def exercise_result_frames(root: Path) -> None:
+    script = (
+        f'source "{root}/zsh/protocol.zsh"; '
+        "_sopra_parse_result $'K1\\taccept\\t0\\t-\\t-\\t-'; "
+        '[[ $? == 1 ]] || exit 1; '
+        "_sopra_parse_result $'K1\\taccept\\t0\\t-\\t-\\t-\\t-\\t-'"
+    )
+    subprocess.run(("zsh", "-f", "-c", script), check=True)
+
+
 def main() -> None:
     root = Path(__file__).resolve().parent.parent
     subprocess.run(["cargo", "build", "--quiet", "--locked", "--bin", "sopra-worker"], cwd=root, check=True)
@@ -149,6 +159,7 @@ def main() -> None:
         exercise_saved_multiline(root, Path(temporary))
         exercise_git_format(root, Path(temporary))
         exercise_config_only_command(root)
+        exercise_result_frames(root)
     print("prompt config: ok (TOML, status, duration, transient prompt)")
 
 

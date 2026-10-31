@@ -68,3 +68,4 @@ jobs:
           npm --prefix scripts run test:widgets
           npm --prefix scripts run test:prompt-config
           npm --prefix scripts run test:history
+          npm --prefix scripts run test:worker

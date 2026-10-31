@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::process::Command;
 
 use super::Widget;
 
@@ -10,10 +10,11 @@ pub(super) struct GitStatus {
 }
 
 impl GitStatus {
-    pub(super) fn new(cwd: &Path, enabled: bool) -> Self {
-        let text = if enabled {
+    pub(super) fn new(context: &super::WidgetContext<'_>) -> Self {
+        let text = {
             Command::new("git")
-                .current_dir(cwd)
+        .env_clear().envs(sopra_shell_context::vars_os())
+                .current_dir(context.cwd)
                 .args([
                     "--no-optional-locks",
                     "status",
@@ -25,22 +26,18 @@ impl GitStatus {
                 .filter(|output| output.status.success())
                 .map(|output| summarize(&String::from_utf8_lossy(&output.stdout)))
                 .unwrap_or_default()
-        } else {
-            String::new()
         };
         Self {
             text,
-            format: sopra_shell_context::var("SOPRA_GIT_STATUS_FORMAT")
-                .unwrap_or_else(|_| "[[{items}]".into()),
-            separator: sopra_shell_context::var("SOPRA_GIT_STATUS_SEPARATOR").unwrap_or_else(|_| "|".into()),
-            item_format: sopra_shell_context::var("SOPRA_GIT_STATUS_ITEM_FORMAT")
-                .unwrap_or_else(|_| "{item}".into()),
+            format: context.option("format", "[dim][[[/]{items}[dim]][/]"),
+            separator: context.option("separator", "[dim]|[/]"),
+            item_format: context.option("item_format", "[bold][magenta]{item}[/][/]"),
         }
     }
 }
 
 impl Widget for GitStatus {
-    fn token(&self) -> &'static str {
+    fn token(&self) -> &str {
         "{git_status}"
     }
     fn markup(&self) -> bool {
@@ -99,6 +96,11 @@ fn summarize(output: &str) -> String {
     } else {
         format!("[{}]", parts.join("|"))
     }
+}
+
+
+pub(super) fn create(context: &super::WidgetContext<'_>) -> Box<dyn Widget> {
+    Box::new(GitStatus::new(context))
 }
 
 #[cfg(test)]

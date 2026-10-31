@@ -21,26 +21,8 @@ _sopra_load_prompt_config() {
         return 1
     }
     while IFS=$'\t' read -r key encoded; do
-        case $key in
-            prompt) name=_SOPRA_CONFIG_PROMPT ;;
-            rprompt) name=_SOPRA_CONFIG_RPROMPT ;;
-            transient_prompt) name=_SOPRA_CONFIG_TRANSIENT_PROMPT ;;
-            secondary_prompt) name=_SOPRA_CONFIG_SECONDARY_PROMPT ;;
-            clock_format) name=_SOPRA_CONFIG_CLOCK_FORMAT ;;
-            git_status_format) name=_SOPRA_CONFIG_GIT_STATUS_FORMAT ;;
-            git_status_separator) name=_SOPRA_CONFIG_GIT_STATUS_SEPARATOR ;;
-            git_status_item_format) name=_SOPRA_CONFIG_GIT_STATUS_ITEM_FORMAT ;;
-            path_before) name=_SOPRA_CONFIG_PATH_BEFORE ;;
-            path_selected) name=_SOPRA_CONFIG_PATH_SELECTED ;;
-            path_after) name=_SOPRA_CONFIG_PATH_AFTER ;;
-            cursor_animation) name=_SOPRA_CONFIG_CURSOR_ANIMATION ;;
-            syntax_highlighting) name=_SOPRA_CONFIG_SYNTAX_HIGHLIGHTING ;;
-            completion_enabled) name=_SOPRA_CONFIG_COMPLETION_ENABLED ;;
-            autosuggestions) name=_SOPRA_CONFIG_AUTOSUGGESTIONS ;;
-            autosuggestion_format) name=_SOPRA_CONFIG_AUTOSUGGESTION_FORMAT ;;
-            autosuggestion_metadata_format) name=_SOPRA_CONFIG_AUTOSUGGESTION_METADATA_FORMAT ;;
-            *) continue ;;
-        esac
+        [[ $key =~ '^[a-z][a-z0-9_]*$' ]] || return 1
+        name=_SOPRA_CONFIG_${(U)key}
         _sopra_hex_decode "$encoded" || return 1
         typeset -g "$name=$_SOPRA_RESULT_BUFFER"
     done <<< "$raw"

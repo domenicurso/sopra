@@ -90,7 +90,7 @@ separator = "[dim]|[/]"
 
 `config.toml` is the only configuration file. Restart the shell after editing it.
 
-Configure prompt and editor behavior in TOML. Changes take effect when you start a new shell.
+Write custom Rust widgets in `~/.config/sopra/widgets/`; Sopra discovers and compiles them automatically. See [the widget API](docs/widgets.md) for dynamic output, interaction, and styling.
 
 Prompt templates accept Zsh escapes such as `%F{cyan}`, `%f`, `%~`, and `%#`, plus these widgets:
 
@@ -128,7 +128,7 @@ Sopra runs as the editor behind Zsh's ZLE integration rather than as a replaceme
 
 The shared `sopra-shell-context` crate owns environment snapshots; prompts, widgets, and the completion engine consume it independently.
 
-The worker acquires the terminal only while editing and restores it before returning control to Zsh, so foreground programs receive terminal input normally. The worker retains the terminal palette across edits; shell and completion context refresh on every request without changing the worker’s process environment. The bridge stops the worker on shell exit, and the worker monitors its owning shell.
+The worker acquires the terminal only while editing and restores it before returning control to Zsh, so foreground programs receive terminal input normally. The worker retains the terminal palette and custom widget processes across edits; shell and completion context refresh on every request without changing the worker’s process environment. The bridge stops the worker on shell exit, and the worker monitors its owning shell.
 
 This keeps shell behavior in Zsh: aliases, functions, variables, command lookup, and command execution continue to use the current interactive shell.
 

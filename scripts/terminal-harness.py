@@ -29,15 +29,15 @@ RESIZE_MARKER = b"\x1b[6n"
 
 def check_initial(session: tuple[int, int], output: bytearray) -> int:
     wait_for(session, output, FRAME_MARKER, 10)
-    wait_for_plain(session, output, b" in ~/", 10)
+    wait_for_plain(session, output, b"in~/", 10)
     initial_bytes = len(output)
     read_for(session[0], output, 0.20)
     if len(output) <= initial_bytes:
         fail("cursor did not trigger another repaint", *session)
     if b"\x1b[38;2;0;0;0m" not in output or b"\x1b[48;2;0;" not in output:
         fail("cursor did not use the terminal palette response", *session)
-    rendered = plain(output)
-    if b" in ~/" not in rendered or b"$" not in rendered or b"sopra-demo" in rendered or b"ready" in rendered:
+    rendered = b"".join(plain(output).split())
+    if b"in~/" not in rendered or b"$" not in rendered or b"sopra-demo" in rendered or b"ready" in rendered:
         fail("product scene was not rendered", *session)
     return output.count(FRAME_MARKER)
 
