@@ -50,8 +50,8 @@ fn transient_scene_keeps_partial_syntax_highlighting() {
     let editor = editor(buffer, buffer.chars().count(), size);
     let frame = Scene::for_transient(&editor, size).render();
     assert_eq!(frame.buffer[(2, 0)].fg, Color::Green);
-    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightRed);
-    assert!(frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
+    assert_eq!(frame.buffer[(7, 0)].fg, Color::Red);
+    assert!(frame.buffer[(7, 0)].modifier.is_empty());
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn transient_scene_does_not_keep_cursor_pair_highlighting() {
     let size = TerminalSize::new(80, 24);
     let editor = editor("echo \"hi\"", 6, size);
     let frame = Scene::for_transient(&editor, size).render();
-    assert_eq!(frame.buffer[(7, 0)].fg, Color::LightMagenta);
+    assert_eq!(frame.buffer[(7, 0)].fg, Color::Magenta);
     assert!(!frame.buffer[(7, 0)].modifier.contains(Modifier::UNDERLINED));
     assert!(
         !frame.buffer[(10, 0)]

@@ -1,5 +1,5 @@
 #[cfg(test)]
-use super::lex::{is_assignment, lex};
+use super::{lex::lex, shell_state::WordRole};
 
 #[cfg(test)]
 pub(super) fn command_position(line: &str, cursor: usize) -> bool {
@@ -9,7 +9,7 @@ pub(super) fn command_position(line: &str, cursor: usize) -> bool {
     if let Some(word) = lexed.words.last()
         && prefix.ends_with(&word.text)
     {
-        return word.command_expected && !is_assignment(&word.text);
+        return word.role == WordRole::Command;
     }
     lexed.final_state.command_expected
 }

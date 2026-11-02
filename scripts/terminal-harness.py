@@ -120,7 +120,7 @@ def exercise_accept(session: tuple[int, int], output: bytearray, origins: int) -
         fail("accepted line did not render the transient prompt", *session)
     if b"\x1b[32mp" not in output[start:]:
         fail("accepted line did not keep syntax highlighting", *session)
-    if b"\x1b[1m\x1b[32mprint" not in output[start:]:
+    if b"\x1b[32mprint" not in output[start:]:
         fail("shell re-rendered the accepted command without syntax highlighting", *session)
     clear_start = len(output)
     send(session[0], b"clear\r")

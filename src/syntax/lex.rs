@@ -1,167 +1,112 @@
-use super::{SyntaxKind, SyntaxSpan, delimiters::track, scan::scan_word};
-
-#[derive(Debug, Clone)]
-pub(super) struct LexedLine {
-    pub(super) spans: Vec<SyntaxSpan>,
-    pub(super) words: Vec<WordToken>,
-    pub(super) quote_pairs: Vec<QuotePair>,
-    pub(super) delimiter_pairs: Vec<DelimiterPair>,
-    pub(super) unmatched_delimiters: Vec<usize>,
-    pub(super) final_state: ShellState,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct WordToken {
-    pub(super) text: String,
-    pub(super) span_start: usize,
-    pub(super) span_end: usize,
-    pub(super) command_expected: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct QuotePair {
-    pub(super) open: usize,
-    pub(super) close: Option<usize>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct DelimiterPair {
-    pub(super) open: usize,
-    pub(super) close: Option<usize>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(super) struct ShellState {
-    pub(super) command_expected: bool,
-    redirect_expected: bool,
-}
-
-impl ShellState {
-    const fn new() -> Self {
-        Self {
-            command_expected: true,
-            redirect_expected: false,
-        }
-    }
-}
+use super::{
+    SyntaxKind, SyntaxSpan,
+    delimiters::track,
+    scan::scan_word,
+    shell_state::ShellState,
+    tokens::{DelimiterPair, LexedLine, QuotePair, WordToken, next_char, operator_end},
+};
 
 pub(super) fn lex(line: &str) -> LexedLine {
-    let mut result = LexedLine {
-        spans: Vec::new(),
-        words: Vec::new(),
-        quote_pairs: Vec::new(),
-        delimiter_pairs: Vec::new(),
-        unmatched_delimiters: Vec::new(),
-        final_state: ShellState::new(),
-    };
-    let mut state = result.final_state;
-    let mut delimiters = Vec::new();
+    let mut lexer = Lexer::new(line);
     let mut cursor = 0;
     while cursor < line.len() {
         let (character, next) = next_char(line, cursor);
         if character.is_whitespace() {
+            if character == '\n' {
+                lexer.result.final_state.consume_operator(";");
+            }
             cursor = next;
-            continue;
-        }
-        if let Some(end) = operator_end(line, cursor) {
-            let span = result.spans.len();
-            result.spans.push(SyntaxSpan {
+        } else if let Some(end) = operator_end(line, cursor) {
+            lexer.operator(cursor, end);
+            cursor = end;
+        } else if character == '#' {
+            let end = line[cursor..]
+                .find('\n')
+                .map_or(line.len(), |end| cursor + end);
+            lexer.result.spans.push(SyntaxSpan {
                 start: cursor,
                 end,
-                kind: SyntaxKind::Operator,
-            });
-            track(&line[cursor..end], span, &mut delimiters, &mut result);
-            consume_operator(&line[cursor..end], &mut state);
-            cursor = end;
-            continue;
-        }
-        if character == '#' {
-            result.spans.push(SyntaxSpan {
-                start: cursor,
-                end: line.len(),
                 kind: SyntaxKind::Comment,
             });
-            break;
+            cursor = end;
+        } else {
+            cursor = lexer.word(cursor);
         }
-        let word_start = cursor;
-        let span_start = result.spans.len();
-        let (end, spans, pairs) = scan_word(line, cursor);
-        let offset = result.spans.len();
-        result.spans.extend(spans);
-        result
-            .quote_pairs
-            .extend(pairs.into_iter().map(|pair| QuotePair {
-                open: pair.open + offset,
-                close: pair.close.map(|index| index + offset),
-            }));
-        result.words.push(WordToken {
-            text: line[word_start..end].to_string(),
-            span_start,
-            span_end: result.spans.len(),
-            command_expected: state.command_expected,
-        });
-        consume_word(&line[word_start..end], &mut state);
-        cursor = end;
     }
-    result
+    lexer
+        .result
         .unmatched_delimiters
-        .extend(delimiters.into_iter().map(|(_, span)| span));
-    result.final_state = state;
-    result
+        .extend(lexer.delimiters.into_iter().map(|(_, span)| span));
+    lexer.result
 }
 
-pub(super) fn next_char(line: &str, cursor: usize) -> (char, usize) {
-    line[cursor..]
-        .chars()
-        .next()
-        .map_or(('\0', cursor), |character| {
-            (character, cursor + character.len_utf8())
-        })
+struct Lexer<'a> {
+    line: &'a str,
+    result: LexedLine,
+    delimiters: Vec<(char, usize)>,
 }
 
-pub(super) fn operator_end(line: &str, cursor: usize) -> Option<usize> {
-    [
-        ";;&", ">>", "<<", "&&", "||", ";;", ";&", "&>", ">|", "|", "&", ";", "(", ")", "[", "]",
-        "{", "}", "<", ">",
-    ]
-    .into_iter()
-    .find_map(|operator| {
-        line[cursor..]
-            .starts_with(operator)
-            .then(|| cursor + operator.len())
-    })
-}
-
-fn consume_word(word: &str, state: &mut ShellState) {
-    if state.redirect_expected {
-        state.redirect_expected = false;
-    } else if state.command_expected && !is_assignment(word) {
-        state.command_expected = false;
+impl<'a> Lexer<'a> {
+    fn new(line: &'a str) -> Self {
+        Self {
+            line,
+            result: LexedLine {
+                spans: Vec::new(),
+                words: Vec::new(),
+                quote_pairs: Vec::new(),
+                delimiter_pairs: Vec::new(),
+                unmatched_delimiters: Vec::new(),
+                final_state: ShellState::new(),
+                substitutions: Vec::new(),
+            },
+            delimiters: Vec::new(),
+        }
     }
-}
 
-fn consume_operator(operator: &str, state: &mut ShellState) {
-    state.redirect_expected = operator
-        .chars()
-        .any(|character| matches!(character, '<' | '>'));
-    if matches!(
-        operator,
-        "|" | "||" | "&&" | ";" | ";&" | ";;" | ";;&" | "&"
-    ) {
-        state.command_expected = true;
-    } else if !state.redirect_expected {
-        state.command_expected = false;
+    fn operator(&mut self, start: usize, end: usize) {
+        let span = self.result.spans.len();
+        let operator = &self.line[start..end];
+        let kind = if matches!(
+            operator,
+            "(" | ")" | "[" | "]" | "[[" | "]]" | "{" | "}" | ";" | ";;" | ";&" | ";;&"
+        ) {
+            SyntaxKind::Punctuation
+        } else {
+            SyntaxKind::Operator
+        };
+        self.result.spans.push(SyntaxSpan { start, end, kind });
+        if !self.result.final_state.in_case_pattern() || !matches!(operator, "(" | ")") {
+            track(operator, span, &mut self.delimiters, &mut self.result);
+        }
+        self.result.final_state.consume_operator(operator);
     }
-}
 
-pub(super) fn is_assignment(word: &str) -> bool {
-    let Some((name, _)) = word.split_once('=') else {
-        return false;
-    };
-    !name.is_empty()
-        && name.chars().enumerate().all(|(index, character)| {
-            character == '_'
-                || character.is_ascii_alphabetic() && index == 0
-                || character.is_ascii_digit() && index > 0
-        })
+    fn word(&mut self, start: usize) -> usize {
+        let word = scan_word(self.line, start);
+        let span_start = self.result.spans.len();
+        self.result.spans.extend(word.spans);
+        self.result
+            .quote_pairs
+            .extend(word.pairs.into_iter().map(|pair| QuotePair {
+                open: pair.open + span_start,
+                close: pair.close.map(|index| index + span_start),
+            }));
+        self.result
+            .delimiter_pairs
+            .extend(word.delimiters.into_iter().map(|pair| DelimiterPair {
+                open: pair.open + span_start,
+                close: pair.close.map(|index| index + span_start),
+            }));
+        self.result.substitutions.extend(word.substitutions);
+        self.result.words.push(WordToken {
+            text: self.line[start..word.end].to_string(),
+            span_start,
+            span_end: self.result.spans.len(),
+            role: self
+                .result
+                .final_state
+                .consume_word(&self.line[start..word.end]),
+        });
+        word.end
+    }
 }

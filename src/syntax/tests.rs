@@ -82,3 +82,99 @@ fn delimiters_mark_matching_pairs_and_unmatched_closers() {
             .any(|span| span.kind == SyntaxKind::Error)
     );
 }
+
+#[test]
+fn compound_commands_keep_keywords_assignments_and_commands_distinct() {
+    let line =
+        "while IFS= read -r app; do\n id=$(/bin/sh -c 'echo hi')\n printf '%s' \"$id\"\ndone";
+    let spans = super::highlight_without_cursor(line, Path::new("."));
+    for (token, kind) in [
+        ("while", SyntaxKind::Keyword),
+        ("IFS=", SyntaxKind::Argument),
+        ("read", SyntaxKind::RealCommand),
+        ("do", SyntaxKind::Keyword),
+        ("id=", SyntaxKind::Argument),
+        ("/bin/sh", SyntaxKind::RealCommand),
+        ("printf", SyntaxKind::RealCommand),
+        ("done", SyntaxKind::Keyword),
+    ] {
+        let start = line.find(token).unwrap(); // Every token is present in the literal fixture.
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.start == start && span.kind == kind),
+            "{token}: {spans:?}"
+        );
+    }
+}
+
+#[test]
+fn nested_substitutions_work_inside_quotes_without_reclassifying_outer_arguments() {
+    let line = "echo \"$(printf '%s' \"$(echo hi)\")\" done '$(fake)'";
+    let spans = super::highlight_without_cursor(line, Path::new("."));
+    let commands: Vec<_> = spans
+        .iter()
+        .filter(|span| span.kind == SyntaxKind::RealCommand)
+        .map(|span| &line[span.start..span.end])
+        .collect();
+    assert_eq!(commands, ["echo", "printf", "echo"]);
+    assert!(!spans.iter().any(|span| matches!(
+        span.kind,
+        SyntaxKind::FakeCommand | SyntaxKind::Keyword | SyntaxKind::Error
+    )));
+    assert!(spans.windows(2).all(|pair| pair[0].end <= pair[1].start));
+}
+
+#[test]
+fn substitutions_preserve_quoted_parentheses_and_mark_incomplete_pairs() {
+    for line in ["echo $(printf ')')", "echo $(echo hi # )\n)"] {
+        let spans = super::highlight_without_cursor(line, Path::new("."));
+        assert!(
+            !spans.iter().any(|span| span.kind == SyntaxKind::Error),
+            "{line}"
+        );
+    }
+    let line = "echo $(fake";
+    let spans = highlight_at(line, Path::new("."), line.len());
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.start == 6 && span.kind == SyntaxKind::Error)
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.start == 7 && span.kind == SyntaxKind::FakeCommand)
+    );
+}
+
+#[test]
+fn newlines_end_comments_and_commands_but_escaped_newlines_do_not() {
+    let line = "echo hi # comment\nprintf \\\n --help";
+    let spans = super::highlight_without_cursor(line, Path::new("."));
+    assert!(spans.iter().any(
+        |span| &line[span.start..span.end] == "printf" && span.kind == SyntaxKind::RealCommand
+    ));
+    assert!(
+        spans
+            .iter()
+            .any(|span| &line[span.start..span.end] == "--help" && span.kind == SyntaxKind::Flag)
+    );
+}
+
+#[test]
+fn loop_headers_and_case_patterns_do_not_become_unknown_commands_or_unmatched_pairs() {
+    let line = "for app in one two; do case $app in (one|two) echo hi;; *) printf bye;; esac; done";
+    let spans = super::highlight_without_cursor(line, Path::new("."));
+    assert!(
+        !spans
+            .iter()
+            .any(|span| matches!(span.kind, SyntaxKind::FakeCommand | SyntaxKind::Error))
+    );
+    let keywords: Vec<_> = spans
+        .iter()
+        .filter(|span| span.kind == SyntaxKind::Keyword)
+        .map(|span| &line[span.start..span.end])
+        .collect();
+    assert_eq!(keywords, ["for", "in", "do", "case", "in", "esac", "done"]);
+}

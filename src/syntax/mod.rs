@@ -3,8 +3,12 @@ mod delimiters;
 mod highlight;
 mod lex;
 mod scan;
+mod shell_state;
+#[cfg(test)]
+mod style_tests;
 #[cfg(test)]
 mod tests;
+mod tokens;
 
 use std::path::Path;
 
@@ -14,10 +18,12 @@ use sopra_shell_context::command_available;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SyntaxKind {
+    Keyword,
     RealCommand,
     FakeCommand,
     Flag,
     Operator,
+    Punctuation,
     Argument,
     String,
     Number,
@@ -38,22 +44,25 @@ pub(crate) struct SyntaxSpan {
 
 impl SyntaxSpan {
     pub(crate) fn style(self) -> Style {
-        let (color, modifier) = match self.kind {
-            SyntaxKind::RealCommand => (Color::Green, Modifier::BOLD),
-            SyntaxKind::FakeCommand => (Color::Red, Modifier::BOLD),
-            SyntaxKind::Flag => (Color::Yellow, Modifier::empty()),
-            SyntaxKind::Operator => (Color::Cyan, Modifier::BOLD),
-            SyntaxKind::Argument => (Color::Reset, Modifier::empty()),
-            SyntaxKind::String => (Color::LightMagenta, Modifier::empty()),
-            SyntaxKind::Number => (Color::LightBlue, Modifier::empty()),
-            SyntaxKind::Variable => (Color::LightCyan, Modifier::empty()),
-            SyntaxKind::Comment => (Color::DarkGray, Modifier::DIM),
-            SyntaxKind::Quote => (Color::LightMagenta, Modifier::empty()),
-            SyntaxKind::MatchedQuote => (Color::LightYellow, Modifier::UNDERLINED),
-            SyntaxKind::Error => (Color::LightRed, Modifier::UNDERLINED),
-            SyntaxKind::Escape => (Color::Cyan, Modifier::empty()),
+        let color = match self.kind {
+            SyntaxKind::Keyword | SyntaxKind::Operator => Color::Yellow,
+            SyntaxKind::Flag => Color::Blue,
+            SyntaxKind::RealCommand => Color::Green,
+            SyntaxKind::String | SyntaxKind::Quote | SyntaxKind::Number => Color::Magenta,
+            SyntaxKind::FakeCommand | SyntaxKind::Error => Color::Red,
+            SyntaxKind::Variable => Color::Cyan,
+            SyntaxKind::Comment => Color::DarkGray,
+            SyntaxKind::Punctuation
+            | SyntaxKind::Argument
+            | SyntaxKind::MatchedQuote
+            | SyntaxKind::Escape => Color::Reset,
         };
-        Style::default().fg(color).add_modifier(modifier)
+        let style = Style::default().fg(color);
+        if self.kind == SyntaxKind::MatchedQuote {
+            style.add_modifier(Modifier::UNDERLINED)
+        } else {
+            style
+        }
     }
 }
 
