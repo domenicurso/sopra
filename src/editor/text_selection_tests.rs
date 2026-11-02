@@ -116,3 +116,54 @@ fn multiline_caret_and_mouse_positions_use_the_continuation_prefix() {
     assert!(editor.handle_key(Action::Down).is_none());
     assert_eq!(editor.cursor, end);
 }
+
+#[test]
+fn mouse_selection_dismisses_completion_until_typing_or_pasting_replaces_it() {
+    use crate::input::{CursorPosition, MouseEvent};
+    use sopra_completion::{CompletionItem, CompletionKind};
+    for paste in [false, true] {
+        let mut editor = test_editor();
+        editor.completions.set_suspended(false);
+        editor.show_overlay();
+        let items = || {
+            vec![CompletionItem::new(
+                "worldwide",
+                "",
+                "worldwide",
+                CompletionKind::Generic,
+            )]
+        };
+        editor.set_completion_source_for_test(items());
+        assert!(editor.arm_first_completion());
+        for (kind, column) in [
+            (MouseKind::Press, 8),
+            (MouseKind::Drag, 13),
+            (MouseKind::Release, 13),
+        ] {
+            editor.handle_mouse(
+                MouseEvent {
+                    kind,
+                    position: CursorPosition { row: 3, column },
+                },
+                Some(3),
+            );
+            assert!(!editor.overlay_visible());
+            assert_eq!(editor.selected_index(), None);
+        }
+        assert_eq!(editor.text_selection(), Some(6..11));
+        editor.set_completion_source_for_test(items());
+        editor.request_completion();
+        assert!(!editor.overlay_visible());
+        assert_eq!(editor.selected_index(), None);
+        editor.show_overlay();
+        assert!(!editor.overlay_visible());
+        if paste {
+            editor.insert_paste("X");
+        } else {
+            editor.handle_key(Action::Character('X'));
+        }
+        assert_eq!(editor.buffer(), "hello X");
+        assert_eq!(editor.text_selection(), None);
+        assert!(editor.overlay_visible());
+    }
+}

@@ -8,6 +8,8 @@ mod overlay_items;
 mod overlay_label;
 mod overlay_layout;
 mod overlay_scrollbar;
+#[cfg(test)]
+mod overlay_tests;
 mod transient;
 
 #[cfg(test)]

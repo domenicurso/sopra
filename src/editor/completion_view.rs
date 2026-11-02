@@ -12,7 +12,10 @@ impl EditorState {
     }
 
     pub(crate) fn overlay_visible(&self) -> bool {
-        self.completions.visible && !self.widgets.active()
+        self.completions.visible
+            && !self.widgets.active()
+            && !self.text_selection.dragging()
+            && self.text_selection.range().is_none()
     }
 
     pub(crate) fn completion_query_for(&self, item: &CompletionItem) -> String {

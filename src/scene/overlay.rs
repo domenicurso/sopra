@@ -1,6 +1,7 @@
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
+    widgets::{Clear, Widget},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -31,6 +32,7 @@ impl Element for OverlayElement {
         if self.area.width < 8 || self.area.height < 3 {
             return;
         }
+        Clear.render(self.area, &mut canvas.buffer);
         let border = Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::DIM);
@@ -166,27 +168,4 @@ pub(super) fn overlay_width(
     desired_width
         .min(MAX_OVERLAY_WIDTH)
         .min(usize::from(terminal_width.saturating_sub(2))) as u16
-}
-
-#[cfg(test)]
-mod tests {
-    use super::overlay_width;
-    use sopra_completion::{CompletionItem, CompletionKind};
-
-    #[test]
-    fn width_follows_content_until_the_terminal_edge_or_cap() {
-        let items = vec![CompletionItem::new(
-            "a-very-long-command-name",
-            "a description that needs room",
-            "a-very-long-command-name",
-            CompletionKind::Generic,
-        )];
-        assert_eq!(overlay_width(&items, "", "", 120), 59);
-        assert_eq!(overlay_width(&items, "", "", 32), 30);
-        let long_hint = "x".repeat(200);
-        assert_eq!(overlay_width(&items, &long_hint, "", 240), 100);
-        let mut long_items = items;
-        long_items[0].description = Some("x".repeat(200));
-        assert_eq!(overlay_width(&long_items, "", "", 240), 100);
-    }
 }

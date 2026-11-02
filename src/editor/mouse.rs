@@ -29,6 +29,7 @@ impl EditorState {
             .mouse(event.kind, offset, &self.buffer, Instant::now());
         if event.kind != MouseKind::Release {
             self.cursor = cursor;
+            self.hide_overlay();
             self.disarm_completion();
             self.note_activity();
             self.request_completion();

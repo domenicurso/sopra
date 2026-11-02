@@ -13,6 +13,11 @@ impl EditorState {
         } else {
             Vec::new()
         };
+        if self.text_selection.dragging() || self.text_selection.range().is_some() {
+            self.hide_overlay();
+            self.disarm_completion();
+            return;
+        }
         if self.buffer.trim().is_empty() || self.completions.suspended() {
             self.clear_completion_state();
             return;

@@ -10,6 +10,7 @@ impl EditorState {
         self.cursor += text.len();
         self.text_selection.clear();
         self.resume_completion();
+        self.show_overlay();
         self.note_activity();
         self.request_completion();
     }
