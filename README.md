@@ -170,26 +170,26 @@ The completion parser's ownership, source flow, and command-agnostic design rule
 
 ## Development
 
-The checkout launcher starts a development Zsh session:
+Developer commands use a discovered checkout or a saved link:
 
 ```sh
-git clone https://github.com/domenicurso/sopra.git
-cd sopra
-./scripts/start.sh
+sopra dev link /path/to/sopra
+sopra dev check
+sopra dev test syntax:: -- --nocapture
+sopra dev shell
 ```
 
-Run the same checks used by CI from the repository root:
+The link is saved beside config.toml in `dev-checkout` and affects developer commands only. Checkout selection prefers the link, then `SOPRA_REPO_ROOT`, then ancestors of the current directory and executable. `build` builds the debug worker; `check` runs formatting and Clippy; `test` runs workspace tests and forwards Cargo arguments; `shell` builds and starts an isolated Zsh. Use `sopra dev path` to inspect the target and `sopra dev unlink` to remove the link. For the first build, use `./scripts/start.sh`.
+
+Inspect syntax without executing it, or inspect discovered completion graphs:
 
 ```sh
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-for file in zsh/*.zsh; do zsh -n "$file"; done
-bash -n scripts/*.sh
-python3 scripts/terminal-harness.py
+sopra debug syntax 'echo "$HOME" | cat'
+sopra debug completions --root npm
+sopra debug completions --chunk npm access
 ```
 
-For multi-turn terminal behavior, use the separate persistent PTY and virtual-screen tool described in [docs/terminal-sessions.md](docs/terminal-sessions.md). It lets an agent send named keystrokes, read rendered screen snapshots, resize the session, and preserve shell state across turns without changing the CI harness.
+Run shell syntax checks and `python3 scripts/terminal-harness.py` alongside `sopra dev check` and `sopra dev test` before opening a pull request. See [terminal sessions](docs/terminal-sessions.md) for persistent interactive testing and `sopra dev --help` / `sopra debug --help` for command details.
 
 ## Contributing
 

@@ -19,7 +19,7 @@ When a tool exposes an unusual format, add a generic rule for the format invaria
 
 Help, man pages, and future first-party completion sources are evidence for the same graph rather than competing backends. Each source should retain its provenance while parsing, so a stronger source can fill a missing description or nested node without erasing useful data from another source. The current cache is keyed by executable identity, requested command path, working directory, and executable metadata; source fingerprints and dynamic providers are extension points for the next aggregation pass, and dynamic results such as repository refs must remain runtime candidates rather than static graph entries.
 
-The graph is one logical object even though its source fragments are cached by path. A root request stores the command and its immediate children, while a request for `npm access` merges that child fragment into the existing root graph instead of creating a separate graph. `completion-graph --root npm` prints the first chunk, `completion-graph --chunk npm access` prints a nested chunk, and `completion-graph npm` performs the explicit full recursive audit.
+The graph is one logical object even though its source fragments are cached by path. A root request stores the command and its immediate children, while a request for `npm access` merges that child fragment into the existing root graph instead of creating a separate graph. `sopra debug completions --root npm` prints the first chunk, `sopra debug completions --chunk npm access` prints a nested chunk, and `sopra debug completions npm` performs the explicit full recursive audit.
 
 ## Validation
 

@@ -68,6 +68,11 @@ close during process replacement and their state resets. Shell history and comma
 execution remain owned by Zsh. Widget inspection uses the catalog plus retained
 instances, including errors from sources removed after loading.
 
+Developer commands run outside the worker control protocol. `src/cli/dev_checkout`
+owns the saved checkout path beside configuration and validates it before running
+checkout tools. Linking changes that development target without replacing the
+shell's worker. `sopra debug` reads syntax and completion data through their owning
+libraries; completion inspection can run the same help probes as graph discovery.
 
 The terminal owns scrollback and search. Sopra paints the active command on the
 primary screen and never hosts or repaints a virtual terminal. Mouse reporting
