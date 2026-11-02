@@ -1,7 +1,12 @@
 mod arguments;
 mod config;
+mod debug;
+mod debug_graph;
+mod dev;
+mod dev_checkout;
 mod doctor;
 mod help;
+mod help_pages;
 mod output;
 mod toml;
 mod widgets;
@@ -11,7 +16,9 @@ use std::error::Error;
 
 pub(crate) fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn Error>> {
     match arguments::parse(&arguments)? {
-        Command::Help => help::print()?,
+        Command::Help => help::print(&help_pages::ROOT)?,
+        Command::Dev(command) => dev::run(command)?,
+        Command::Debug(command) => debug::run(command)?,
         Command::Version => println!("sopra {}", env!("CARGO_PKG_VERSION")),
         Command::Refresh => print!("{}", Client::current()?.request(control::Command::Refresh)?),
         Command::Restart => {
