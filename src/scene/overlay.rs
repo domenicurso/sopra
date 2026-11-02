@@ -12,6 +12,8 @@ use super::{
     overlay_items::item_detail,
 };
 
+const MAX_OVERLAY_WIDTH: usize = 100;
+
 pub(super) struct OverlayElement {
     pub(super) area: Rect,
     pub(super) items: Vec<CompletionItem>,
@@ -161,7 +163,9 @@ pub(super) fn overlay_width(
         .max()
         .unwrap_or(1)
         .saturating_add(4);
-    desired_width.min(usize::from(terminal_width.saturating_sub(2))) as u16
+    desired_width
+        .min(MAX_OVERLAY_WIDTH)
+        .min(usize::from(terminal_width.saturating_sub(2))) as u16
 }
 
 #[cfg(test)]
@@ -170,7 +174,7 @@ mod tests {
     use sopra_completion::{CompletionItem, CompletionKind};
 
     #[test]
-    fn width_follows_content_until_the_terminal_edge() {
+    fn width_follows_content_until_the_terminal_edge_or_cap() {
         let items = vec![CompletionItem::new(
             "a-very-long-command-name",
             "a description that needs room",
@@ -179,5 +183,10 @@ mod tests {
         )];
         assert_eq!(overlay_width(&items, "", "", 120), 59);
         assert_eq!(overlay_width(&items, "", "", 32), 30);
+        let long_hint = "x".repeat(200);
+        assert_eq!(overlay_width(&items, &long_hint, "", 240), 100);
+        let mut long_items = items;
+        long_items[0].description = Some("x".repeat(200));
+        assert_eq!(overlay_width(&long_items, "", "", 240), 100);
     }
 }
