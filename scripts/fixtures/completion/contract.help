@@ -1,0 +1,14 @@
+Usage: contract-cli [--json | --plain] [--tag <tag>]... [<file>...]
+
+Options:
+  --json                      JSON output
+  --plain                     Plain output
+  -m, --mode <fast|slow>       Choose execution mode
+  --output=<file>             Write the output file
+  --color[=always|never]       Control color optionally
+  --help[:compat]             Show optional compatibility help
+  --tag <tag>                 Add a tag multiple times
+  --directory <directory>     Choose a directory
+
+Commands:
+  widgets list                List installed widgets

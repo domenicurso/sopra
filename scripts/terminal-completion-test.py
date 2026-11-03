@@ -33,7 +33,7 @@ case "$1" in
   --help|-h)
     printf 'Usage: demo-cli <command>\\n\\nCommands:\\n  group      Manage fixtures\\n  widgets list  List fixtures\\n  {action}   Current build action\\n  here       Directory %s\\n' "${{PWD##*/}}" ;;
   group)
-    printf 'Usage: demo-cli group <command>\\n\\nCommands:\\n  build  Build fixture\\n  test   Test fixture\\n\\nOptions:\\n  --mode <fast|slow>  Choose mode\\n' ;;
+    printf 'Usage: demo-cli group <command>\\n\\nCommands:\\n  build  Build fixture\\n  test   Test fixture\\n\\nOptions:\\n  --mode <fast|slow>  Choose mode\\n  --tag <tag>  Choose a live value\\n' ;;
   *) printf 'demo-cli: unknown command\\n' >&2; exit 1 ;;
 esac
 ''')
@@ -61,6 +61,9 @@ def nested_commands(terminal: TerminalSession) -> None:
     wait_screen(terminal, "Build fixture")
     screen = show(terminal, "demo-cli group --mode ", "slow")
     assert "fast" in screen, screen
+    show(terminal, "demo-cli group --tag sp", "space value")
+    terminal.key("TAB")
+    wait_screen(terminal, "$ demo-cli group --tag space\\ value")
     show(terminal, "demo-cli wid", "widgets list")
     terminal.key("TAB")
     wait_screen(terminal, "$ demo-cli widgets list")
@@ -92,6 +95,8 @@ def main() -> None:
         fixture(executable, "original-action")
         config = directory / "config/sopra"
         config.mkdir(parents=True)
+        (directory / "values.json").write_text('{"values":{"space value":"fixture","second":"fixture"}}')
+        (config / "completions.toml").write_text('[[provider]]\nid="terminal-live"\ncommand="demo-cli"\npath=["group"]\noption="--tag"\njson_file="values.json"\npointer="/values"\nroot_marker="values.json"\nwatch=["values.json"]\n')
         (config / "config.toml").write_text('[prompt]\nleft="$ "\nright=""\n')
         shell = directory / "shell"
         shell.mkdir()
@@ -100,7 +105,7 @@ def main() -> None:
                    ZDOTDIR=str(shell), SOPRA_REPO_ROOT=str(ROOT),
                    SOPRA_BIN=str(ROOT / "target/debug/sopra-worker"),
                    PATH=str(tools) + os.pathsep + os.environ.get("PATH", ""))
-        with TerminalSession(("zsh", "-di"), cwd=str(ROOT),
+        with TerminalSession(("zsh", "-di"), cwd=str(directory),
                              rows=32, columns=140, env=env) as terminal:
             terminal.wait_for("$ ", timeout=30)
             own_commands(terminal)

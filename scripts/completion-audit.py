@@ -2,6 +2,7 @@
 """Compare installed CLI help inventories with generated graphs; save evidence outside the repo."""
 from __future__ import annotations
 import argparse
+import json
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import subprocess
 import tempfile
 from completion_audit_cases import CASES, Case
 from completion_audit_sources import verify
+from completion_audit_semantics import verify_fields
 
 ROOT = Path(__file__).resolve().parent.parent
 BINARY = ROOT / "target/debug/sopra-worker"
@@ -40,8 +42,11 @@ def audit(case: Case, output: Path) -> tuple[str, str]:
         graph = capture(command, directory)
         (directory / "graph.txt").write_text(graph)
         verify(source, graph, case)
+        structured = capture([str(BINARY), "debug", "graph", "json", mode, executable, *case.path], directory)
+        (directory / "graph.json").write_text(structured)
+        verify_fields(source, json.loads(structured), case)
         assert capture(command, directory) == graph, "warm cache changed the graph"
-    except (AssertionError, OSError, subprocess.TimeoutExpired) as error:
+    except (AssertionError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         return label, f"FAIL {error}"
     return label, "PASS"
 
