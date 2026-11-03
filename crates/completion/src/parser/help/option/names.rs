@@ -20,5 +20,5 @@ pub(super) fn valid(name: &str) -> bool {
         || (count > 1
             && short
                 .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "_.-/".contains(character)))
+                .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character)))
 }

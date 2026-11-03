@@ -1,6 +1,30 @@
 use super::super::parse;
 
 #[test]
+fn slash_separated_option_references_remain_description_text() {
+    let graph = parse(
+        "OPTIONS:\n    -C NUM, --context=NUM\n        Show lines around each match.\n        -B/--before-context, -A/--after-context, -C/--context or --passthru\n        override this flag.\n    --passthru\n        Print all lines.\n",
+        "tool",
+    );
+    assert_eq!(graph.root.options.len(), 2);
+    assert!(
+        graph
+            .root
+            .options
+            .iter()
+            .all(|option| { option.names.iter().all(|name| !name.contains('/')) })
+    );
+    assert!(
+        graph.root.options[0]
+            .description
+            .as_deref()
+            .is_some_and(|text| {
+                text.contains("-B/--before-context") && text.contains("override this flag")
+            })
+    );
+}
+
+#[test]
 fn colon_suffixed_commands_and_uppercase_usage_are_structural() {
     let graph = parse(
         "Work with repositories\n\nUSAGE\n  gh <command> [flags]\n\nCORE COMMANDS\n  repo:  Manage repositories\n  pr:    Manage pull requests\n\nHELP TOPICS\n  environment: Learn about environment variables\n\nFLAGS\n  --help  Show help\n",

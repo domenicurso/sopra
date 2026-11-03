@@ -12,8 +12,11 @@ def verify_fields(source: str, graph: dict, case: Case) -> None:
         parts = re.split(r"\s{2,}", line.strip(), maxsplit=1)
         declaration = parts[0]
         names = re.findall(r"(?<![\w-])--?[A-Za-z?][\w@.-]*", declaration)
-        # Help rows can declare independent modes separated by `|`, rather than aliases.
-        if len(names) < 2 or "," not in declaration or "|" in declaration or "=" in declaration or ": " in declaration:
+        # Prose references and mode alternatives do not establish alias relationships.
+        if (
+            len(names) < 2 or "," not in declaration
+            or any(separator in declaration for separator in ("|", "=", ": ", "/", " or ", " and "))
+        ):
             continue
         matching = [option for option in options if any(name in option["names"] for name in names)]
         if not matching or not all(any(name in option["names"] for option in matching) for name in names):
