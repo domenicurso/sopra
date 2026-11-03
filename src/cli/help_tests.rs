@@ -3,7 +3,12 @@ use crate::cli::help_pages;
 
 #[test]
 fn help_pages_wrap_without_losing_commands_or_coloring_redirected_output() {
-    for page in [&help_pages::ROOT, &help_pages::DEV, &help_pages::DEBUG] {
+    for page in [
+        &help_pages::ROOT,
+        &help_pages::DEV,
+        &help_pages::DEBUG,
+        &help_pages::GRAPH,
+    ] {
         for width in [20, 40, 63, 64, 80, 120] {
             let help = render(
                 &Output {
@@ -18,7 +23,13 @@ fn help_pages_wrap_without_losing_commands_or_coloring_redirected_output() {
                 "{width}: {help}"
             );
             for (name, _) in page.commands {
-                assert!(help.contains(name), "{name}: {help}");
+                assert!(
+                    help.split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .contains(name),
+                    "{name}: {help}"
+                );
             }
             assert!(!help.contains('\x1b'));
         }

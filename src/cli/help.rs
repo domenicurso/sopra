@@ -15,9 +15,28 @@ fn render(output: &Output, page: &Page) -> String {
     }
     result.push('\n');
     result.push_str(&format!("{}\n", output.style("Commands", "1")));
-    for (name, description) in page.commands {
+    result.push_str(&render_commands(output, page.commands));
+    result.push('\n');
+    result.push_str("Notes:\n");
+    for note in page.notes {
+        for line in wrap(note, output.width.saturating_sub(1)) {
+            result.push_str(&output.style(&line, "2"));
+            result.push('\n');
+        }
+    }
+    result
+}
+
+fn render_commands(output: &Output, commands: &[(&str, &str)]) -> String {
+    let mut result = String::new();
+    for (name, description) in commands {
         if output.width >= 64 {
-            let indent = 18;
+            let indent = commands
+                .iter()
+                .map(|(name, _)| name.len() + 4)
+                .max()
+                .unwrap_or(18)
+                .max(18);
             let lines = wrap(description, output.width.saturating_sub(indent + 1));
             for (index, line) in lines.iter().enumerate() {
                 let label = if index == 0 { *name } else { "" };
@@ -35,13 +54,6 @@ fn render(output: &Output, page: &Page) -> String {
             for line in wrap(description, output.width.saturating_sub(5)) {
                 result.push_str(&format!("    {}\n", output.style(&line, "2")));
             }
-            result.push('\n');
-        }
-    }
-    result.push('\n');
-    for note in page.notes {
-        for line in wrap(note, output.width.saturating_sub(1)) {
-            result.push_str(&output.style(&line, "2"));
             result.push('\n');
         }
     }

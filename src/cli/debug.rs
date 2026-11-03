@@ -5,11 +5,15 @@ use super::{debug_graph::Graph, debug_syntax, help, help_pages, output};
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Command {
     Help,
+    Graph(super::debug_graph_commands::Command),
     Syntax(String),
     Completions(Graph),
 }
 
 pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
+    if arguments.first().is_some_and(|name| name == "graph") {
+        return super::debug_graph_commands::parse(&arguments[1..]).map(Command::Graph);
+    }
     let Some((name, rest)) = arguments.split_first() else {
         return Ok(Command::Help);
     };
@@ -35,6 +39,7 @@ pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
 
 pub(super) fn run(command: Command) -> io::Result<()> {
     match command {
+        Command::Graph(command) => super::debug_graph_commands::run(command),
         Command::Help => help::print(&help_pages::DEBUG),
         Command::Syntax(source) => output::print(&debug_syntax::render(
             &source,

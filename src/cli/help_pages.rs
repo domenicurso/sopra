@@ -1,10 +1,10 @@
-pub(super) struct Page {
-    pub(super) usage: &'static str,
-    pub(super) commands: &'static [(&'static str, &'static str)],
-    pub(super) notes: &'static [&'static str],
+pub(super) struct Page<'a> {
+    pub(super) usage: &'a str,
+    pub(super) commands: &'a [(&'a str, &'a str)],
+    pub(super) notes: &'a [&'a str],
 }
 
-pub(super) const ROOT: Page = Page {
+pub(super) const ROOT: Page<'static> = Page {
     usage: "Usage: sopra <command>",
     commands: ROOT_COMMANDS,
     notes: &[
@@ -52,7 +52,7 @@ const ROOT_COMMANDS: &[(&str, &str)] = &[
     ("--help", "Show this help"),
 ];
 
-pub(super) const DEV: Page = Page {
+pub(super) const DEV: Page<'static> = Page {
     usage: "Usage: sopra dev <command>",
     commands: &[
         ("build", "Build the checkout's debug worker"),
@@ -69,7 +69,7 @@ pub(super) const DEV: Page = Page {
             "Build and launch the checkout's isolated development Zsh",
         ),
         (
-            "link <path>",
+            "link <directory>",
             "Save the checkout used by developer commands",
         ),
         ("unlink", "Remove the saved developer checkout link"),
@@ -81,7 +81,7 @@ pub(super) const DEV: Page = Page {
     ],
 };
 
-pub(super) const DEBUG: Page = Page {
+pub(super) const DEBUG: Page<'static> = Page {
     usage: "Usage: sopra debug <command>",
     commands: &[
         (
@@ -89,13 +89,43 @@ pub(super) const DEBUG: Page = Page {
             "Show byte ranges, syntax categories, terminal colors, and escaped token text",
         ),
         (
-            "completions",
-            "Dump a command's completion graph: [--root|--chunk] <command> [path ...] [--cwd <dir>]",
+            "graph <command>",
+            "Generate graphs, parse captured sources, and inspect discovery caches",
+        ),
+        (
+            "completions [options] <command> [path ...]",
+            "Dump a command's completion graph",
         ),
     ],
     notes: &[
         r#"Quote shell text to prevent your shell from expanding or executing it: sopra debug syntax 'echo "$HOME" | cat'"#,
         "Examples: sopra debug completions --root npm; sopra debug completions --chunk npm access",
         "Without --root or --chunk, completions performs the full recursive graph inspection and may run help probes.",
+    ],
+};
+
+pub(super) const GRAPH: Page<'static> = Page {
+    usage: "Usage: sopra debug graph <command>",
+    commands: &[
+        (
+            "generate [options] <command> [path ...]",
+            "Generate a completion graph from live or cached sources",
+        ),
+        (
+            "sources [options] <command> [path ...]",
+            "Print the help and manual evidence used for discovery",
+        ),
+        (
+            "cache [options] <command> [path ...]",
+            "Inspect the binary bundle, identity, age, and source sizes",
+        ),
+        (
+            "parse [--man] <command> <file> [path ...]",
+            "Parse captured help or manual text without running the command",
+        ),
+    ],
+    notes: &[
+        "Use --root for immediate children or --chunk with a nested command path. Generation otherwise inspects the full graph.",
+        "Use --fresh to collect new sources. Parsing accepts - as the input file for stdin.",
     ],
 };

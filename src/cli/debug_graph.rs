@@ -10,6 +10,7 @@ enum Mode {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Graph {
     mode: Mode,
+    refresh: bool,
     command: String,
     path: Vec<String>,
     cwd: PathBuf,
@@ -18,6 +19,7 @@ pub(super) struct Graph {
 impl Graph {
     pub(super) fn parse(arguments: &[OsString]) -> io::Result<Self> {
         let mut mode = None;
+        let mut refresh = false;
         let mut cwd = None;
         let mut words = Vec::new();
         let mut arguments = arguments.iter();
@@ -30,6 +32,7 @@ impl Graph {
                         Mode::Chunk
                     });
                 }
+                Some("--fresh") if !refresh => refresh = true,
                 Some("--cwd") if cwd.is_none() => {
                     cwd =
                         Some(PathBuf::from(arguments.next().ok_or_else(|| {
@@ -53,21 +56,31 @@ impl Graph {
         let command = words.remove(0);
         Ok(Self {
             mode,
+            refresh,
             command,
             path: words,
             cwd: cwd.map_or_else(env::current_dir, Ok)?,
         })
     }
 
-    pub(super) fn run(&self) -> io::Result<()> {
-        let graph = match self.mode {
-            Mode::Full => sopra_completion::dump_command_graph(&self.command, &self.cwd),
-            Mode::Root => sopra_completion::dump_command_root(&self.command, &self.cwd),
-            Mode::Chunk => {
-                sopra_completion::dump_command_chunk(&self.command, &self.path, &self.cwd)
-            }
+    pub(super) fn query(&self) -> sopra_completion::inspection::GraphQuery<'_> {
+        use sopra_completion::inspection::{GraphMode, GraphQuery};
+        GraphQuery {
+            command: &self.command,
+            path: &self.path,
+            cwd: &self.cwd,
+            refresh: self.refresh,
+            mode: match self.mode {
+                Mode::Full => GraphMode::Recursive,
+                Mode::Root => GraphMode::Root,
+                Mode::Chunk => GraphMode::Chunk,
+            },
         }
-        .map_err(io::Error::other)?;
+    }
+
+    pub(super) fn run(&self) -> io::Result<()> {
+        let graph =
+            sopra_completion::inspection::generate(&self.query()).map_err(io::Error::other)?;
         super::output::print(&graph)
     }
 }
