@@ -55,7 +55,7 @@ Widgets return `Text`: plain text parts with optional colorless `Emphasis`.
 `Emphasis::Bold` emphasizes text and `Emphasis::Selected` reverses foreground and
 background for selection. Every part inherits the template's color. Output is
 never interpreted as template markup, and an empty result disappears along with
-its connecting separators. See [configuration](../README.md#configuration).
+its connecting separators. See [configuration](configuration.md).
 
 ## Context, state, and refresh
 
