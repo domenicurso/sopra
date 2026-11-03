@@ -96,15 +96,6 @@ TOML. Redirected output stays plain; `NO_COLOR` also disables terminal styling.
 Configure Sopra in `~/.config/sopra/config.toml` (or `$XDG_CONFIG_HOME/sopra/config.toml`). Edit this file to change the prompt and editor options.
 
 ```toml
-[prompt]
-left = "[red]$user[/red] [dim]in[/dim] [bold blue]$path[/bold blue]\n[dim]$[/dim] "
-right = "[red]$status[/red] · [dim]$duration[/dim] · [cyan]$git[/cyan]"
-transient = "[dim]$[/dim] "
-secondary = "[dim]>[/dim] "
-
-[widgets.clock]
-format = "%H:%M:%S"
-
 [editor]
 cursor_animation = true
 syntax_highlighting = true
@@ -112,6 +103,15 @@ autosuggestions = true
 
 [completion]
 enabled = true
+
+[prompt]
+left = "[red]$user[/red] [dim]in[/dim] [bold blue]$path[/bold blue]\n[dim]$[/dim] "
+right = "[red]$status[/red]  [dim]$duration[/dim] [cyan]$git[/cyan]"
+transient = "[dim]$[/dim] "
+secondary = "[dim]>[/dim] "
+
+[widgets.clock]
+format = "%H:%M:%S"
 ```
 
 `config.toml` is the only configuration file. Run `sopra refresh` after editing it,
