@@ -64,6 +64,8 @@ Sopra uses the terminal’s primary screen, so Ghostty retains native scrollback
 | `sopra config show` | Print the running session's effective config, including defaults; outside a session, read it from disk. |
 | `sopra widgets list` | List built-in and custom widget sources, whether they are loaded, and runtime errors. |
 | `sopra doctor` | Check worker connectivity, Zsh integration, config, and the Rust compiler. |
+| `sopra cache status` | Show completion source and graph cache locations, file counts, and byte sizes. |
+| `sopra cache clear [command]` | Delete saved completion data for all commands or one executable name, then reset the current worker's completion memory. |
 
 Refresh validates before changing the session. Invalid config leaves the working
 settings in place; custom widgets compile asynchronously and report their own
@@ -77,6 +79,14 @@ an editing worker. Config checks, file editing, and widget discovery also work
 without an active session. The installer provides `sopra` in the installation
 prefix's `bin` directory, and the Zsh integration exposes the same CLI through a
 shell function.
+
+Cache clearing cancels and joins discovery before deleting its files, so an old
+probe cannot immediately restore them. A command scope includes its nested paths
+and directory contexts; other commands keep their saved data. All completion
+memory in the current worker resets, while widgets and history stay intact.
+Other shells retain their in-memory data. Outside a Sopra session, clearing only
+affects disk data. After rebuilding the CLI, run `sopra restart` once to load new
+worker controls.
 
 Help and widget listings adapt to the terminal width, and `config show` highlights
 TOML. Redirected output stays plain; `NO_COLOR` also disables terminal styling.

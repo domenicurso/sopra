@@ -19,6 +19,7 @@ fn urgent_work_preempts_active_background_and_runs_before_queued_prefetch() {
     let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
     let dispatcher = Dispatcher {
         shared: shared.clone(),
+        thread: None,
     };
     assert!(dispatcher.send(request("background"), true));
     let active = next(&shared).expect("background starts");
@@ -37,6 +38,7 @@ fn cancellation_and_queue_limit_bound_obsolete_work() {
     let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
     let dispatcher = Dispatcher {
         shared: shared.clone(),
+        thread: None,
     };
     for index in 0..QUEUED_LIMIT {
         assert!(dispatcher.send(request(&index.to_string()), true));

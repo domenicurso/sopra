@@ -10,6 +10,7 @@ use std::{
 
 pub(crate) struct Worker {
     shared: Arc<(Mutex<State>, Condvar)>,
+    thread: Option<std::thread::JoinHandle<()>>,
     pub(crate) responses: Receiver<Response>,
 }
 #[derive(Default)]
@@ -30,11 +31,15 @@ impl Worker {
         let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let (sender, responses) = mpsc::channel();
         let thread_shared = shared.clone();
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("completion-values".into())
             .spawn(move || run(thread_shared, sender))
             .ok()?;
-        Some(Self { shared, responses })
+        Some(Self {
+            shared,
+            responses,
+            thread: Some(thread),
+        })
     }
     pub(crate) fn submit(&self, query: Query) {
         let (lock, ready) = &*self.shared;
@@ -63,6 +68,9 @@ impl Drop for Worker {
         if let Ok(mut state) = lock.lock() {
             state.closed = true;
             ready.notify_one();
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }

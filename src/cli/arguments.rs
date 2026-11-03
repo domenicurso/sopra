@@ -2,6 +2,7 @@ use std::{ffi::OsString, io};
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Command {
     Help,
+    Cache(super::cache::Command),
     Dev(super::dev::Command),
     Debug(super::debug::Command),
     Version,
@@ -25,6 +26,9 @@ pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
     }
     if arguments.first().is_some_and(|name| name == "debug") {
         return super::debug::parse(&arguments[1..]).map(Command::Debug);
+    }
+    if arguments.first().is_some_and(|name| name == "cache") {
+        return super::cache::parse(&arguments[1..]).map(Command::Cache);
     }
     let args = arguments
         .iter()

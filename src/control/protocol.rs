@@ -1,22 +1,27 @@
 use std::io::{self, BufRead, Read, Write};
 
 const MAX_MESSAGE: u64 = 1024 * 1024;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Ping,
     Refresh,
     Restart,
     ConfigShow,
     WidgetsList,
+    CacheClear(Option<String>),
+    CacheStatus,
 }
 impl Command {
-    pub(crate) fn name(self) -> &'static str {
+    pub(crate) fn name(&self) -> String {
         match self {
-            Self::Ping => "ping",
-            Self::Refresh => "refresh",
-            Self::Restart => "restart",
-            Self::ConfigShow => "config-show",
-            Self::WidgetsList => "widgets-list",
+            Self::Ping => "ping".into(),
+            Self::Refresh => "refresh".into(),
+            Self::Restart => "restart".into(),
+            Self::ConfigShow => "config-show".into(),
+            Self::WidgetsList => "widgets-list".into(),
+            Self::CacheStatus => "cache-status".into(),
+            Self::CacheClear(None) => "cache-clear".into(),
+            Self::CacheClear(Some(command)) => format!("cache-clear\t{command}"),
         }
     }
 }
@@ -31,6 +36,13 @@ pub(crate) fn read_request(line: &str) -> io::Result<Option<Command>> {
         "restart" => Command::Restart,
         "config-show" => Command::ConfigShow,
         "widgets-list" => Command::WidgetsList,
+        "cache-status" => Command::CacheStatus,
+        "cache-clear" => Command::CacheClear(None),
+        name if name.starts_with("cache-clear\t") => {
+            let command = &name["cache-clear\t".len()..];
+            sopra_completion::cache::validate_command(command)?;
+            Command::CacheClear(Some(command.into()))
+        }
         _ => return Err(io::Error::other("unknown worker control request")),
     }))
 }
@@ -93,6 +105,17 @@ mod tests {
             assert!(read_response(&mut invalid.as_bytes()).is_err());
         }
         assert!(read_request("C1\tunknown\n").is_err());
+        for command in [
+            Command::CacheStatus,
+            Command::CacheClear(None),
+            Command::CacheClear(Some("/some path/git".into())),
+        ] {
+            assert_eq!(
+                read_request(&format!("C1\t{}\n", command.name()))?,
+                Some(command)
+            );
+        }
+        assert!(read_request("C1\tcache-clear\tgit\tadd\n").is_err());
         Ok(())
     }
 }

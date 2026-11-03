@@ -39,6 +39,10 @@ const ROOT_COMMANDS: &[(&str, &str)] = &[
         "debug <command>",
         "Inspect syntax tokens and completion graphs",
     ),
+    (
+        "cache <command>",
+        "Inspect or clear completion sources, graphs, and worker memory",
+    ),
     ("--version", "Show Sopra's version"),
     ("--help", "Show this help"),
 ];
@@ -131,6 +135,24 @@ pub(super) const GRAPH: Page<'static> = Page {
     notes: &[
         "Use --root for immediate children or --chunk with a nested command path. Generation otherwise inspects the full graph.",
         "Use --fresh to collect new sources. Parsing accepts - as the input file for stdin.",
+    ],
+};
+
+pub(super) const CACHE: Page<'static> = Page {
+    usage: "Usage: sopra cache <command>",
+    commands: &[
+        (
+            "status",
+            "Show disk cache locations, file counts, and sizes",
+        ),
+        (
+            "clear [command]",
+            "Clear all completion data or one command's saved sources and graphs",
+        ),
+    ],
+    notes: &[
+        "Clearing from a Sopra shell also cancels discovery and resets that worker's completion memory, retaining widgets and history.",
+        "Command scope matches the executable basename across directories and nested command paths. Other shells keep their in-memory data.",
     ],
 };
 

@@ -32,6 +32,8 @@ The running engine keys graphs with the same executable, directory, and environm
 
 The graph distinguishes separate, equals-attached, colon-attached, and adjacent values, optional values, repeatable arguments, and explicit mutually exclusive choices in usage expressions. The engine stops offering options after `--`, excludes consumed nonrepeatable options and known conflicts, and preserves the argument replacement range during insertion. It does not infer undocumented constraints.
 
+`sopra cache status` reports saved source and graph file counts, byte sizes, and locations. `sopra cache clear [command]` deletes both stores, or every context and nested path under one executable basename. Stores group files by a hashed command basename so targeted removal does not need to execute the command or reconstruct its former working directories. Legacy flat files remain visible in status and are removed by an unrestricted clear. In a connected shell, clearing cancels and joins discovery and value-provider workers before deletion, then creates a fresh completion engine; this resets all completion memory while preserving widgets and history. Other shells keep their memory and can write new disk entries independently.
+
 The graph retains shell argument boundaries. Presentation collapses a chain of single-child grouping nodes into one suggestion, such as `widgets list`, only while intermediate nodes have no options or positionals. Branching groups remain separate suggestions, and a user who types a group explicitly can still complete its children.
 
 ## Repeatable source and terminal audits
@@ -76,6 +78,7 @@ A new worker restores an exact-context snapshot directly on the suggestion path.
 Foreground discovery runs before queued prefetch and cancels an unrelated active probe. Promoting an already queued path preserves pending bookkeeping. Ending an edit cancels obsolete work. There are at most 64 queued discovery requests, six concurrent probe subprocesses across discovery and live providers, a 600ms per-process ceiling, and a two-second interactive discovery budget. Explicit recursive debugging has a 15-second budget, depth limit eight, and node limit 512. Timed-out or cancelled process groups are terminated, output is bounded to one megabyte, and cancelled fragments never replace a usable graph.
 
 The snapshot regression test times the first local completion after a worker restart and directory change against a fixture executable that sleeps for five seconds; suggestions must arrive within a 16ms frame without executing it. This is an enforced fixture budget, not a guarantee for all disks, graph sizes, or machines.
+
 
 ## Live value recipes
 

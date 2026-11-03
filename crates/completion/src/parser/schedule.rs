@@ -12,6 +12,7 @@ const QUEUED_LIMIT: usize = 64;
 
 pub(crate) struct Dispatcher {
     shared: Arc<(Mutex<State>, Condvar)>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -25,14 +26,15 @@ struct State {
 impl Dispatcher {
     pub(crate) fn spawn(responses: Sender<HelpResponse>) -> Option<Self> {
         let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
-        let dispatcher = Self {
-            shared: shared.clone(),
-        };
-        std::thread::Builder::new()
+        let thread_shared = shared.clone();
+        let thread = std::thread::Builder::new()
             .name("completion-discovery".into())
-            .spawn(move || run(shared, responses))
+            .spawn(move || run(thread_shared, responses))
             .ok()?;
-        Some(dispatcher)
+        Some(Self {
+            shared,
+            thread: Some(thread),
+        })
     }
 
     pub(crate) fn send(&self, request: HelpRequest, background: bool) -> bool {
@@ -101,6 +103,9 @@ impl Drop for Dispatcher {
         if let Ok(mut state) = lock.lock() {
             state.closed = true;
             ready.notify_one();
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }

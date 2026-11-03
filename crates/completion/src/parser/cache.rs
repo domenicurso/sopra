@@ -51,9 +51,7 @@ fn cache_path(request: &HelpRequest) -> PathBuf {
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| format!("builtin:{}", request.program));
     super::identity::key(&resolved, request.command.as_deref(), &request.cwd).hash(&mut hasher);
-    std::env::temp_dir()
-        .join("sopra")
-        .join("completion-cache")
+    crate::cache::command_directory("completion-cache", &request.program)
         .join(format!("{:016x}.cache", hasher.finish()))
 }
 

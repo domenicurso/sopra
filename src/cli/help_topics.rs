@@ -51,6 +51,7 @@ fn resolve(path: &[&str]) -> Option<Topic> {
     let (page, prefix, rest) = match path {
         ["debug", "graph", rest @ ..] => (&help_pages::GRAPH, "debug graph", rest),
         ["config", rest @ ..] => (&help_pages::CONFIG, "config", rest),
+        ["cache", rest @ ..] => (&help_pages::CACHE, "cache", rest),
         ["dev", rest @ ..] => (&help_pages::DEV, "dev", rest),
         ["debug", rest @ ..] => (&help_pages::DEBUG, "debug", rest),
         _ => (&help_pages::ROOT, "", path),

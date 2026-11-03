@@ -15,7 +15,7 @@ CASES = (
     Case("sopra", layout="table"), Case("sopra", ("dev",), "table"),
     Case("sopra", ("debug",), "table"), Case("sopra", ("config",), "table"),
     Case("sopra", ("widgets",), "table"), Case("sopra", ("debug", "completions")),
-    Case("sopra", ("debug", "graph"), "table"),
+    Case("sopra", ("debug", "graph"), "table"), Case("sopra", ("cache",), "table"),
     Case("git", layout="git"),
     Case("git", ("clone",)), Case("git", ("diff",)),
     Case("cargo", layout="table"), Case("cargo", ("new",)),

@@ -100,8 +100,7 @@ fn path(request: &HelpRequest, provisional: bool) -> PathBuf {
         super::identity::key(&resolved, request.command.as_deref(), &request.cwd).hash(&mut hash);
         request.cwd.hash(&mut hash);
     }
-    std::env::temp_dir()
-        .join("sopra/completion-graphs")
+    crate::cache::command_directory("completion-graphs", &request.program)
         .join(format!("{:016x}.graph", hash.finish()))
 }
 
@@ -140,17 +139,17 @@ fn prune() {
         return;
     }
     let directory = std::env::temp_dir().join("sopra/completion-graphs");
-    let Ok(entries) = fs::read_dir(directory) else {
+    let Ok(entries) = crate::cache::inventory(&directory) else {
         return;
     };
     let mut files = entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
+        .into_iter()
+        .filter_map(|(path, _)| {
             if path.extension()? != "graph" {
                 return None;
             }
-            Some((path, entry.metadata().ok()?.modified().ok()?))
+            let modified = fs::metadata(&path).ok()?.modified().ok()?;
+            Some((path, modified))
         })
         .collect::<Vec<_>>();
     files.sort_by_key(|(_, modified)| std::cmp::Reverse(*modified));

@@ -1,4 +1,5 @@
 mod arguments;
+mod cache;
 mod config;
 mod debug;
 mod debug_candidates;
@@ -23,6 +24,7 @@ pub(crate) fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn Erro
         return Ok(());
     }
     match arguments::parse(&arguments)? {
+        Command::Cache(command) => cache::run(command)?,
         Command::Help => help::print(&help_pages::ROOT)?,
         Command::Dev(command) => dev::run(command)?,
         Command::Debug(command) => debug::run(command)?,

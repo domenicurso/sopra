@@ -1,3 +1,4 @@
+pub mod cache;
 mod commands;
 mod discovery_response;
 mod engine;
