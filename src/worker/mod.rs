@@ -10,12 +10,14 @@ use crate::{arguments::Args, protocol};
 pub(crate) fn once() -> Result<(), Box<dyn Error>> {
     let args = Args::parse().map_err(|message| format!("sopra: {message}"))?;
     let mut session = session::Session::new()?;
+    let styled_transcript = args.styled_transcript;
     let result = session.run(args)?;
     let prompts = session.shell_prompts()?;
     protocol::write_result(
         &result,
         &mut std::io::stdout().lock(),
         (&prompts.0, &prompts.1),
+        styled_transcript,
     )?;
     Ok(())
 }
@@ -96,8 +98,14 @@ fn edit(
     let request = request::read(path)?;
     sopra_shell_context::replace(request.environment);
     let args = Args::from_args(request.arguments.into_iter())?;
+    let styled_transcript = args.styled_transcript;
     let result = session.run(args)?;
     let prompts = session.shell_prompts()?;
-    protocol::write_result(&result, connection, (&prompts.0, &prompts.1))?;
+    protocol::write_result(
+        &result,
+        connection,
+        (&prompts.0, &prompts.1),
+        styled_transcript,
+    )?;
     Ok(())
 }

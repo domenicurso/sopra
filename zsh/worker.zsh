@@ -3,7 +3,7 @@ _sopra_edit() {
     local raw
     local -x SOPRA_BUILTINS SOPRA_ALIASES SOPRA_FUNCTIONS SOPRA_COMMANDS SOPRA_VARIABLES SOPRA_ARRAYS
     _sopra_shell_context
-    local -a editor_args=(--buffer "$BUFFER" --cursor "$CURSOR" --cwd "$PWD")
+    local -a editor_args=(--styled-transcript --buffer "$BUFFER" --cursor "$CURSOR" --cwd "$PWD")
     [[ $CONTEXT == cont ]] && editor_args+=(--secondary)
     raw=$(
         SOPRA_WIDGET_STATUS="$_SOPRA_WIDGET_STATUS" \

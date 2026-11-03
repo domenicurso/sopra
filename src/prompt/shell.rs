@@ -5,7 +5,7 @@ pub(crate) fn render(source: &str) -> io::Result<String> {
     Ok(encode(&Template::compile(source)?.render(&BTreeMap::new())))
 }
 
-fn encode(spans: &[PromptSpan]) -> String {
+pub(crate) fn encode(spans: &[PromptSpan]) -> String {
     let mut output = String::new();
     for span in spans {
         let bytes = crate::render::style_bytes(span.style);

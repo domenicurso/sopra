@@ -7,6 +7,7 @@ pub(crate) struct Args {
     pub(crate) arm_completion: bool,
     pub(crate) suppress_completion: bool,
     pub(crate) secondary: bool,
+    pub(crate) styled_transcript: bool,
     pub(crate) cwd: PathBuf,
     pub(crate) history_file: Option<PathBuf>,
 }
@@ -32,6 +33,7 @@ impl Args {
             arm_completion: false,
             suppress_completion: false,
             secondary: false,
+            styled_transcript: false,
             cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             history_file: None,
         }
@@ -52,6 +54,7 @@ impl Args {
             "--arm-completion" => self.arm_completion = true,
             "--suppress-completion" => self.suppress_completion = true,
             "--secondary" => self.secondary = true,
+            "--styled-transcript" => self.styled_transcript = true,
             "--cwd" => self.cwd = PathBuf::from(next_value(arguments, argument)?),
             "--history-file" => {
                 self.history_file = Some(PathBuf::from(next_value(arguments, argument)?))

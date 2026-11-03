@@ -4,7 +4,7 @@
   "scripts": {
     "test:cli": "python3 terminal-cli-test.py && python3 terminal-cli-output-test.py && python3 terminal-cache-test.py && python3 terminal-dev-test.py",
     "test:reflow": "python3 terminal-reflow-test.py",
-    "test:multiline": "python3 terminal-multiline-test.py",
+    "test:multiline": "python3 terminal-multiline-test.py && python3 terminal-newline-test.py",
     "test:widgets": "python3 terminal-widget-test.py",
     "test:prompt-config": "python3 terminal-prompt-config-test.py && python3 terminal-prompt-startup-test.py",
     "test:history": "python3 terminal-history-test.py && python3 terminal-history-search-test.py && python3 terminal-history-persistence-test.py",

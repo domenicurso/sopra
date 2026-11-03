@@ -35,6 +35,10 @@ sopra() {
 
 _sopra_prepare_transient() {
     PROMPT=$_SOPRA_RESULT_PROMPT
+    if [[ -n $_SOPRA_RESULT_DISPLAY_PROMPT && $BUFFER == *$'\n'* ]]; then
+        # The finish hook writes the whole styled transcript, including its prompt.
+        PROMPT=''
+    fi
     PS2=$_SOPRA_RESULT_SECONDARY
     RPROMPT=''
     # A pending resize can make ZLE redraw its cached full prompt on accept.
@@ -98,6 +102,19 @@ _sopra_line_finish() {
     [[ $BUFFER == *$'\n'* ]] || return 0
     local original_buffer=$BUFFER
     local -i original_cursor=$CURSOR
+    if [[ -n $_SOPRA_RESULT_DISPLAY_PROMPT ]]; then
+        # ZLE region styles cannot represent prompt attributes such as dim.
+        # Invalidate its empty display, then write the styled transcript directly.
+        BUFFER=''
+        zle -I
+        setopt localoptions nopromptsubst
+        local display="$_SOPRA_RESULT_PROMPT$_SOPRA_RESULT_DISPLAY_PROMPT"
+        local newline=$'\r\n'
+        print -Pr -- $'\e[A\r\e[J'"${display//$'\n'/$newline}"
+        BUFFER=$original_buffer
+        CURSOR=$original_cursor
+        return 0
+    fi
     BUFFER=$_SOPRA_RESULT_DISPLAY
     local -a original_highlights=("${region_highlight[@]}")
     region_highlight=()

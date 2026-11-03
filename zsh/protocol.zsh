@@ -3,7 +3,7 @@ typeset -g _SOPRA_RESULT_BUFFER=''
 typeset -g _SOPRA_RESULT_CURSOR=0
 typeset -g _SOPRA_RESULT_HIGHLIGHTS=''
 typeset -g _SOPRA_RESULT_DIRECTORY=''
-typeset -g _SOPRA_RESULT_DISPLAY='' _SOPRA_RESULT_DISPLAY_HIGHLIGHTS=''
+typeset -g _SOPRA_RESULT_DISPLAY='' _SOPRA_RESULT_DISPLAY_HIGHLIGHTS='' _SOPRA_RESULT_DISPLAY_PROMPT=''
 
 _sopra_hex_decode() {
     emulate -L zsh
@@ -25,9 +25,14 @@ _sopra_parse_result() {
     local raw=$1
     local -a fields
     IFS=$'\t' read -rA fields <<< "$raw"
-    (( ${#fields} == 10 )) || return 1
+    (( ${#fields} == 10 || ${#fields} == 11 )) || return 1
     [[ ${fields[1]-} == K2 && ${fields[2]-} == (accept|interrupt|tab|eof|directory) ]] || return 1
     [[ ${fields[3]-} == <-> ]] || return 1
+    typeset -g _SOPRA_RESULT_DISPLAY_PROMPT=''
+    if (( ${#fields} == 11 )); then
+        _sopra_hex_decode "${fields[11]}" || return 1
+        _SOPRA_RESULT_DISPLAY_PROMPT=$_SOPRA_RESULT_BUFFER
+    fi
     _sopra_hex_decode "${fields[9]}" || return 1
     typeset -g _SOPRA_RESULT_PROMPT=$_SOPRA_RESULT_BUFFER
     _sopra_hex_decode "${fields[10]}" || return 1

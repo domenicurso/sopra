@@ -4,6 +4,7 @@ pub(crate) fn write_result(
     result: &RunResult,
     output: &mut impl std::io::Write,
     prompts: (&str, &str),
+    styled_transcript: bool,
 ) -> std::io::Result<()> {
     let action = match result.reason {
         ExitReason::Accepted => "accept",
@@ -17,7 +18,7 @@ pub(crate) fn write_result(
         .iter()
         .map(|span| span.text.as_str())
         .collect::<String>();
-    writeln!(
+    write!(
         output,
         "K2\t{action}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         result.cursor,
@@ -37,7 +38,15 @@ pub(crate) fn write_result(
         encode_display_highlights(&result.submitted_spans),
         nonempty_hex(prompts.0.as_bytes()),
         nonempty_hex(prompts.1.as_bytes())
-    )
+    )?;
+    if styled_transcript {
+        write!(
+            output,
+            "\t{}",
+            nonempty_hex(crate::prompt::shell::encode(&result.submitted_spans).as_bytes())
+        )?;
+    }
+    writeln!(output)
 }
 
 fn encode_highlights(buffer: &str, spans: &[crate::syntax::SyntaxSpan]) -> String {
@@ -87,5 +96,38 @@ fn encode_display_highlights(spans: &[crate::prompt::PromptSpan]) -> String {
         "-".to_string()
     } else {
         highlights.join(";")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prompt::PromptSpan;
+    use ratatui::style::Style;
+
+    #[test]
+    fn styled_transcripts_are_negotiated_and_keep_prompt_attributes() -> std::io::Result<()> {
+        let result = RunResult {
+            reason: ExitReason::Accepted,
+            buffer: "echo one\necho two".into(),
+            cursor: 17,
+            highlights: Vec::new(),
+            directory: None,
+            submitted_spans: vec![PromptSpan {
+                text: "\n> %".into(),
+                style: Style::new().dim(),
+            }],
+        };
+        for (enabled, fields) in [(false, 10), (true, 11)] {
+            let mut bytes = Vec::new();
+            write_result(&result, &mut bytes, ("$ ", "> "), enabled)?;
+            let reply = String::from_utf8(bytes).map_err(std::io::Error::other)?;
+            assert_eq!(reply.trim_end().split('\t').count(), fields);
+            if enabled {
+                let styled = "%{\x1b[2m%}\n> %%%{\x1b[0m%}";
+                assert!(reply.trim_end().ends_with(&hex_encode(styled.as_bytes())));
+            }
+        }
+        Ok(())
     }
 }
