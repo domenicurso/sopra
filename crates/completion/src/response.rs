@@ -7,6 +7,7 @@ use super::{
 
 impl CompletionEngine {
     pub(super) fn send_local(&mut self, request: &Request) -> bool {
+        self.filesystem_request = Some(request.clone());
         let started = Instant::now();
         let result = self.local.complete(request);
         let engine::LocalResult {

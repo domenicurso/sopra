@@ -2,6 +2,7 @@ pub(crate) mod arguments;
 mod candidates;
 mod commands;
 mod graphs;
+mod snapshots;
 pub(crate) mod values;
 
 use crate::{CompletionItem, Request, filesystem::FilesystemEngine, parser, ranking, variables};
@@ -24,6 +25,17 @@ impl LocalCompletion {
             filesystem: FilesystemEngine::new(),
             graphs: graphs::Graphs::new(),
         }
+    }
+
+    pub(super) fn interactive() -> Self {
+        Self {
+            filesystem: FilesystemEngine::interactive(),
+            graphs: graphs::Graphs::new(),
+        }
+    }
+
+    pub(super) fn poll_filesystem(&mut self) -> bool {
+        self.filesystem.poll()
     }
 
     pub(super) fn complete(&mut self, request: &Request) -> LocalResult {
@@ -99,37 +111,6 @@ impl LocalCompletion {
         );
         result.provider = crate::providers::plan(request, &scoped, path, node);
         Some(result)
-    }
-
-    fn restore(&mut self, request: &Request, invocation: &parser::Invocation) {
-        if self.graphs.get(&invocation.key).is_none() {
-            let help = parser::request_for(request, invocation);
-            if let Some(hit) = parser::snapshot::read(&help) {
-                self.graphs
-                    .merge(invocation.key.clone(), Vec::new(), Some(hit.graph));
-                if hit.stale {
-                    self.graphs.provisional(&invocation.key);
-                }
-            }
-        }
-        let Some(entry) = self.graphs.get(&invocation.key) else {
-            return;
-        };
-        let Some(graph) = &entry.graph else {
-            return;
-        };
-        let (_, _, path) = parser::resolve(graph, invocation);
-        if path.is_empty() || entry.hydrated.contains(&path) {
-            return;
-        }
-        let help = parser::request_for_path(request, invocation, path.clone(), true);
-        if let Some(hit) = parser::snapshot::read(&help) {
-            self.graphs
-                .merge(invocation.key.clone(), path, Some(hit.graph));
-            if hit.stale {
-                self.graphs.provisional(&invocation.key);
-            }
-        }
     }
 
     pub(super) fn cache_graph(

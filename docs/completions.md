@@ -79,6 +79,7 @@ Foreground discovery runs before queued prefetch and cancels an unrelated active
 
 The snapshot regression test times the first local completion after a worker restart and directory change against a fixture executable that sleeps for five seconds; suggestions must arrive within a 16ms frame without executing it. This is an enforced fixture budget, not a guarantee for all disks, graph sizes, or machines.
 
+Interactive filesystem completion queues directory enumeration, metadata reads, and watcher registration on a separate loader with at most 16 queued directories. The editor initially uses cached entries or an empty result, then replays only the current request when directory results arrive. Watch events invalidate the directory and trigger reloading. The loader is not joined on the editor path because filesystem calls cannot be cancelled portably; closing its request channel retires it after any active call returns. Offline candidate inspection uses synchronous enumeration so its output is complete when the command exits.
 
 ## Live value recipes
 

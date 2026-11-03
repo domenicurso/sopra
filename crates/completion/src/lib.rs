@@ -55,6 +55,7 @@ pub struct CompletionEngine {
     prefetch_inflight: Option<String>,
     generation: u64,
     local: engine::LocalCompletion,
+    filesystem_request: Option<Request>,
     providers: providers::Worker,
 }
 
@@ -73,7 +74,8 @@ impl CompletionEngine {
             prefetch_keys: HashSet::new(),
             prefetch_inflight: None,
             generation: 0,
-            local: engine::LocalCompletion::new(),
+            local: engine::LocalCompletion::interactive(),
+            filesystem_request: None,
             providers: providers::Worker::spawn()?,
         })
     }
@@ -81,6 +83,7 @@ impl CompletionEngine {
     /// Start a new edit without discarding discovered command graphs.
     pub fn begin_edit(&mut self) -> u64 {
         self.generation = self.generation.wrapping_add(1);
+        self.filesystem_request = None;
         self.help_requests.cancel();
         self.providers.cancel();
         self.help_latest.clear();

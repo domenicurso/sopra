@@ -3,6 +3,12 @@ use crate::{CompletionEngine, CompletionResponse, CompletionSource, parser};
 impl CompletionEngine {
     pub fn poll(&mut self) -> impl Iterator<Item = CompletionResponse> {
         let mut responses = Vec::new();
+        if self.local.poll_filesystem()
+            && let Some(request) = self.filesystem_request.clone()
+            && request.generation == self.generation
+        {
+            self.send_local(&request);
+        }
         while let Ok(response) = self.help_responses.try_recv() {
             if let Some(response) = self.accept_discovery(response) {
                 responses.push(response);

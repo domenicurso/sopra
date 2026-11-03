@@ -1,4 +1,5 @@
 mod cache;
+mod loader;
 mod metadata;
 mod path;
 
@@ -29,6 +30,16 @@ impl FilesystemEngine {
         Self {
             cache: DirectoryCache::new(),
         }
+    }
+
+    pub(super) fn interactive() -> Self {
+        Self {
+            cache: DirectoryCache::interactive(),
+        }
+    }
+
+    pub(super) fn poll(&mut self) -> bool {
+        self.cache.poll()
     }
 
     pub(super) fn complete(&mut self, request: &Request, token: &str) -> Vec<CompletionItem> {
@@ -159,3 +170,6 @@ fn leaf_item(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod interactive_tests;
