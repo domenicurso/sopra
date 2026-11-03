@@ -2,6 +2,7 @@ mod arguments;
 mod config;
 mod debug;
 mod debug_graph;
+mod debug_syntax;
 mod dev;
 mod dev_checkout;
 mod doctor;
