@@ -9,9 +9,7 @@ from terminal_config import terminal_config
 from terminal_harness_shell import exercise_history_suspension, exercise_help
 from terminal_harness_support import (
     FRAME_MARKER,
-    COLUMNS,
-    ROOT,
-    ROWS,
+    COLUMNS, ROOT, ROWS,
     fail,
     plain,
     read_for,
@@ -71,7 +69,8 @@ def exercise_command_completion(session: tuple[int, int], output: bytearray, ori
 
 def exercise_path_completion(session: tuple[int, int], output: bytearray, origins: int) -> int:
     start = len(output)
-    send(session[0], b"cd ")
+    # An explicit path keeps platform-specific builtin help out of this scene.
+    send(session[0], b"cat ./")
     wait_for_plain(session, output, b"Cargo.toml", 3)
     wait_for_plain_after(session, output, b"ms", start, 3)
     if b"0.0ms" in plain(output[start:]):
@@ -90,14 +89,15 @@ def exercise_path_completion(session: tuple[int, int], output: bytearray, origin
     read_for(session[0], output, 0.10)
     if b"\x1b[10;1H\x1b[J" not in output[start:] or b"\x1b[2J" in output[start:]:
         fail("resize cleared outside the expanded completion scene", *session)
-    send(session[0], b"\t")
+    send(session[0], b"\t\t")
     read_for(session[0], output, 0.10)
+    start = len(output)
     send(session[0], b"\x03")
     origins += 1
     wait_for_count(session, output, FRAME_MARKER, origins)
     read_for(session[0], output, 0.4)
-    interrupted = plain(output[start:])
-    if b"$" not in interrupted or b"AGENTS.md" not in interrupted:
+    interrupted = b"".join(plain(output[start:]).split())
+    if b"$cat./AGENTS.md" not in interrupted:
         fail("Ctrl-C did not keep the completed transient command", *session)
     return origins
 
@@ -145,7 +145,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     if output.count(FRAME_MARKER) != origins:
         fail("Escape relaunched the editor loop", *session)
     start = len(output)
-    send(session[0], b"\x15cd ")
+    send(session[0], b"\x15cat ./")
     wait_for_plain_after(session, output, b"Cargo.toml", start, 3)
     read_for(session[0], output, 0.10)
     start = len(output)
@@ -156,7 +156,7 @@ def exercise_escape(session: tuple[int, int], output: bytearray, origins: int) -
     if any(marker.encode() in plain(output[start:]) for marker in ("╭", "╮", "─")):
         fail("Escape did not hide the completion overlay", *session)
     start = len(output)
-    send(session[0], b"\x15cd ")
+    send(session[0], b"\x15cat ./")
     wait_for_plain_after(session, output, b"Cargo.toml", start, 3)
     send(session[0], b"\x03")
     origins += 1
