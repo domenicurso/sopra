@@ -12,6 +12,8 @@ pub(super) enum Command {
     Generate(Graph),
     Sources(Graph),
     Cache(Graph),
+    Json(Graph),
+    Explain(Graph, String),
     Parse(CapturedSource),
 }
 
@@ -32,6 +34,23 @@ pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
         Some("generate") => Command::Generate(Graph::parse(rest)?),
         Some("sources") => Command::Sources(Graph::parse(rest)?),
         Some("cache") => Command::Cache(Graph::parse(rest)?),
+        Some("json") => Command::Json(Graph::parse(rest)?),
+        Some("explain") => {
+            let separator = rest
+                .iter()
+                .position(|word| word == "--")
+                .ok_or_else(|| io::Error::other("use -- before the entry to explain"))?;
+            let [entry] = &rest[separator + 1..] else {
+                return Err(io::Error::other("supply one entry after --"));
+            };
+            Command::Explain(
+                Graph::parse(&rest[..separator])?,
+                entry
+                    .to_str()
+                    .ok_or_else(|| io::Error::other("entry must be UTF-8"))?
+                    .into(),
+            )
+        }
         Some("parse") => Command::Parse(CapturedSource::parse(rest)?),
         _ => {
             return Err(io::Error::other(
@@ -48,6 +67,12 @@ pub(super) fn run(command: Command) -> io::Result<()> {
         Command::Sources(graph) => {
             super::output::print(&inspection::sources(&graph.query()).map_err(io::Error::other)?)
         }
+        Command::Json(graph) => {
+            super::output::print(&inspection::json(&graph.query()).map_err(io::Error::other)?)
+        }
+        Command::Explain(graph, entry) => super::output::print(
+            &inspection::explain(&graph.query(), &entry).map_err(io::Error::other)?,
+        ),
         Command::Cache(graph) => {
             super::output::print(&inspection::cache(&graph.query()).map_err(io::Error::other)?)
         }

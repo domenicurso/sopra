@@ -85,6 +85,11 @@ pub(super) const DEBUG: Page<'static> = Page {
     usage: "Usage: sopra debug <command>",
     commands: &[
         (
+            "candidates [options] <text>",
+            "Print completion candidates, insertion text, and replacement ranges as JSON",
+        ),
+        ("providers", "Validate and list live-value provider recipes"),
+        (
             "syntax <text>",
             "Show byte ranges, syntax categories, terminal colors, and escaped token text",
         ),
@@ -107,6 +112,14 @@ pub(super) const DEBUG: Page<'static> = Page {
 pub(super) const GRAPH: Page<'static> = Page {
     usage: "Usage: sopra debug graph <command>",
     commands: &[
+        (
+            "explain [options] <command> [path ...] -- <entry>",
+            "Explain a graph entry using source lines and merge observations",
+        ),
+        (
+            "json [options] <command> [path ...]",
+            "Print graph fields and argument grammar as JSON",
+        ),
         (
             "generate [options] <command> [path ...]",
             "Generate a completion graph from live or cached sources",

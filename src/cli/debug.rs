@@ -5,6 +5,8 @@ use super::{debug_graph::Graph, debug_syntax, help, help_pages, output};
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Command {
     Help,
+    Candidates(super::debug_candidates::Candidates),
+    Providers,
     Graph(super::debug_graph_commands::Command),
     Syntax(String),
     Completions(Graph),
@@ -28,6 +30,10 @@ pub(super) fn parse(arguments: &[OsString]) -> io::Result<Command> {
                 .ok_or_else(|| io::Error::other("shell text must be UTF-8"))?
                 .into(),
         ),
+        (Some("candidates"), rest) => {
+            Command::Candidates(super::debug_candidates::Candidates::parse(rest)?)
+        }
+        (Some("providers"), []) => Command::Providers,
         (Some("completions"), rest) => Command::Completions(Graph::parse(rest)?),
         _ => {
             return Err(io::Error::other(
@@ -47,5 +53,10 @@ pub(super) fn run(command: Command) -> io::Result<()> {
             &output::Output::detect(),
         )),
         Command::Completions(graph) => graph.run(),
+        Command::Candidates(query) => query.run(),
+        Command::Providers => output::print(
+            &sopra_completion::CompletionEngine::provider_configuration()
+                .map_err(io::Error::other)?,
+        ),
     }
 }

@@ -105,24 +105,42 @@ fn leaf(page: &Page<'static>, prefix: &str, rest: &[&str]) -> Option<Topic> {
                         format!("{prefix} ")
                     }
                 ),
-                commands: if (prefix == "debug" && rest == ["completions"])
-                    || (prefix == "debug graph"
-                        && matches!(rest, ["generate" | "sources" | "cache"]))
-                {
-                    GRAPH_OPTIONS.to_vec()
-                } else if prefix == "debug graph" && rest == ["parse"] {
-                    vec![(
-                        "--man",
-                        "Parse manual page text or roff instead of help output",
-                    )]
-                } else {
-                    Vec::new()
-                },
+                commands: leaf_options(prefix, rest),
                 notes: vec![description],
             });
         }
     }
     None
+}
+
+fn leaf_options(prefix: &str, rest: &[&str]) -> Vec<(&'static str, &'static str)> {
+    if (prefix == "debug" && rest == ["completions"])
+        || (prefix == "debug graph"
+            && matches!(
+                rest,
+                ["generate" | "sources" | "cache" | "json" | "explain"]
+            ))
+    {
+        GRAPH_OPTIONS.to_vec()
+    } else if prefix == "debug" && rest == ["candidates"] {
+        vec![
+            (
+                "--cwd <directory>",
+                "Resolve commands and values in this directory",
+            ),
+            (
+                "--cursor <number>",
+                "Character offset within the supplied shell line",
+            ),
+        ]
+    } else if prefix == "debug graph" && rest == ["parse"] {
+        vec![(
+            "--man",
+            "Parse manual page text or roff instead of help output",
+        )]
+    } else {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]

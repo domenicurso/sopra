@@ -1,6 +1,7 @@
 mod arguments;
 mod config;
 mod debug;
+mod debug_candidates;
 mod debug_graph;
 mod debug_graph_commands;
 mod debug_syntax;
