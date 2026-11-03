@@ -18,8 +18,13 @@ pub(super) fn complete(
     if let Some((value, query, replace)) = pending_value(node, invocation, request) {
         return values::items(value, (&query, replace), filesystem, request);
     }
-    if invocation.active.starts_with('-') {
-        return commands::options(&node.options, request.replace.clone());
+    let terminated = invocation
+        .args
+        .iter()
+        .take(super::arguments::completed_count(invocation))
+        .any(|arg| arg == "--");
+    if invocation.active.starts_with('-') && !terminated {
+        return commands::options(node, invocation, request.replace.clone());
     }
     let positional = next_positional(node, invocation);
     if positional.is_some_and(|value| prefers_value(value, &invocation.active)) {

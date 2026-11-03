@@ -48,3 +48,15 @@ pub fn parse_source(
     }
     Ok(crate::graph::render(&graph))
 }
+
+pub fn explain(query: &GraphQuery<'_>, entry: &str) -> Result<String, String> {
+    crate::parser::explain::explain(query, entry)
+}
+
+pub fn candidates(line: &str, cursor: usize, cwd: &Path) -> Result<String, String> {
+    crate::inspection_candidates::complete(line, cursor, cwd)
+}
+
+pub fn json(query: &GraphQuery<'_>) -> Result<String, String> {
+    crate::inspection_candidates::json(query)
+}

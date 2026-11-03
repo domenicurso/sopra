@@ -59,7 +59,7 @@ fn optional_colon_values_preserve_base_flags() {
     }
     let help = &graph.root.options[1];
     assert!(help.value.as_ref().expect("optional help value").optional);
-    assert_eq!(help.attachment, ValueAttachment::Attached);
+    assert_eq!(help.attachment, ValueAttachment::Colon);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn required_equals_values_and_quoted_placeholders_keep_their_grammar() {
         "javac",
     );
     let directory = &graph.root.options[0];
-    assert_eq!(directory.attachment, ValueAttachment::Attached);
+    assert_eq!(directory.attachment, ValueAttachment::Equals);
     assert!(
         !directory
             .value
@@ -99,4 +99,27 @@ fn required_equals_values_and_quoted_placeholders_keep_their_grammar() {
             .choices
             .is_empty()
     );
+}
+
+#[test]
+fn spaced_metavariables_and_quoted_placeholders_do_not_leak_into_descriptions() {
+    let graph = parse(
+        "Options:\n  --class-path <class search path>\n                  Search archives and directories\n  -Xplugin:\"name args\"  Run a plugin\n",
+        "java",
+    );
+    let path = &graph.root.options[0];
+    assert_eq!(
+        path.value.as_ref().expect("class path value").name,
+        "class search path"
+    );
+    assert_eq!(
+        path.description.as_deref(),
+        Some("Search archives and directories")
+    );
+    let plugin = &graph.root.options[1];
+    assert_eq!(
+        plugin.value.as_ref().expect("plugin value").name,
+        "\"name args\""
+    );
+    assert_eq!(plugin.description.as_deref(), Some("Run a plugin"));
 }

@@ -35,7 +35,7 @@ fn render(command: &str, cwd: &Path, path: Vec<String>, full: bool) -> Result<St
     })
 }
 
-fn request(query: &GraphQuery<'_>) -> Result<HelpRequest, String> {
+pub(crate) fn request(query: &GraphQuery<'_>) -> Result<HelpRequest, String> {
     if query.mode == GraphMode::Root && !query.path.is_empty() {
         return Err("root inspection does not accept a nested path".into());
     }
@@ -50,6 +50,7 @@ fn request(query: &GraphQuery<'_>) -> Result<HelpRequest, String> {
         .unwrap_or(command)
         .to_string();
     Ok(HelpRequest {
+        control: super::control::Control::new(std::time::Duration::from_secs(15)),
         cache: if query.refresh {
             CachePolicy::Refresh
         } else {
@@ -125,5 +126,9 @@ pub(crate) fn sources(query: &GraphQuery<'_>) -> Result<String, String> {
 
 pub(crate) fn cache(query: &GraphQuery<'_>) -> Result<String, String> {
     let request = request(query)?;
-    Ok(super::cache::inspect(&request))
+    Ok(format!(
+        "{}\n{}",
+        super::cache::inspect(&request),
+        super::snapshot::inspect(&request)
+    ))
 }

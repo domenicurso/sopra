@@ -85,7 +85,7 @@ fn run_program(request: &HelpRequest, args: &[String]) -> Option<String> {
         .env_remove("GIT_MAN_VIEWER")
         .env("MANPAGER", "cat")
         .env("LC_ALL", "C");
-    process::run(&mut command)
+    process::run_controlled(&mut command, &request.control, true).map(|output| output.0)
 }
 
 fn run_man(request: &HelpRequest) -> Option<String> {
@@ -100,5 +100,5 @@ fn run_man(request: &HelpRequest) -> Option<String> {
         .env("MANPAGER", "cat")
         .env("PAGER", "cat")
         .stdin(Stdio::null());
-    process::run_stdout(&mut command)
+    process::run_controlled(&mut command, &request.control, false).map(|output| output.0)
 }

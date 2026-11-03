@@ -34,6 +34,7 @@ fn parse_usage(
     let Some((tokens, synopsis)) = usage::parse(usage, &root.name, path) else {
         return;
     };
+    root.constrain(&synopsis);
     root.synopsis.get_or_insert_with(|| synopsis.clone());
     if discover_usage_commands {
         collect::options_from_synopsis(&synopsis, root);

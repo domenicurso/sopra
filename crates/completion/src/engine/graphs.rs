@@ -14,6 +14,7 @@ pub(super) struct Entry {
     pub(super) graph: Option<CommandGraph>,
     pub(super) hydrated: HashSet<Vec<String>>,
     loaded: Instant,
+    provisional: bool,
 }
 
 impl Graphs {
@@ -27,7 +28,7 @@ impl Graphs {
         if self
             .entries
             .get(key)
-            .is_some_and(|entry| entry.loaded.elapsed() > MAX_AGE)
+            .is_some_and(|entry| entry.graph.is_none() && entry.loaded.elapsed() > MAX_AGE)
         {
             self.entries.remove(key);
         }
@@ -40,6 +41,19 @@ impl Graphs {
         path: Vec<String>,
         graph: Option<CommandGraph>,
     ) -> Vec<(Vec<String>, bool)> {
+        if path.is_empty()
+            && graph.is_none()
+            && self
+                .entries
+                .get(&key)
+                .is_some_and(|entry| entry.graph.is_some())
+        {
+            if let Some(entry) = self.entries.get_mut(&key) {
+                entry.loaded = Instant::now();
+                entry.provisional = false;
+            }
+            return Vec::new();
+        }
         if path.is_empty() {
             self.make_room(&key);
             self.entries.insert(
@@ -48,6 +62,7 @@ impl Graphs {
                     graph,
                     hydrated: HashSet::new(),
                     loaded: Instant::now(),
+                    provisional: false,
                 },
             );
         } else if let Some(entry) = self.entries.get_mut(&key)
@@ -63,8 +78,6 @@ impl Graphs {
     }
 
     fn make_room(&mut self, key: &str) {
-        self.entries
-            .retain(|_, entry| entry.loaded.elapsed() <= MAX_AGE);
         if self.entries.len() < CAPACITY || self.entries.contains_key(key) {
             return;
         }
@@ -79,7 +92,19 @@ impl Graphs {
     }
 }
 
+impl Graphs {
+    pub(super) fn provisional(&mut self, key: &str) {
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.provisional = true;
+        }
+    }
+}
+
 impl Entry {
+    pub(super) fn stale(&self) -> bool {
+        self.provisional || self.loaded.elapsed() > MAX_AGE
+    }
+
     fn children(&self, path: &[String]) -> Vec<(Vec<String>, bool)> {
         let Some(node) = self.graph.as_ref().and_then(|graph| graph.root.find(path)) else {
             return Vec::new();
@@ -97,65 +122,5 @@ impl Entry {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::graph::CommandNode;
-
-    #[test]
-    fn expiration_discards_negative_results_and_descendant_hydration_together() {
-        let mut graphs = Graphs::new();
-        graphs.merge("tool".into(), Vec::new(), None);
-        graphs.merge("tool".into(), vec!["old".into()], None);
-        let entry = graphs.entries.get_mut("tool").expect("inserted root");
-        entry.loaded = Instant::now() - MAX_AGE - std::time::Duration::from_secs(1);
-        assert!(graphs.get("tool").is_none());
-        graphs.merge("tool".into(), Vec::new(), None);
-        assert!(
-            !graphs
-                .get("tool")
-                .expect("new root")
-                .hydrated
-                .contains(&vec!["old".into()])
-        );
-    }
-
-    #[test]
-    fn eviction_keeps_the_most_recent_graphs_and_bounds_negative_entries() {
-        let mut graphs = Graphs::new();
-        for index in 0..=CAPACITY {
-            graphs.merge(index.to_string(), Vec::new(), None);
-        }
-        assert_eq!(graphs.entries.len(), CAPACITY);
-        assert!(graphs.get("0").is_none());
-        assert!(graphs.get(&CAPACITY.to_string()).is_some());
-    }
-
-    #[test]
-    fn nested_fragments_extend_the_existing_root_and_do_not_mark_siblings_loaded() {
-        let root = CommandGraph {
-            root: CommandNode {
-                subcommands: vec![CommandNode::named("dev"), CommandNode::named("debug")],
-                ..CommandNode::named("tool")
-            },
-        };
-        let nested = CommandGraph {
-            root: CommandNode {
-                subcommands: vec![CommandNode::named("build")],
-                ..CommandNode::named("tool")
-            },
-        };
-        let mut graphs = Graphs::new();
-        graphs.merge("tool".into(), Vec::new(), Some(root));
-        let children = graphs.merge("tool".into(), vec!["dev".into()], Some(nested));
-        assert_eq!(children, [(vec!["dev".into(), "build".into()], true)]);
-        let entry = graphs.get("tool").expect("root graph was retained");
-        assert!(!entry.hydrated.contains(&vec!["debug".into()]));
-        assert!(
-            entry
-                .graph
-                .as_ref()
-                .and_then(|root| root.root.find(&["dev".into(), "build".into()]))
-                .is_some()
-        );
-    }
-}
+#[path = "graphs_tests.rs"]
+mod tests;

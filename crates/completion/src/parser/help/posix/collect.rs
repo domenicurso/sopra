@@ -2,164 +2,148 @@ use super::super::option;
 use super::collect_options::{next_value, option_specs};
 use crate::graph::{CommandNode, PositionalSpec, Synopsis, ValueSpec};
 
+#[derive(Clone, Copy, Default)]
+struct Position {
+    root_pending: bool,
+    optional: bool,
+    repeatable: bool,
+    index: usize,
+}
+
 pub(super) fn from_synopsis(synopsis: &Synopsis, root: &mut CommandNode, skip_first_literal: bool) {
-    collect(synopsis, root, skip_first_literal, false, false, 0);
+    collect(
+        synopsis,
+        root,
+        Position {
+            root_pending: skip_first_literal,
+            ..Position::default()
+        },
+    );
 }
 
-pub(super) fn options_from_synopsis(synopsis: &Synopsis, root: &mut CommandNode) {
-    collect_options(synopsis, root);
-}
-
-fn collect_options(node: &Synopsis, root: &mut CommandNode) {
+pub(super) fn options_from_synopsis(node: &Synopsis, root: &mut CommandNode) {
     match node {
-        Synopsis::Sequence(nodes) => {
+        Synopsis::Sequence(nodes) | Synopsis::Optional(nodes) => {
             for (index, node) in nodes.iter().enumerate() {
                 if let Synopsis::Token(token) = node
                     && option::is_option_token(token)
                 {
-                    let mut specs = option_specs(token, nodes.get(index + 1));
-                    let (value, _, attachment) = next_value(nodes.get(index + 1), &specs);
-                    for spec in &mut specs {
-                        spec.value = spec.value.take().or_else(|| value.clone());
-                        spec.attachment = spec.attachment.merge(attachment);
-                        root.merge_option(spec.clone());
-                    }
+                    merge_options(root, token, nodes.get(index + 1), false);
                 }
-                collect_options(node, root);
+                options_from_synopsis(node, root);
             }
         }
-        Synopsis::Optional(nodes) => {
-            collect_options(&Synopsis::Sequence(nodes.clone()), root);
-        }
-        Synopsis::Repeat(inner) => collect_options(inner, root),
+        Synopsis::Repeat(inner) => options_from_synopsis(inner, root),
         Synopsis::Choice(alternatives) => {
             for alternative in alternatives {
-                collect_options(&Synopsis::Sequence(alternative.clone()), root);
+                options_from_synopsis(&Synopsis::Sequence(alternative.clone()), root);
             }
         }
         Synopsis::Token(_) => {}
     }
 }
 
-fn collect(
-    node: &Synopsis,
-    root: &mut CommandNode,
-    root_pending: bool,
-    optional: bool,
-    repeatable: bool,
-    position_index: usize,
-) -> usize {
+fn collect(node: &Synopsis, root: &mut CommandNode, position: Position) -> usize {
     match node {
-        Synopsis::Sequence(nodes) => collect_sequence(
+        Synopsis::Sequence(nodes) => sequence(nodes, root, position),
+        Synopsis::Optional(nodes) => sequence(
             nodes,
             root,
-            root_pending,
-            optional,
-            repeatable,
-            position_index,
+            Position {
+                optional: true,
+                root_pending: false,
+                ..position
+            },
         ),
-        Synopsis::Optional(nodes) => {
-            collect_sequence(nodes, root, false, true, repeatable, position_index)
-        }
         Synopsis::Choice(alternatives) => alternatives
             .iter()
             .map(|alternative| {
-                collect(
-                    &Synopsis::Sequence(alternative.clone()),
+                sequence(
+                    alternative,
                     root,
-                    false,
-                    optional,
-                    repeatable,
-                    position_index,
+                    Position {
+                        root_pending: false,
+                        ..position
+                    },
                 )
             })
             .max()
             .unwrap_or(0),
-        Synopsis::Repeat(inner) => collect(inner, root, false, optional, true, position_index),
+        Synopsis::Repeat(inner) => collect(
+            inner,
+            root,
+            Position {
+                repeatable: true,
+                root_pending: false,
+                ..position
+            },
+        ),
         Synopsis::Token(token) => {
-            if root_pending && !token.starts_with('-') {
+            if position.root_pending && !token.starts_with('-') {
                 return 0;
             }
             if option::is_option_token(token) {
-                for spec in option_specs(token, None) {
-                    root.merge_option(spec);
-                }
+                merge_options(root, token, None, position.repeatable);
                 0
             } else {
-                usize::from(merge_positional(
-                    root,
-                    token,
-                    optional,
-                    repeatable,
-                    position_index,
-                ))
+                usize::from(merge_positional(root, token, position))
             }
         }
     }
 }
 
-fn collect_sequence(
-    nodes: &[Synopsis],
-    root: &mut CommandNode,
-    mut root_pending: bool,
-    optional: bool,
-    repeatable: bool,
-    mut position_index: usize,
-) -> usize {
-    let start = position_index;
+fn sequence(nodes: &[Synopsis], root: &mut CommandNode, mut position: Position) -> usize {
+    let start = position.index;
     let mut index = 0;
     while index < nodes.len() {
         let Synopsis::Token(token) = &nodes[index] else {
-            position_index += collect(
+            position.index += collect(
                 &nodes[index],
                 root,
-                false,
-                optional,
-                repeatable,
-                position_index,
+                Position {
+                    root_pending: false,
+                    ..position
+                },
             );
             index += 1;
             continue;
         };
-        if root_pending && !token.starts_with('-') {
-            root_pending = false;
+        if position.root_pending && !token.starts_with('-') {
+            position.root_pending = false;
             index += 1;
             continue;
         }
         if option::is_option_token(token) {
-            let next = nodes.get(index + 1);
-            let mut specs = option_specs(token, next);
-            let (value, consumed, attachment) = next_value(next, &specs);
-            for spec in &mut specs {
-                if spec.value.is_none() {
-                    spec.value = value.clone();
-                }
-                spec.attachment = spec.attachment.merge(attachment);
-                spec.repeatable |= repeatable;
-                root.merge_option(spec.clone());
-            }
-            index += 1 + consumed;
-            continue;
+            index += 1 + merge_options(root, token, nodes.get(index + 1), position.repeatable);
+        } else {
+            position.index += usize::from(merge_positional(root, token, position));
+            index += 1;
         }
-        position_index += usize::from(merge_positional(
-            root,
-            token,
-            optional,
-            repeatable,
-            position_index,
-        ));
-        index += 1;
     }
-    position_index - start
+    position.index - start
 }
 
-fn merge_positional(
+fn merge_options(
     root: &mut CommandNode,
     token: &str,
-    optional: bool,
+    next: Option<&Synopsis>,
     repeatable: bool,
-    position_index: usize,
-) -> bool {
+) -> usize {
+    let mut specs = option_specs(token, next);
+    let (value, consumed, attachment) = next_value(next, &specs);
+    let consumes = specs.iter().any(|spec| spec.value.is_none()) && value.is_some();
+    for spec in &mut specs {
+        if spec.value.is_none() && value.is_some() {
+            spec.value = value.clone();
+            spec.attachment = attachment;
+        }
+        spec.repeatable |= repeatable;
+        root.merge_option(spec.clone());
+    }
+    if consumes { consumed } else { 0 }
+}
+
+fn merge_positional(root: &mut CommandNode, token: &str, position: Position) -> bool {
     if token == "..." || token == "--" || token.starts_with('=') || token.starts_with('{') {
         return false;
     }
@@ -167,19 +151,19 @@ fn merge_positional(
     if name.is_empty() || option::synthetic_placeholder(name) {
         return false;
     }
-    let value = if option::placeholder(token) || optional || repeatable {
-        option::value_spec(name, optional)
+    let value = if option::placeholder(token) || position.optional || position.repeatable {
+        option::value_spec(name, position.optional)
     } else {
         ValueSpec::choice(name)
     };
     root.merge_positional_at(
-        position_index,
+        position.index,
         PositionalSpec {
             value,
-            name: name.to_string(),
+            name: name.into(),
             description: None,
-            optional,
-            repeatable,
+            optional: position.optional,
+            repeatable: position.repeatable,
         },
     );
     true

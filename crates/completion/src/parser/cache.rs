@@ -124,7 +124,7 @@ fn collection_fingerprint() -> u64 {
 }
 
 // Readers see a complete source bundle even when workers discover the same command together.
-fn replace(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(super) fn replace(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::{
         io::Write,
         sync::atomic::{AtomicU64, Ordering},

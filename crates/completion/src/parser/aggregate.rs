@@ -7,7 +7,7 @@ pub(super) fn aggregate(
     discover_usage_commands: bool,
 ) -> Option<CommandGraph> {
     let mut graph: Option<CommandGraph> = None;
-    for source in sources {
+    for (index, source) in sources.iter().enumerate() {
         let mut fragment = match source {
             Source::Help(text) if help::matches_path(text, &request.program, &request.args) => {
                 help::parse_for_with(
@@ -28,6 +28,14 @@ pub(super) fn aggregate(
         if !fragment.root.useful() {
             continue;
         }
+        let (label, text) = match source {
+            Source::Help(text) => (format!("help source {}", index + 1), text.clone()),
+            Source::Man(text) => (
+                format!("rendered man source {}", index + 1),
+                man::help_text(text),
+            ),
+        };
+        super::evidence::annotate(&mut fragment.root, &label, &text);
         if let Some(current) = &mut graph {
             if matches!(source, Source::Man(_)) {
                 preserve_help_summaries(&current.root, &mut fragment.root);

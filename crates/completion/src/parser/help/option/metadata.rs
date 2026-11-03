@@ -63,3 +63,10 @@ fn metadata_tag(tag: &str) -> bool {
             | "string"
     )
 }
+
+pub(super) fn repeatable(description: &str) -> bool {
+    let lower = description.to_ascii_lowercase();
+    ["multiple times", "more than once", "repeatable"]
+        .iter()
+        .any(|phrase| lower.contains(phrase))
+}

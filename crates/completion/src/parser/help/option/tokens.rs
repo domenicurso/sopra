@@ -43,7 +43,7 @@ pub(crate) fn option_token(token: &str) -> Option<ParsedOption> {
         return Some(ParsedOption {
             name: name.to_string(),
             value: Some(value),
-            attachment: ValueAttachment::Attached,
+            attachment: ValueAttachment::Equals,
         });
     }
     if !names::valid(token) {
@@ -69,10 +69,11 @@ fn bracketed_value(token: &str) -> Option<ParsedOption> {
     };
     let value = token[start + 1..].trim_end_matches(close);
     (!name.is_empty() && !value.is_empty()).then(|| {
-        let attachment = if token[..start].ends_with('=')
-            || value.starts_with(['=', ':'])
-            || name.starts_with("--")
-        {
+        let attachment = if value.starts_with(':') {
+            ValueAttachment::Colon
+        } else if token[..start].ends_with('=') || value.starts_with('=') {
+            ValueAttachment::Equals
+        } else if name.starts_with("--") {
             ValueAttachment::Attached
         } else {
             ValueAttachment::Either

@@ -13,7 +13,13 @@ impl CompletionEngine {
             items,
             prefetch,
             help,
+            provider,
         } = result;
+        if let Some(query) = provider {
+            self.providers.submit(query);
+        } else {
+            self.providers.cancel();
+        }
         let _ = self
             .response_tx
             .send(self.local_response(request, items, started.elapsed()));
@@ -23,21 +29,11 @@ impl CompletionEngine {
         prefetch
     }
 
-    pub(super) fn schedule_help(&mut self, request: &Request) {
-        let Some(invocation) = parser::invocation(request) else {
-            return;
-        };
-        if !self.local.needs_graph(&invocation.key) {
-            return;
-        }
-        self.enqueue_help(parser::request_for(request, &invocation));
-    }
-
     pub(super) fn enqueue_help(&mut self, help: parser::HelpRequest) {
         let key = help.id();
         self.prefetch_keys.remove(&key);
         self.help_prefetch.retain(|queued| queued.id() != key);
-        self.send_help(help);
+        self.send_help(help, false);
     }
 
     pub(super) fn queue_prefetch(&mut self, help: parser::HelpRequest) {
@@ -59,7 +55,7 @@ impl CompletionEngine {
                 continue;
             }
             self.prefetch_inflight = Some(key);
-            if !self.send_help(help) {
+            if !self.send_help(help, true) {
                 self.prefetch_inflight = None;
                 continue;
             }
@@ -67,10 +63,16 @@ impl CompletionEngine {
         }
     }
 
-    fn send_help(&mut self, help: parser::HelpRequest) -> bool {
+    fn send_help(&mut self, help: parser::HelpRequest, background: bool) -> bool {
         let key = help.id();
         self.help_latest.insert(key.clone(), help.request.clone());
-        if self.help_pending.insert(key.clone()) && self.help_requests.send(help).is_err() {
+        if !self.help_pending.insert(key.clone()) {
+            if !background {
+                self.help_requests.promote(&key);
+            }
+            return true;
+        }
+        if !self.help_requests.send(help, background) {
             self.help_pending.remove(&key);
             self.help_latest.remove(&key);
             return false;

@@ -1,0 +1,42 @@
+# Provider recipes are data; the engine has no command-specific branches.
+[[provider]]
+id = "git-switch-branches"
+command = "git"
+path = ["switch"]
+positional = 0
+exec = ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"]
+root_marker = ".git"
+watch = [".git/HEAD", ".git/refs/heads", ".git/packed-refs"]
+
+[[provider]]
+id = "git-checkout-refs"
+command = "git"
+path = ["checkout"]
+positional = 0
+exec = ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/", "refs/tags/"]
+root_marker = ".git"
+watch = [".git/HEAD", ".git/refs/heads", ".git/packed-refs"]
+
+[[provider]]
+id = "docker-start-containers"
+command = "docker"
+path = ["start"]
+positional = 0
+exec = ["docker", "ps", "--all", "--format", "{{.Names}}"]
+
+[[provider]]
+id = "docker-logs-containers"
+command = "docker"
+path = ["logs"]
+positional = 0
+exec = ["docker", "ps", "--all", "--format", "{{.Names}}"]
+
+[[provider]]
+id = "npm-run-scripts"
+command = "npm"
+path = ["run"]
+positional = 0
+json_file = "package.json"
+pointer = "/scripts"
+root_marker = "package.json"
+watch = ["package.json"]

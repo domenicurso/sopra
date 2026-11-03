@@ -34,7 +34,9 @@ pub(super) fn description_value(description: &str) -> Option<ValueSpec> {
 }
 
 fn clean_value_name(name: &str) -> String {
-    name.trim_matches(['<', '>', '[', ']', '='])
+    name.trim_end_matches(',')
+        .trim_end_matches("...")
+        .trim_matches(['<', '>', '[', ']', '=', ','])
         .trim()
         .to_string()
 }

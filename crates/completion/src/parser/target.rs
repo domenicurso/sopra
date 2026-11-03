@@ -1,4 +1,4 @@
-use crate::graph::{CommandGraph, CommandNode, ValueAttachment};
+use crate::graph::{CommandGraph, CommandNode};
 
 use super::context::Invocation;
 
@@ -66,5 +66,5 @@ fn option_takes_value(node: &CommandNode, argument: &str) -> bool {
     else {
         return false;
     };
-    option.value.is_some() && option.attachment != ValueAttachment::Attached
+    option.value.as_ref().is_some_and(|value| !value.optional) && option.attachment.separate()
 }

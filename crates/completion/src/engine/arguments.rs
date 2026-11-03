@@ -1,48 +1,50 @@
-use std::ops::Range;
-
 use crate::{
     Request,
     graph::{CommandNode, OptionSpec, PositionalSpec, ValueSpec},
     parser::Invocation,
 };
+use std::ops::Range;
 
-pub(super) fn pending_value<'a>(
+pub(crate) fn pending_value<'a>(
     node: &'a CommandNode,
     invocation: &Invocation,
     request: &Request,
 ) -> Option<(&'a ValueSpec, String, Range<usize>)> {
-    let args = &invocation.args;
-    let current = args.last().map(String::as_str).unwrap_or_default();
-    if let Some((name, query)) = current.split_once('=') {
-        let option = option_named(node, name)?;
-        let value = option.value.as_ref()?;
-        let query_start = name.len() + 1;
+    let current = if invocation.trailing_space {
+        ""
+    } else {
+        invocation.active.as_str()
+    };
+    if invocation
+        .args
+        .iter()
+        .take(completed_count(invocation))
+        .any(|arg| arg == "--")
+    {
+        return None;
+    }
+    if let Some((option, offset)) = attached_option(node, current) {
         return Some((
-            value,
-            query.to_string(),
-            request.replace.start + query_start..request.replace.end,
+            option.value.as_ref()?,
+            current[offset..].to_string(),
+            request.replace.start + offset..request.replace.end,
         ));
     }
-    if let Some((option, query_start)) = attached_option(node, current) {
-        let value = option.value.as_ref()?;
-        return Some((
-            value,
-            current[query_start..].to_string(),
-            request.replace.start + query_start..request.replace.end,
-        ));
+    let state = scan(node, invocation);
+    let option = state.pending?;
+    if current.starts_with('-')
+        && node
+            .options
+            .iter()
+            .any(|option| option.names.iter().any(|name| name.starts_with(current)))
+    {
+        return None;
     }
-    let index = (0..args.len())
-        .rev()
-        .find(|index| option_named(node, &args[*index]).is_some())?;
-    let option = option_named(node, &args[index])?;
-    let value = option.value.as_ref()?;
-    if index + 1 == args.len() && invocation.trailing_space {
-        return Some((value, String::new(), request.replace.clone()));
-    }
-    if index + 2 == args.len() && !invocation.active.is_empty() {
-        return Some((value, invocation.active.clone(), request.replace.clone()));
-    }
-    None
+    Some((
+        option.value.as_ref()?,
+        current.to_string(),
+        request.replace.clone(),
+    ))
 }
 
 pub(super) fn option_named<'a>(node: &'a CommandNode, name: &str) -> Option<&'a OptionSpec> {
@@ -55,48 +57,83 @@ pub(super) fn next_positional<'a>(
     node: &'a CommandNode,
     invocation: &Invocation,
 ) -> Option<&'a PositionalSpec> {
-    let mut index = 0;
-    let mut skip_value = false;
-    for (position, argument) in invocation.args.iter().enumerate() {
-        if !invocation.trailing_space
-            && position + 1 == invocation.args.len()
-            && argument == &invocation.active
+    let state = scan(node, invocation);
+    node.positionals
+        .get(state.positionals)
+        .or_else(|| node.positionals.last().filter(|last| last.repeatable))
+}
+
+pub(super) fn completed_count(invocation: &Invocation) -> usize {
+    invocation
+        .args
+        .len()
+        .saturating_sub(usize::from(!invocation.trailing_space))
+}
+
+pub(super) fn selected<'a>(node: &'a CommandNode, invocation: &Invocation) -> Vec<&'a OptionSpec> {
+    scan(node, invocation).selected
+}
+
+struct Scan<'a> {
+    pending: Option<&'a OptionSpec>,
+    positionals: usize,
+    selected: Vec<&'a OptionSpec>,
+    terminated: bool,
+}
+
+fn scan<'a>(node: &'a CommandNode, invocation: &Invocation) -> Scan<'a> {
+    let mut state = Scan {
+        pending: None,
+        positionals: 0,
+        selected: Vec::new(),
+        terminated: false,
+    };
+    for argument in invocation.args.iter().take(completed_count(invocation)) {
+        if state.pending.take().is_some()
+            && argument != "--"
+            && option_named(node, argument).is_none()
         {
-            break;
-        }
-        if skip_value {
-            skip_value = false;
             continue;
         }
-        if let Some(option) = option_named(node, argument) {
-            skip_value = option.value.is_some();
-        } else if attached_option(node, argument).is_none() && !argument.starts_with('-') {
-            index += 1;
+        if state.terminated {
+            state.positionals += 1;
+            continue;
+        }
+        if argument == "--" {
+            state.terminated = true;
+            continue;
+        }
+        let option = option_named(node, argument)
+            .or_else(|| attached_option(node, argument).map(|(option, _)| option));
+        if let Some(option) = option {
+            state.selected.push(option);
+            if option_named(node, argument).is_some()
+                && option.attachment.separate()
+                && option.value.is_some()
+            {
+                state.pending = Some(option);
+            }
+        } else if !argument.starts_with('-') {
+            state.positionals += 1;
         }
     }
-    let positional = node
-        .positionals
-        .get(index)
-        .or_else(|| node.positionals.last())?;
-    (index == 0 || positional.repeatable || index < node.positionals.len()).then_some(positional)
+    state
 }
 
 fn attached_option<'a>(node: &'a CommandNode, token: &str) -> Option<(&'a OptionSpec, usize)> {
     node.options.iter().find_map(|option| {
-        if option.value.is_none() || option.attachment == crate::graph::ValueAttachment::Separate {
-            return None;
-        }
+        option.value.as_ref()?;
         option.names.iter().find_map(|name| {
-            let suffix = token.strip_prefix(name)?;
-            if (suffix.is_empty() && !name.ends_with(':'))
-                || (name.starts_with("--") && !suffix.starts_with('=') && !name.ends_with(':'))
-            {
-                return None;
-            }
-            let offset = name.len() + usize::from(suffix.starts_with('='));
-            (offset <= token.len()).then_some((option, offset))
+            option
+                .attachment
+                .value_start(name, token)
+                .map(|offset| (option, offset))
         })
     })
+}
+
+pub(crate) fn position_index(node: &CommandNode, invocation: &Invocation) -> usize {
+    scan(node, invocation).positionals
 }
 
 #[cfg(test)]

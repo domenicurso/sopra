@@ -1,8 +1,8 @@
-mod arguments;
+pub(crate) mod arguments;
 mod candidates;
 mod commands;
 mod graphs;
-mod values;
+pub(crate) mod values;
 
 use crate::{CompletionItem, Request, filesystem::FilesystemEngine, parser, ranking, variables};
 
@@ -15,6 +15,7 @@ pub(super) struct LocalResult {
     pub(super) items: Vec<CompletionItem>,
     pub(super) prefetch: bool,
     pub(super) help: Option<parser::HelpRequest>,
+    pub(super) provider: Option<crate::providers::Query>,
 }
 
 impl LocalCompletion {
@@ -63,6 +64,7 @@ impl LocalCompletion {
         request: &Request,
         invocation: &parser::Invocation,
     ) -> Option<LocalResult> {
+        self.restore(request, invocation);
         let Some(entry) = self.graphs.get(&invocation.key) else {
             return Some(handled(
                 Vec::new(),
@@ -75,19 +77,59 @@ impl LocalCompletion {
             return Some(handled(Vec::new(), false, None));
         };
         let (node, scoped, path) = parser::resolve(graph, invocation);
-        let help = if path.is_empty() || entry.hydrated.contains(&path) {
+        let help = if entry.stale() {
+            let mut help = parser::request_for(request, invocation);
+            help.cache = parser::discover::CachePolicy::Refresh;
+            Some(help)
+        } else if path.is_empty() || entry.hydrated.contains(&path) {
             None
         } else {
             let discover = node.subcommands.is_empty() && node.positionals.is_empty();
             Some(parser::request_for_path(
-                request, invocation, path, discover,
+                request,
+                invocation,
+                path.clone(),
+                discover,
             ))
         };
-        Some(handled(
+        let mut result = handled(
             candidates::complete(node, &scoped, request, &mut self.filesystem),
             false,
             help,
-        ))
+        );
+        result.provider = crate::providers::plan(request, &scoped, path, node);
+        Some(result)
+    }
+
+    fn restore(&mut self, request: &Request, invocation: &parser::Invocation) {
+        if self.graphs.get(&invocation.key).is_none() {
+            let help = parser::request_for(request, invocation);
+            if let Some(hit) = parser::snapshot::read(&help) {
+                self.graphs
+                    .merge(invocation.key.clone(), Vec::new(), Some(hit.graph));
+                if hit.stale {
+                    self.graphs.provisional(&invocation.key);
+                }
+            }
+        }
+        let Some(entry) = self.graphs.get(&invocation.key) else {
+            return;
+        };
+        let Some(graph) = &entry.graph else {
+            return;
+        };
+        let (_, _, path) = parser::resolve(graph, invocation);
+        if path.is_empty() || entry.hydrated.contains(&path) {
+            return;
+        }
+        let help = parser::request_for_path(request, invocation, path.clone(), true);
+        if let Some(hit) = parser::snapshot::read(&help) {
+            self.graphs
+                .merge(invocation.key.clone(), path, Some(hit.graph));
+            if hit.stale {
+                self.graphs.provisional(&invocation.key);
+            }
+        }
     }
 
     pub(super) fn cache_graph(
@@ -113,6 +155,7 @@ fn handled(
         items,
         prefetch,
         help,
+        provider: None,
     }
 }
 
@@ -125,3 +168,6 @@ mod tests;
 
 #[cfg(test)]
 mod value_tests;
+
+#[cfg(test)]
+mod grammar_tests;

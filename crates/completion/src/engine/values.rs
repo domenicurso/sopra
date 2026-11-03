@@ -13,6 +13,7 @@ pub(super) fn items(
     request: &Request,
 ) -> Vec<CompletionItem> {
     let (query, replace) = input;
+    let needle = brush_parser::unquote_str(query);
     if !value.choices.is_empty() {
         if let Some(items) = assignment_items(&value.choices, query, replace.clone()) {
             return items;
@@ -20,11 +21,11 @@ pub(super) fn items(
         return value
             .choices
             .iter()
-            .filter(|choice| matches_query(choice, query))
+            .filter(|choice| matches_query(choice, &needle))
             .map(|choice| {
                 CompletionItem::with_range(
                     choice,
-                    choice,
+                    crate::literal::quote(choice, query),
                     None,
                     CompletionKind::Value,
                     replace.clone(),
@@ -34,7 +35,17 @@ pub(super) fn items(
             .collect();
     }
     match value.kind {
-        ValueKind::File | ValueKind::Directory => filesystem.complete(request, query),
+        ValueKind::File | ValueKind::Directory => {
+            let mut request = request.clone();
+            request.replace = replace;
+            filesystem
+                .complete(&request, query)
+                .into_iter()
+                .filter(|item| {
+                    value.kind != ValueKind::Directory || item.kind == CompletionKind::Directory
+                })
+                .collect()
+        }
         _ => Vec::new(),
     }
 }
@@ -104,7 +115,7 @@ fn assignment_keys(
         .collect()
 }
 
-pub(super) fn matches_query(candidate: &str, query: &str) -> bool {
+pub(crate) fn matches_query(candidate: &str, query: &str) -> bool {
     query.is_empty()
         || Matcher::new(query, &Config::default())
             .match_one_indices(candidate, 0)

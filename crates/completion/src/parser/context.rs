@@ -63,6 +63,7 @@ pub(crate) fn request_for_path(
 ) -> HelpRequest {
     HelpRequest {
         cache: super::discover::CachePolicy::Use,
+        control: super::control::Control::new(std::time::Duration::from_secs(30)),
         environment: sopra_shell_context::Snapshot::capture(),
         key: invocation.key.clone(),
         command: invocation.command.clone(),

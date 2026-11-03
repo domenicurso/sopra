@@ -18,10 +18,14 @@ pub(crate) fn parse_for_with(
     path: &[String],
     discover_usage_commands: bool,
 ) -> CommandGraph {
-    let source = if roff::looks_like_source(text) {
+    let source = help_text(text);
+    super::help::parse_for_with(&source, program, path, discover_usage_commands)
+}
+
+pub(super) fn help_text(text: &str) -> String {
+    if roff::looks_like_source(text) {
         roff::to_help_text(text)
     } else {
         text.to_string()
-    };
-    super::help::parse_for_with(&source, program, path, discover_usage_commands)
+    }
 }

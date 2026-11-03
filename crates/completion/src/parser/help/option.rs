@@ -3,12 +3,14 @@ mod metadata;
 mod names;
 mod tokens;
 mod values;
+mod words;
 use choices::choices;
 pub(crate) use choices::choices_from_description;
 pub(crate) use metadata::clean_description;
 pub(crate) use tokens::option_token;
 use values::description_value;
 pub(crate) use values::value_spec;
+pub(crate) use words::words;
 
 use crate::graph::{OptionSpec, ValueAttachment, ValueSpec};
 
@@ -22,7 +24,7 @@ pub(crate) fn option_row(left: &str, description: &str) -> Option<OptionSpec> {
     let mut names = Vec::new();
     let mut value = None;
     let mut attachment: Option<ValueAttachment> = None;
-    let tokens = left.split_whitespace().collect::<Vec<_>>();
+    let tokens = words(left);
     for (index, token) in tokens.iter().enumerate() {
         let token = token.trim_matches(',');
         let Some(parsed) = option_token(token) else {
@@ -41,7 +43,7 @@ pub(crate) fn option_row(left: &str, description: &str) -> Option<OptionSpec> {
         }));
         if value.is_none() && separate_value {
             value = Some(value_spec(
-                tokens[index + 1],
+                &tokens[index + 1],
                 tokens[index + 1].starts_with('['),
             ));
             attachment = Some(ValueAttachment::Separate);
@@ -65,7 +67,7 @@ pub(crate) fn option_row(left: &str, description: &str) -> Option<OptionSpec> {
         description: clean_description(description),
         value,
         attachment: attachment.unwrap_or_default(),
-        repeatable: description.to_ascii_lowercase().contains("multiple times"),
+        repeatable: metadata::repeatable(description),
     })
 }
 

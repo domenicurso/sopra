@@ -4,10 +4,18 @@ use crate::{
 };
 use std::{collections::HashSet, ops::Range};
 
-pub(super) fn options(options: &[OptionSpec], replace: Range<usize>) -> Vec<CompletionItem> {
+pub(super) fn options(
+    node: &CommandNode,
+    invocation: &crate::parser::Invocation,
+    replace: Range<usize>,
+) -> Vec<CompletionItem> {
     let mut seen = HashSet::new();
     let mut items = Vec::new();
-    for option in options {
+    let selected = super::arguments::selected(node, invocation);
+    for option in &node.options {
+        if !available(node, option, &selected) {
+            continue;
+        }
         for name in &option.names {
             if seen.insert(name.as_str()) {
                 items.push(option_item(name, option, replace.clone()));
@@ -72,3 +80,15 @@ fn invocation<'a>(name: &str, mut node: &'a CommandNode) -> (String, &'a Command
 #[cfg(test)]
 #[path = "commands_tests.rs"]
 mod tests;
+
+fn available(node: &CommandNode, option: &OptionSpec, selected: &[&OptionSpec]) -> bool {
+    if !option.repeatable && selected.iter().any(|used| used.names == option.names) {
+        return false;
+    }
+    !node.exclusive.iter().any(|group| {
+        option.names.iter().any(|name| group.contains(name))
+            && selected.iter().any(|used| {
+                used.names != option.names && used.names.iter().any(|name| group.contains(name))
+            })
+    })
+}

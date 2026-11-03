@@ -14,7 +14,7 @@ where
 {
     let mut queue = initial_paths(&graph);
     let mut visited = HashSet::new();
-    while !queue.is_empty() && visited.len() < MAX_NODES {
+    while !queue.is_empty() && visited.len() < MAX_NODES && !request.control.stopped() {
         let work = prepare_batch(&mut queue, &mut visited, request, &graph);
         let loader = &load;
         let results = std::thread::scope(|scope| {
@@ -51,7 +51,7 @@ fn prepare_batch(
     graph: &CommandGraph,
 ) -> Vec<WorkItem> {
     let mut work = Vec::new();
-    while work.len() < BATCH_SIZE {
+    while work.len() < BATCH_SIZE && visited.len() < MAX_NODES {
         let Some(path) = queue.pop() else {
             break;
         };

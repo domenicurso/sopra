@@ -6,7 +6,7 @@ use std::{
 };
 
 // A long-lived worker must stop reusing graphs after a rebuild or directory change.
-pub(super) fn key(resolved: &str, executable: Option<&Path>, cwd: &Path) -> String {
+pub(crate) fn key(resolved: &str, executable: Option<&Path>, cwd: &Path) -> String {
     let mut hash = DefaultHasher::new();
     cwd.hash(&mut hash);
     for name in [
