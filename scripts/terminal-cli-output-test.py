@@ -32,7 +32,7 @@ def exercise(directory: Path) -> None:
         assert "\x1b[1;36mrefresh" in help_text and "\x1b[2m" in help_text
         plain = SGR.sub("", help_text)
         assert all(len(line) < width for line in plain.splitlines()), (width, plain)
-        assert "config edit" in plain and "widgets list" in plain
+        assert "config <command>" in plain and "widgets list" in plain
         table = capture(["widgets", "list"], width, env)
         plain = SGR.sub("", table)
         assert "clock" in plain and "built-in" in plain

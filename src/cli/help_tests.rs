@@ -8,6 +8,7 @@ fn help_pages_wrap_without_losing_commands_or_coloring_redirected_output() {
         &help_pages::DEV,
         &help_pages::DEBUG,
         &help_pages::GRAPH,
+        &help_pages::CONFIG,
     ] {
         for width in [20, 40, 63, 64, 80, 120] {
             let help = render(

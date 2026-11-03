@@ -20,17 +20,8 @@ const ROOT_COMMANDS: &[(&str, &str)] = &[
     ),
     ("restart", "Replace the worker and reset widget state"),
     (
-        "config edit",
-        "Open config.toml in $VISUAL or $EDITOR, validate, then refresh",
-    ),
-    (
-        "config check",
-        "Validate config, templates, and widget references",
-    ),
-    ("config path", "Print the canonical config path"),
-    (
-        "config show",
-        "Print effective configuration, including defaults",
+        "config <command>",
+        "Inspect, validate, or edit configuration",
     ),
     (
         "widgets list",
@@ -141,4 +132,18 @@ pub(super) const GRAPH: Page<'static> = Page {
         "Use --root for immediate children or --chunk with a nested command path. Generation otherwise inspects the full graph.",
         "Use --fresh to collect new sources. Parsing accepts - as the input file for stdin.",
     ],
+};
+
+pub(super) const CONFIG: Page<'static> = Page {
+    usage: "Usage: sopra config <command>",
+    commands: &[
+        (
+            "edit",
+            "Open config.toml in $VISUAL or $EDITOR, validate, then refresh",
+        ),
+        ("check", "Validate config, templates, and widget references"),
+        ("path", "Print the canonical config path"),
+        ("show", "Print effective configuration, including defaults"),
+    ],
+    notes: &[],
 };
