@@ -145,6 +145,8 @@ only when the entire command is submitted. An execution-disabled Zsh parser chec
 continuations in a background worker; aliases that introduce unfinished syntax
 still use the live shell's continuation handling.
 
+Shift+Enter inserts a newline at the cursor without submitting, using the configured secondary prompt. This requires a terminal that reports modified Enter keys, such as Ghostty. Enter still submits complete commands and continues incomplete syntax.
+
 Widgets inherit the color surrounding their reference. They may dim punctuation,
 emphasize text, or reverse a selection, but they don't select their own colors.
 `widgets.*` controls content and behavior: the clock's `format` uses `strftime`,

@@ -19,7 +19,7 @@ except ImportError:
 
 
 KEYS = {
-    "ENTER": b"\r", "RETURN": b"\r", "TAB": b"\t", "ESC": b"\x1b",
+    "SHIFT-ENTER": b"\x1b[13;2u", "ENTER": b"\r", "RETURN": b"\r", "TAB": b"\t", "ESC": b"\x1b",
     "BACKSPACE": b"\x7f", "DELETE": b"\x1b[3~", "UP": b"\x1b[A",
     "DOWN": b"\x1b[B", "RIGHT": b"\x1b[C", "LEFT": b"\x1b[D",
     "HOME": b"\x1b[H", "END": b"\x1b[F", "PAGEUP": b"\x1b[5~",

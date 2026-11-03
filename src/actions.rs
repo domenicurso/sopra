@@ -63,6 +63,7 @@ pub(crate) fn resolve(key: Key) -> Action {
             _ => Action::Ignore,
         },
         Key::Enter => Action::Enter,
+        Key::ShiftEnter => Action::Character('\n'),
         Key::Tab => Action::Tab,
         Key::BackTab => Action::BackTab,
         Key::Backspace => Action::Backspace,
@@ -91,5 +92,6 @@ mod tests {
         assert_eq!(resolve(Key::Control('r')), Action::SearchHistory);
         assert_eq!(resolve(Key::Alt('f')), Action::WordRight);
         assert_eq!(resolve(Key::Control('z')), Action::Ignore);
+        assert_eq!(resolve(Key::ShiftEnter), Action::Character('\n'));
     }
 }

@@ -30,6 +30,9 @@ def test_screen_sequences() -> None:
     assert screen.feed(b"\x1b]12;?\x1b\\") == (b"\x1b]12;#00ff00\x07",)
     screen.feed(b"\x1b[2J\x1b[Hfresh")
     assert screen.lines()[0] == "fresh"
+    cursor = (screen.row, screen.column)
+    screen.feed(b"\x1b[>1u\x1b[<u")
+    assert (screen.row, screen.column) == cursor
     screen.feed(b"\x1b[?1049halt")
     screen.resize(4, 10)
     screen.feed(b"\x1b[?1049l")

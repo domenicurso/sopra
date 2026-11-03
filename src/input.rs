@@ -1,4 +1,5 @@
 mod cursor;
+mod keyboard;
 mod keys;
 mod mouse;
 mod paste;
@@ -38,6 +39,7 @@ pub(crate) enum Key {
     Mouse(MouseEvent),
     Ignore,
     Enter,
+    ShiftEnter,
     Tab,
     BackTab,
     Backspace,

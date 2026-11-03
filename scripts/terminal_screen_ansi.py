@@ -104,6 +104,8 @@ class TerminalParser:
             self.responses.append(responses[value])
 
     def _handle_csi(self, raw: str, final: str) -> None:
+        if final == "u" and raw:
+            return  # Keyboard protocol controls are not cursor restoration.
         private = raw[:1] if raw[:1] in "?>!" else ""
         parameters = raw[1:] if private else raw
         values = [self._number(part) for part in parameters.replace(":", ";").split(";")] if parameters else []

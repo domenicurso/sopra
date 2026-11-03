@@ -20,6 +20,7 @@ pub(crate) struct Terminal {
     saved_mode: termios,
     raw_mode: bool,
     mouse_enabled: bool,
+    keyboard_enabled: bool,
     resize_signal: Option<resize_signal::ResizeSignal>,
     palette: TerminalPalette,
     pub(super) pending_input: VecDeque<u8>,
@@ -48,11 +49,12 @@ impl Terminal {
             saved_mode,
             raw_mode: true,
             mouse_enabled: false,
+            keyboard_enabled: true,
             resize_signal: Some(resize_signal),
             palette,
             pending_input: pending.into(),
         };
-        terminal.write_all(b"\x1b[?2004h")?;
+        terminal.write_all(b"\x1b[?2004h\x1b[>1u")?;
         terminal.flush()?;
         Ok(terminal)
     }
@@ -149,6 +151,11 @@ impl Terminal {
     }
 
     pub(crate) fn restore(&mut self) -> io::Result<()> {
+        let keyboard_result = if std::mem::take(&mut self.keyboard_enabled) {
+            self.write_all(b"\x1b[<u")
+        } else {
+            Ok(())
+        };
         let mouse_result = self
             .set_mouse_reporting(false)
             .and_then(|()| self.write_all(b"\x1b[?2004l"))
@@ -163,7 +170,7 @@ impl Terminal {
             Ok(())
         };
         self.resize_signal.take();
-        mouse_result.and(mode_result)
+        keyboard_result.and(mouse_result).and(mode_result)
     }
 }
 

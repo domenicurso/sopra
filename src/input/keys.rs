@@ -49,7 +49,7 @@ impl Terminal {
             self.pending_input.push_front(first);
         }
         let mut sequence = Vec::with_capacity(8);
-        for _ in 0..8 {
+        for _ in 0..32 {
             if !self.poll(Duration::from_millis(4))? {
                 break;
             }
@@ -106,8 +106,12 @@ impl Terminal {
 }
 
 fn decode_key(prefix: u8, sequence: &[u8]) -> Key {
+    if prefix == b'[' && sequence.ends_with(b"u") {
+        return super::keyboard::decode(&sequence[..sequence.len() - 1]);
+    }
     match sequence.last().copied() {
         Some(b'Z') if prefix == b'[' => Key::BackTab,
+        Some(b'~') if sequence == b"27;2;13~" => Key::ShiftEnter,
         Some(b'A') if sequence == b"1;3A" => Key::AltUp,
         Some(b'B') if sequence == b"1;3B" => Key::AltDown,
         Some(b'A') => Key::Up,
@@ -118,5 +122,17 @@ fn decode_key(prefix: u8, sequence: &[u8]) -> Key {
         Some(b'F') => Key::End,
         Some(b'~') if sequence.starts_with(b"3") => Key::Delete,
         _ => Key::Escape,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modified_enter_supports_csi_u_and_modify_other_keys() {
+        assert_eq!(decode_key(b'[', b"13;2u"), Key::ShiftEnter);
+        assert_eq!(decode_key(b'[', b"27;2;13~"), Key::ShiftEnter);
+        assert_eq!(decode_key(b'[', b"13;6u"), Key::Ignore);
     }
 }

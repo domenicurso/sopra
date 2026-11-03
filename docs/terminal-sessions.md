@@ -75,7 +75,7 @@ only when that operation's raw PTY bytes are needed for protocol debugging; it
 does not change what the virtual screen receives or return bytes accumulated by
 earlier operations.
 
-The `key` operation accepts `ENTER`, `RETURN`, `TAB`, `ESC`, `BACKSPACE`,
+The `key` operation accepts `ENTER`, `RETURN`, `SHIFT-ENTER`, `TAB`, `ESC`, `BACKSPACE`,
 `DELETE`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `HOME`, `END`, `PAGEUP`, `PAGEDOWN`,
 `INSERT`, `CTRL-C`, `CTRL-D`, `CTRL-Z`, `CTRL-L`, `CTRL-A`, `CTRL-E`, `CTRL-U`,
 `CTRL-K`, and `CTRL-W`, plus one-character literal keys. A JSON `CTRL-C` sends

@@ -152,3 +152,14 @@ fn paste_replaces_selected_text_without_pairing_or_submitting_newlines() {
     assert_eq!(editor.cursor, editor.buffer.len());
     assert!(editor.text_selection.range().is_none());
 }
+
+#[test]
+fn explicit_newline_splits_at_unicode_cursor_without_submitting() {
+    let mut state = editor("echo café; printf second");
+    state.cursor = "echo café;".len();
+    assert!(state.handle_key(Action::Character('\n')).is_none());
+    assert_eq!(state.buffer(), "echo café;\n printf second");
+    assert_eq!(state.cursor, "echo café;\n".len());
+    state.handle_key(Action::Backspace);
+    assert_eq!(state.buffer(), "echo café; printf second");
+}
