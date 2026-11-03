@@ -32,6 +32,19 @@ def assert_prompt(screen: ReflowScreen, command: str = "") -> None:
     assert snapshot["paintedCursors"] == [[len("test $ " + command), row]], snapshot
 
 
+def wait_prompt(terminal: TerminalSession, screen: ReflowScreen, command: str = "") -> None:
+    # Resizing can return before the worker answers the cursor query and repaints.
+    deadline = time.monotonic() + 3
+    while True:
+        terminal.read(0.05)
+        try:
+            assert_prompt(screen, command)
+            return
+        except AssertionError:
+            if time.monotonic() >= deadline:
+                raise
+
+
 def sweep(terminal: TerminalSession, screen: ReflowScreen, minimum: int, command: str = "") -> None:
     before = screen.snapshot()
     for width in chain(range(119, minimum - 1, -1), range(minimum + 1, 121)):
@@ -66,35 +79,35 @@ def run_session(root: Path, screen: ReflowScreen, config_root: str) -> None:
         terminal.wait_for("history-15", timeout=10)
         terminal.read(0.3)
         assert_history(screen)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
         sweep(terminal, screen, 40)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
         terminal.resize(12, 40)
         terminal.read(0.2)
         assert_history(screen)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
         terminal.send_text("echo resize-marker")
         terminal.key("ENTER")
         terminal.read(0.3)
         assert "$ echo resize-marker" in screen.snapshot()["lines"], screen.snapshot()
         assert "resize-marker" in screen.snapshot()["lines"]
         assert_history(screen)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
         terminal.resize(12, 120)
         terminal.read(0.2)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
         command = "echo " + "x" * 60
         terminal.send_text(command)
         terminal.read(0.2)
-        assert_prompt(screen, command)
+        wait_prompt(terminal, screen, command)
         sweep(terminal, screen, 20, command)
-        assert_prompt(screen, command)
+        wait_prompt(terminal, screen, command)
         terminal.key("ENTER")
         terminal.read(0.3)
         lines = screen.snapshot()["lines"]
         assert "$ " + command in lines and "x" * 60 in lines, lines
         assert_history(screen)
-        assert_prompt(screen)
+        wait_prompt(terminal, screen)
 
 
 def main() -> None:
