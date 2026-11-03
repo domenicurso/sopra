@@ -125,6 +125,8 @@ def exercise(directory: Path, env: dict[str, str]) -> None:
     run(["cache", "clear", "absent-cli"], directory, env)
     run(["cache", "clear"], directory, env)
     assert "Graphs: 0 files" in run(["cache", "status"], directory, env)
+    for store in ["completion-cache", "completion-graphs"]:
+        assert not (Path(env["TMPDIR"]) / "sopra" / store).exists()
 
 
 def main() -> None:

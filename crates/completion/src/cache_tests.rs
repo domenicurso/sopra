@@ -14,6 +14,7 @@ fn fixture() -> io::Result<PathBuf> {
 #[test]
 fn targeted_clear_preserves_other_commands_and_full_clear_removes_legacy_files() -> io::Result<()> {
     let base = fixture()?;
+    fs::write(base.join("unrelated"), b"keep")?;
     for (_, store) in STORES {
         for command in ["git", "npm"] {
             let path = directory(&base, store, command);
@@ -27,6 +28,7 @@ fn targeted_clear_preserves_other_commands_and_full_clear_removes_legacy_files()
     assert!(report.contains("Sources: 5 files, 15 bytes"), "{report}");
     assert!(report.contains("Graphs: 5 files, 15 bytes"), "{report}");
     assert!(clear_at(&base, Some("/usr/local/bin/git"))?.contains("4 files, 12 bytes"));
+    assert!(!directory(&base, "completion-cache", "git").exists());
     assert_eq!(
         inventory(&directory(&base, "completion-cache", "npm"))?.len(),
         2
@@ -34,10 +36,27 @@ fn targeted_clear_preserves_other_commands_and_full_clear_removes_legacy_files()
     assert!(clear_at(&base, Some("git"))?.contains("0 files, 0 bytes"));
     assert!(clear_at(&base, None)?.contains("6 files, 18 bytes"));
     assert!(status_at(&base)?.contains("Sources: 0 files, 0 bytes"));
-    fs::write(base.join("unrelated"), b"keep")?;
     clear_at(&base, None)?;
     assert!(base.join("unrelated").exists());
     fs::remove_dir_all(base)
+}
+
+#[test]
+fn clearing_prunes_empty_directories_within_the_selected_scope() -> io::Result<()> {
+    let base = fixture()?;
+    for (_, store) in STORES {
+        fs::create_dir_all(directory(&base, store, "git").join("empty/nested"))?;
+        fs::create_dir_all(directory(&base, store, "npm"))?;
+    }
+    clear_at(&base, Some("git"))?;
+    for (_, store) in STORES {
+        assert!(!directory(&base, store, "git").exists());
+        assert!(directory(&base, store, "npm").exists());
+    }
+    clear_at(&base, None)?;
+    assert!(!base.exists());
+    assert!(clear_at(&base, None)?.contains("0 files, 0 bytes"));
+    Ok(())
 }
 
 #[test]

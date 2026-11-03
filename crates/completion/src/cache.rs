@@ -73,11 +73,47 @@ fn clear_at(base: &Path, command: Option<&str>) -> io::Result<String> {
                 Err(error) => return Err(error),
             }
         }
+        prune_empty(&path)?;
+        if command.is_some() {
+            remove_empty(&base.join(store))?;
+        }
     }
+    remove_empty(base)?;
     let scope = command.map_or_else(|| "all commands".into(), |name| format!("{name:?}"));
     Ok(format!(
         "Cleared completion cache for {scope}: {removed} files, {bytes} bytes.\n"
     ))
+}
+
+fn prune_empty(path: &Path) -> io::Result<()> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            prune_empty(&entry.path())?;
+        }
+    }
+    remove_empty(path)
+}
+
+fn remove_empty(path: &Path) -> io::Result<()> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        // Another shell can write new cache data while this shell is clearing it.
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub(crate) fn inventory(path: &Path) -> io::Result<Vec<(PathBuf, u64)>> {
