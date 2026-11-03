@@ -88,11 +88,13 @@ fn attached_option<'a>(node: &'a CommandNode, token: &str) -> Option<(&'a Option
         }
         option.names.iter().find_map(|name| {
             let suffix = token.strip_prefix(name)?;
-            if suffix.is_empty() || name.starts_with("--") && !suffix.starts_with('=') {
+            if (suffix.is_empty() && !name.ends_with(':'))
+                || (name.starts_with("--") && !suffix.starts_with('=') && !name.ends_with(':'))
+            {
                 return None;
             }
             let offset = name.len() + usize::from(suffix.starts_with('='));
-            (offset < token.len()).then_some((option, offset))
+            (offset <= token.len()).then_some((option, offset))
         })
     })
 }

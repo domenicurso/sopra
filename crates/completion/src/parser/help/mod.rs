@@ -14,6 +14,7 @@ pub(crate) fn matches_path(text: &str, program: &str, path: &[String]) -> bool {
         return true;
     }
     let document = layout::extract(&terminal_text(text));
+    let program = declared_program(&document).unwrap_or(program);
     document
         .usage
         .iter()
@@ -49,11 +50,23 @@ pub(crate) fn parse_for_with(
     discover_usage_commands: bool,
 ) -> CommandGraph {
     let document = layout::extract(&terminal_text(text));
-    let mut root = CommandNode::named(program);
-    root.description = preamble_description(&document, program, path);
+    let declared = declared_program(&document).unwrap_or(program);
+    let mut root = CommandNode::named(declared);
+    if !document.usage.is_empty()
+        || !document.commands.is_empty()
+        || !document.options.is_empty()
+        || !document.positionals.is_empty()
+    {
+        root.description = preamble_description(&document, program, path);
+    }
     gnu::parse(&document, &mut root, path);
     posix::parse(&document, &mut root, path, discover_usage_commands);
+    root.name = program.to_string();
     CommandGraph { root }
+}
+
+fn declared_program(document: &Document) -> Option<&str> {
+    document.usage.first()?.split_whitespace().next()
 }
 
 fn preamble_description(document: &Document, program: &str, path: &[String]) -> Option<String> {
@@ -80,6 +93,7 @@ fn clean_preamble_line(line: &str, program: &str, title: &str) -> Option<String>
         || value.starts_with("usage:")
         || value.starts_with("error:")
         || value.starts_with("warning:")
+        || manual_page_header(value)
         || looks_like_completion_source(value)
         || !value.chars().any(char::is_alphabetic)
         || looks_like_invocation(value, program)
@@ -87,6 +101,14 @@ fn clean_preamble_line(line: &str, program: &str, title: &str) -> Option<String>
         return None;
     }
     option::clean_description(value)
+}
+
+fn manual_page_header(value: &str) -> bool {
+    let words = value.split_whitespace().collect::<Vec<_>>();
+    words.len() >= 2
+        && words.first() == words.last()
+        && words[0].ends_with(')')
+        && words[0].contains('(')
 }
 
 fn looks_like_completion_source(value: &str) -> bool {

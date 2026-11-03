@@ -1,5 +1,5 @@
 #[path = "probes.rs"]
-mod probes;
+pub(super) mod probes;
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
@@ -9,13 +9,18 @@ use std::{
 
 use crate::{Request, graph::CommandGraph};
 
-use super::{
-    cache::{self, Source},
-    expand, help, man,
-};
+use super::aggregate::aggregate;
+use super::{cache, expand};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CachePolicy {
+    Use,
+    Refresh,
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct HelpRequest {
+    pub(crate) cache: CachePolicy,
     pub(crate) environment: sopra_shell_context::Snapshot,
     pub(crate) key: String,
     pub(crate) command: Option<PathBuf>,
@@ -97,7 +102,8 @@ pub(super) fn resolve_chunk(request: &HelpRequest) -> Option<CommandGraph> {
 }
 
 fn fragment(request: &HelpRequest, discover_usage_commands: bool) -> Option<CommandGraph> {
-    if let Some(sources) = cache::read(request)
+    if request.cache == CachePolicy::Use
+        && let Some(sources) = cache::read(request)
         && let Some(mut graph) = aggregate(request, &sources, discover_usage_commands)
         && graph.useful()
     {
@@ -112,40 +118,4 @@ fn fragment(request: &HelpRequest, discover_usage_commands: bool) -> Option<Comm
     graph.sort();
     cache::write(request, &sources);
     Some(graph)
-}
-
-fn aggregate(
-    request: &HelpRequest,
-    sources: &[Source],
-    discover_usage_commands: bool,
-) -> Option<CommandGraph> {
-    let mut graph: Option<CommandGraph> = None;
-    for source in sources {
-        let fragment = match source {
-            Source::Help(text) if help::matches_path(text, &request.program, &request.args) => {
-                help::parse_for_with(
-                    text,
-                    &request.program,
-                    &request.args,
-                    discover_usage_commands,
-                )
-            }
-            Source::Help(_) => continue,
-            Source::Man(text) => man::parse_for_with(
-                text,
-                &request.program,
-                &request.args,
-                discover_usage_commands,
-            ),
-        };
-        if !fragment.root.useful() {
-            continue;
-        }
-        if let Some(current) = &mut graph {
-            current.merge(fragment);
-        } else {
-            graph = Some(fragment);
-        }
-    }
-    graph
 }

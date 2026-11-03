@@ -1,5 +1,7 @@
 mod collect;
 mod collect_options;
+mod expression;
+mod synopsis_tokens;
 mod usage;
 
 use super::Document;

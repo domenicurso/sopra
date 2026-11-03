@@ -13,6 +13,15 @@ pub(crate) fn terminal_text(input: &str) -> String {
                 output.pop();
             }
             '\r' => {}
+            '\t' => {
+                let column = output
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .count();
+                output.push_str(&" ".repeat(8 - column % 8));
+            }
             _ => output.push(character),
         }
     }

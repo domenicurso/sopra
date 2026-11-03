@@ -46,7 +46,8 @@ pub(super) fn command_table_row(line: &str) -> Option<(String, String)> {
         return None;
     }
     let (left, description) = split_columns(line)?;
-    is_command_signature(&left).then_some((left, description))
+    (command_invocation(&left) && left.chars().any(char::is_lowercase))
+        .then_some((left, description))
 }
 
 pub(super) fn split_columns(line: &str) -> Option<(String, String)> {
@@ -104,23 +105,15 @@ fn push_column(result: &mut Vec<String>, value: &str, start: usize, end: usize) 
     }
 }
 
-fn is_command_signature(value: &str) -> bool {
-    let tokens = value.split_whitespace().collect::<Vec<_>>();
-    !tokens.is_empty()
-        && tokens.len() <= 4
-        && tokens.iter().all(|token| {
-            let token = token.trim_matches(',');
-            !token.is_empty()
-                && !token.starts_with(['-', '<', '[', '{'])
-                && (command_name(token) || command_argument(token))
-        })
-}
-
 pub(super) fn unlabelled_row(line: &str, section: Section) -> Option<(String, String)> {
     let value = line.trim();
     let first = value.split_whitespace().next()?;
     let allowed = match section {
-        Section::Commands => value.split_whitespace().count() == 1 && command_name(first),
+        Section::Commands => {
+            !value.ends_with(':')
+                && command_invocation(value)
+                && (value.split_whitespace().count() == 1 || value.contains(['<', '[', '{']))
+        }
         Section::Options => first.starts_with('-'),
         Section::Positionals => first.starts_with(['<', '[', '{']),
         Section::Other => false,
@@ -154,11 +147,11 @@ fn command_name(value: &str) -> bool {
 
 fn command_invocation(value: &str) -> bool {
     let tokens = value.split_whitespace().collect::<Vec<_>>();
-    tokens.len() <= 4
-        && !tokens.is_empty()
-        && command_name(tokens[0])
+    !tokens.is_empty()
+        && command_name(tokens[0].trim_end_matches(':'))
         && tokens.iter().skip(1).all(|token| {
             token.starts_with(['-', '<', '[', '{'])
+                || token.trim_matches(['.', ']', '>', '}']).is_empty()
                 || command_name(token)
                 || command_argument(token)
         })

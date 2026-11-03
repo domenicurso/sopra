@@ -1,14 +1,14 @@
 mod arguments;
 mod candidates;
-
-use std::collections::{HashMap, HashSet};
+mod commands;
+mod graphs;
+mod values;
 
 use crate::{CompletionItem, Request, filesystem::FilesystemEngine, parser, ranking, variables};
 
 pub(super) struct LocalCompletion {
     filesystem: FilesystemEngine,
-    graphs: HashMap<String, Option<crate::graph::CommandGraph>>,
-    hydrated: HashSet<String>,
+    graphs: graphs::Graphs,
 }
 
 pub(super) struct LocalResult {
@@ -21,8 +21,7 @@ impl LocalCompletion {
     pub(super) fn new() -> Self {
         Self {
             filesystem: FilesystemEngine::new(),
-            graphs: HashMap::new(),
-            hydrated: HashSet::new(),
+            graphs: graphs::Graphs::new(),
         }
     }
 
@@ -64,19 +63,19 @@ impl LocalCompletion {
         request: &Request,
         invocation: &parser::Invocation,
     ) -> Option<LocalResult> {
-        let Some(cached) = self.graphs.get(&invocation.key).cloned() else {
+        let Some(entry) = self.graphs.get(&invocation.key) else {
             return Some(handled(
                 Vec::new(),
                 false,
                 Some(parser::request_for(request, invocation)),
             ));
         };
+        let cached = &entry.graph;
         let Some(graph) = cached else {
             return Some(handled(Vec::new(), false, None));
         };
-        let (node, scoped, path) = parser::resolve(&graph, invocation);
-        let help = if path.is_empty() || self.hydrated.contains(&chunk_key(&invocation.key, &path))
-        {
+        let (node, scoped, path) = parser::resolve(graph, invocation);
+        let help = if path.is_empty() || entry.hydrated.contains(&path) {
             None
         } else {
             let discover = node.subcommands.is_empty() && node.positionals.is_empty();
@@ -97,45 +96,12 @@ impl LocalCompletion {
         path: Vec<String>,
         graph: Option<crate::graph::CommandGraph>,
     ) -> Vec<(Vec<String>, bool)> {
-        self.hydrated.insert(chunk_key(&key, &path));
-        if path.is_empty() {
-            self.graphs.insert(key.clone(), graph);
-        } else {
-            let Some(Some(root)) = self.graphs.get_mut(&key) else {
-                return Vec::new();
-            };
-            if let Some(graph) = graph {
-                root.merge_at(&path, graph.root);
-            }
-        }
-        let Some(Some(root)) = self.graphs.get(&key) else {
-            return Vec::new();
-        };
-        let Some(node) = root.root.find(&path) else {
-            return Vec::new();
-        };
-        node.subcommands
-            .iter()
-            .map(|child| {
-                let mut child_path = path.clone();
-                child_path.push(child.name.clone());
-                let discover = child.subcommands.is_empty() && child.positionals.is_empty();
-                (child_path, discover)
-            })
-            .filter(|(child_path, _)| !self.hydrated.contains(&chunk_key(&key, child_path)))
-            .collect()
+        self.graphs.merge(key, path, graph)
     }
 
-    pub(super) fn needs_graph(&self, key: &str) -> bool {
-        !self.graphs.contains_key(key)
+    pub(super) fn needs_graph(&mut self, key: &str) -> bool {
+        self.graphs.get(key).is_none()
     }
-}
-
-fn chunk_key(root: &str, path: &[String]) -> String {
-    if path.is_empty() {
-        return root.to_string();
-    }
-    format!("{root}\0{}", path.join("\0"))
 }
 
 fn handled(
@@ -156,3 +122,6 @@ fn is_path_context(token: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod value_tests;

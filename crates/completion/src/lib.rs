@@ -2,6 +2,7 @@ mod commands;
 mod engine;
 mod filesystem;
 mod graph;
+pub mod inspection;
 mod model;
 mod parser;
 mod path;

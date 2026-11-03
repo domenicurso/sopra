@@ -1,8 +1,11 @@
-mod cache;
+mod aggregate;
+pub(crate) mod cache;
 mod context;
 mod discover;
-mod dump;
+pub(crate) mod dump;
 mod expand;
+mod extra_help;
+mod identity;
 mod normalize;
 mod process;
 mod target;
