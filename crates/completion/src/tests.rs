@@ -9,13 +9,11 @@ fn local_completion_refreshes_inside_a_cached_semantic_context() {
     engine.request("cd ", 3, &cwd);
     engine.request("cd C", 4, &cwd);
     let responses = engine.poll().collect::<Vec<_>>();
-    assert_eq!(
-        responses
-            .iter()
-            .filter(|response| response.source == CompletionResponseSource::Local)
-            .count(),
-        2
-    );
+    for line in ["cd ", "cd C"] {
+        assert!(responses.iter().any(|response| {
+            response.source == CompletionResponseSource::Local && response.line == line
+        }));
+    }
 }
 
 #[test]

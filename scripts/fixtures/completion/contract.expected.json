@@ -1,0 +1,7 @@
+{
+  "--mode": {"names": ["-m", "--mode"], "description": "Choose execution mode", "attachment": "Separate", "choices": ["fast", "slow"], "optional": false},
+  "--output": {"names": ["--output"], "description": "Write the output file", "attachment": "Equals", "kind": "File", "optional": false},
+  "--color": {"names": ["--color"], "description": "Control color optionally", "attachment": "Equals", "choices": ["always", "never"], "optional": true},
+  "--help": {"names": ["--help"], "description": "Show optional compatibility help", "attachment": "Colon", "optional": true},
+  "--tag": {"names": ["--tag"], "description": "Add a tag multiple times", "attachment": "Separate", "repeatable": true}
+}

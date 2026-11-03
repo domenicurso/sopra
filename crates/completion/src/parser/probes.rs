@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-pub(super) fn sources(request: &HelpRequest) -> Vec<Source> {
+pub(crate) fn sources(request: &HelpRequest) -> Vec<Source> {
     let mut probes = Vec::new();
     for args in help_arguments(request) {
         let request = request.clone();
@@ -15,17 +15,42 @@ pub(super) fn sources(request: &HelpRequest) -> Vec<Source> {
                 .map(Source::Help)
         }));
     }
-    let request = request.clone();
+    let man_request = request.clone();
     probes.push(thread::spawn(move || {
-        request
+        man_request
             .environment
-            .with(|| run_man(&request))
+            .with(|| run_man(&man_request))
             .map(Source::Man)
     }));
-    probes
+    let mut sources = probes
         .into_iter()
         .filter_map(|probe| probe.join().ok().flatten())
-        .collect()
+        .collect::<Vec<_>>();
+    let extra = crate::parser::extra_help::arguments(request, &sources);
+    let extra = thread::scope(|scope| {
+        extra
+            .iter()
+            .map(|arguments| {
+                scope.spawn(|| {
+                    request
+                        .environment
+                        .with(|| run_program(request, arguments))
+                        .map(Source::Help)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|probe| probe.join().ok().flatten())
+            .collect::<Vec<_>>()
+    });
+    sources.extend(extra);
+    let mut unique = Vec::new();
+    for source in sources {
+        if !unique.contains(&source) {
+            unique.push(source);
+        }
+    }
+    unique
 }
 
 fn help_arguments(request: &HelpRequest) -> Vec<Vec<String>> {
@@ -60,7 +85,7 @@ fn run_program(request: &HelpRequest, args: &[String]) -> Option<String> {
         .env_remove("GIT_MAN_VIEWER")
         .env("MANPAGER", "cat")
         .env("LC_ALL", "C");
-    process::run(&mut command)
+    process::run_controlled(&mut command, &request.control, true).map(|output| output.0)
 }
 
 fn run_man(request: &HelpRequest) -> Option<String> {
@@ -75,5 +100,5 @@ fn run_man(request: &HelpRequest) -> Option<String> {
         .env("MANPAGER", "cat")
         .env("PAGER", "cat")
         .stdin(Stdio::null());
-    process::run_stdout(&mut command)
+    process::run_controlled(&mut command, &request.control, false).map(|output| output.0)
 }

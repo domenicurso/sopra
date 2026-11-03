@@ -1,10 +1,19 @@
-mod cache;
+mod aggregate;
+pub(crate) mod cache;
 mod context;
-mod discover;
-mod dump;
+pub(crate) mod control;
+pub(crate) mod discover;
+pub(crate) mod dump;
+mod evidence;
 mod expand;
+pub(crate) mod explain;
+mod extra_help;
+pub(crate) mod identity;
 mod normalize;
-mod process;
+pub(crate) mod process;
+mod process_gate;
+pub(crate) mod schedule;
+pub(crate) mod snapshot;
 mod target;
 
 pub(crate) mod help;

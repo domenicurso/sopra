@@ -40,8 +40,11 @@ impl CompletionEngine {
             generation: self.generation,
             context_key: context_key.clone(),
         };
-        if candidate.display == query {
-            self.schedule_help(&request);
+        if let Some(invocation) = crate::parser::invocation(&request)
+            && self.local.needs_graph(&invocation.key)
+        {
+            self.queue_prefetch(crate::parser::request_for(&request, &invocation));
+            self.pump_prefetch();
         }
         true
     }

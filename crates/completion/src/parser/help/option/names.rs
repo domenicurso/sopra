@@ -6,7 +6,7 @@ pub(super) fn valid(name: &str) -> bool {
                 .any(|character| character.is_ascii_alphanumeric())
             && long
                 .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "_-".contains(character));
+                .all(|character| character.is_ascii_alphanumeric() || "_-@".contains(character));
     }
     let Some(short) = name.strip_prefix('-') else {
         return false;
@@ -20,5 +20,5 @@ pub(super) fn valid(name: &str) -> bool {
         || (count > 1
             && short
                 .chars()
-                .all(|character| character.is_ascii_alphanumeric()))
+                .all(|character| character.is_ascii_alphanumeric() || "_.-".contains(character)))
 }

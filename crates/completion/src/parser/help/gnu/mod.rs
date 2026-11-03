@@ -1,4 +1,7 @@
+mod arguments;
 mod commands;
+mod paths;
+mod rows;
 
 use super::{Document, option};
 use crate::graph::CommandNode;
@@ -12,14 +15,14 @@ pub(crate) fn parse(document: &Document, root: &mut CommandNode, path: &[String]
     let choices = document
         .positionals
         .iter()
-        .flat_map(|row| commands::choice_names(&row.left))
+        .flat_map(|row| rows::choice_names(&row.left))
         .collect::<Vec<_>>();
     for row in &document.positionals {
         if let Some(command) = commands::positional_command(row, &choices) {
             root.merge_subcommand(command);
             continue;
         }
-        if let Some(positional) = commands::positional(row) {
+        if let Some(positional) = arguments::positional(row) {
             root.merge_positional(positional);
         }
     }

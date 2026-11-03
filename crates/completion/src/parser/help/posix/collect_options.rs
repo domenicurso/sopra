@@ -62,14 +62,14 @@ pub(super) fn next_value(
                 return (None, 0, ValueAttachment::Separate);
             };
             let token = token.trim_start_matches('=');
-            if token.is_empty() {
+            if token.is_empty() || option::is_option_token(token) {
                 (None, 0, ValueAttachment::Separate)
             } else {
                 let attachment = if name.starts_with("--")
                     && nodes.first().is_some_and(
                         |node| matches!(node, Synopsis::Token(value) if value.starts_with('=')),
                     ) {
-                    ValueAttachment::Attached
+                    ValueAttachment::Equals
                 } else {
                     ValueAttachment::Either
                 };

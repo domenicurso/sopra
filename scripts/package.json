@@ -2,14 +2,15 @@
   "name": "sopra-terminal-checks",
   "private": true,
   "scripts": {
-    "test:cli": "python3 terminal-cli-test.py && python3 terminal-cli-output-test.py",
+    "test:cli": "python3 terminal-cli-test.py && python3 terminal-cli-output-test.py && python3 terminal-cache-test.py && python3 terminal-dev-test.py",
     "test:reflow": "python3 terminal-reflow-test.py",
     "test:multiline": "python3 terminal-multiline-test.py",
     "test:widgets": "python3 terminal-widget-test.py",
     "test:prompt-config": "python3 terminal-prompt-config-test.py && python3 terminal-prompt-startup-test.py",
     "test:history": "python3 terminal-history-test.py && python3 terminal-history-search-test.py && python3 terminal-history-persistence-test.py",
     "test:worker": "python3 terminal-worker-test.py",
-    "test:mouse": "python3 terminal-mouse-test.py && python3 terminal-native-scrollback-test.py"
+    "test:mouse": "python3 terminal-mouse-test.py && python3 terminal-native-scrollback-test.py",
+    "test:completions": "python3 terminal-completion-test.py && python3 terminal-discovery-test.py && python3 terminal-graph-test.py && python3 completion-contract-test.py && python3 completion-audit.py"
   },
   "devDependencies": {
     "@xterm/headless": "6.0.0"

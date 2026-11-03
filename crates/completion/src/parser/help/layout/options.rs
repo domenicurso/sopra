@@ -38,7 +38,7 @@ pub(super) fn append(document: &mut Document, raw: &str) -> bool {
 }
 
 fn option_prefix(value: &str) -> (String, String) {
-    let tokens = value.split_whitespace().collect::<Vec<_>>();
+    let tokens = option::words(value);
     let mut split = 0;
     for (index, token) in tokens.iter().enumerate() {
         let token = token.trim_matches(',');

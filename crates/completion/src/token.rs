@@ -37,13 +37,7 @@ pub fn token_range(line: &str, cursor: usize) -> (usize, usize) {
     }
     ranges
         .into_iter()
-        .find(|(start, end)| {
-            *start <= cursor
-                && (cursor < *end
-                    || cursor == *end
-                        && (cursor == line.len()
-                            || line[cursor..].chars().next().is_some_and(is_operator)))
-        })
+        .find(|(start, end)| *start <= cursor && cursor <= *end)
         .unwrap_or((cursor, cursor))
 }
 
@@ -63,5 +57,14 @@ mod tests {
     #[test]
     fn escaped_operators_stay_inside_one_token() {
         assert_eq!(token_range("echo foo\\|bar", 13), (5, 13));
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    #[test]
+    fn cursor_at_a_word_end_replaces_the_word_without_consuming_following_arguments() {
+        assert_eq!(super::token_range("tool sl --flag", 7), (5, 7));
+        assert_eq!(super::token_range("tool sl --flag", 8), (8, 14));
     }
 }

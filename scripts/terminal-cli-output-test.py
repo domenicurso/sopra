@@ -32,12 +32,19 @@ def exercise(directory: Path) -> None:
         assert "\x1b[1;36mrefresh" in help_text and "\x1b[2m" in help_text
         plain = SGR.sub("", help_text)
         assert all(len(line) < width for line in plain.splitlines()), (width, plain)
-        assert "config edit" in plain and "widgets list" in plain
+        assert "config <command>" in plain and "widgets list" in plain
         table = capture(["widgets", "list"], width, env)
         plain = SGR.sub("", table)
         assert "clock" in plain and "built-in" in plain
         assert "\t" not in table
         assert all(len(line) < width for line in plain.splitlines()), (width, plain)
+        syntax = capture(["debug", "syntax", "echo hello"], width, env)
+        assert "\t" not in syntax
+        lines = syntax.splitlines()
+        assert all(len(line) < width for line in lines), (width, syntax)
+        if width >= 40:
+            assert lines[0].index("Color") == lines[1].index("Green") == lines[2].index("Reset")
+            assert lines[0].index("Text") == lines[1].index('"echo"') == lines[2].index('"hello"')
     config = capture(["config", "show"], 100, env)
     assert "\x1b[1;35m[editor]" in config
     assert "\x1b[36mcursor_animation" in config

@@ -1,21 +1,26 @@
 #[path = "probes.rs"]
-mod probes;
+pub(super) mod probes;
 use std::{
     path::PathBuf,
-    sync::mpsc::{self, Receiver, Sender},
-    thread,
-    time::{Duration, Instant},
+    sync::mpsc::{self, Receiver},
+    time::Duration,
 };
 
 use crate::{Request, graph::CommandGraph};
 
-use super::{
-    cache::{self, Source},
-    expand, help, man,
-};
+use super::aggregate::aggregate;
+use super::{cache, expand};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CachePolicy {
+    Use,
+    Refresh,
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct HelpRequest {
+    pub(crate) cache: CachePolicy,
+    pub(crate) control: super::control::Control,
     pub(crate) environment: sopra_shell_context::Snapshot,
     pub(crate) key: String,
     pub(crate) command: Option<PathBuf>,
@@ -34,21 +39,18 @@ pub(crate) struct HelpResponse {
     pub(crate) request: Request,
     pub(crate) graph: Option<CommandGraph>,
     pub(crate) elapsed: Duration,
+    pub(crate) cancelled: bool,
 }
 
 pub(crate) struct Worker {
-    pub(crate) requests: Sender<HelpRequest>,
+    pub(crate) requests: super::schedule::Dispatcher,
     pub(crate) responses: Receiver<HelpResponse>,
 }
 
 impl Worker {
     pub(crate) fn spawn() -> Option<Self> {
-        let (requests, request_rx) = mpsc::channel();
         let (responses, response_rx) = mpsc::channel();
-        thread::Builder::new()
-            .name("completion-discovery".to_string())
-            .spawn(move || run(request_rx, responses))
-            .ok()?;
+        let requests = super::schedule::Dispatcher::spawn(responses)?;
         Some(Self {
             requests,
             responses: response_rx,
@@ -65,87 +67,40 @@ impl HelpRequest {
     }
 }
 
-fn run(requests: Receiver<HelpRequest>, responses: Sender<HelpResponse>) {
-    while let Ok(request) = requests.recv() {
-        let started = Instant::now();
-        let graph = request.environment.with(|| resolve_chunk(&request));
-        if responses
-            .send(HelpResponse {
-                id: request.id(),
-                key: request.key.clone(),
-                path: request.args.clone(),
-                request: request.request.clone(),
-                graph,
-                elapsed: started.elapsed(),
-            })
-            .is_err()
-        {
-            break;
-        }
-    }
-}
-
-pub(super) fn resolve(request: &HelpRequest) -> Option<CommandGraph> {
+pub(crate) fn resolve(request: &HelpRequest) -> Option<CommandGraph> {
     let graph = fragment(request, true)?;
     Some(expand::resolve(request, graph, |nested, discover| {
         fragment(nested, discover)
     }))
 }
 
-pub(super) fn resolve_chunk(request: &HelpRequest) -> Option<CommandGraph> {
+pub(crate) fn resolve_chunk(request: &HelpRequest) -> Option<CommandGraph> {
     fragment(request, request.discover_usage_commands)
 }
 
 fn fragment(request: &HelpRequest, discover_usage_commands: bool) -> Option<CommandGraph> {
-    if let Some(sources) = cache::read(request)
+    if request.control.stopped() {
+        return None;
+    }
+    if request.cache == CachePolicy::Use
+        && let Some(sources) = cache::read(request)
         && let Some(mut graph) = aggregate(request, &sources, discover_usage_commands)
         && graph.useful()
     {
         graph.sort();
+        super::snapshot::write(request, &graph);
         return Some(graph);
     }
     let sources = probes::sources(request);
+    if request.control.stopped() {
+        return None;
+    }
     let mut graph = aggregate(request, &sources, discover_usage_commands)?;
     if !graph.useful() {
         return None;
     }
     graph.sort();
     cache::write(request, &sources);
+    super::snapshot::write(request, &graph);
     Some(graph)
-}
-
-fn aggregate(
-    request: &HelpRequest,
-    sources: &[Source],
-    discover_usage_commands: bool,
-) -> Option<CommandGraph> {
-    let mut graph: Option<CommandGraph> = None;
-    for source in sources {
-        let fragment = match source {
-            Source::Help(text) if help::matches_path(text, &request.program, &request.args) => {
-                help::parse_for_with(
-                    text,
-                    &request.program,
-                    &request.args,
-                    discover_usage_commands,
-                )
-            }
-            Source::Help(_) => continue,
-            Source::Man(text) => man::parse_for_with(
-                text,
-                &request.program,
-                &request.args,
-                discover_usage_commands,
-            ),
-        };
-        if !fragment.root.useful() {
-            continue;
-        }
-        if let Some(current) = &mut graph {
-            current.merge(fragment);
-        } else {
-            graph = Some(fragment);
-        }
-    }
-    graph
 }

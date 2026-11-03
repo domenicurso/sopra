@@ -39,6 +39,7 @@ pub(crate) fn invocation(request: &Request) -> Option<Invocation> {
     }
     let program = brush_parser::unquote_str(&command.text);
     let (key, command_path) = commands::resolve(&program, &request.cwd)?;
+    let key = super::identity::key(&key, command_path.as_deref(), &request.cwd);
     let (_, active_end) = ranking::token_range(&request.line, cursor);
     Some(Invocation {
         key,
@@ -61,6 +62,8 @@ pub(crate) fn request_for_path(
     discover_usage_commands: bool,
 ) -> HelpRequest {
     HelpRequest {
+        cache: super::discover::CachePolicy::Use,
+        control: super::control::Control::new(std::time::Duration::from_secs(30)),
         environment: sopra_shell_context::Snapshot::capture(),
         key: invocation.key.clone(),
         command: invocation.command.clone(),

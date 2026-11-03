@@ -1,5 +1,10 @@
 use super::super::{layout::Row, option};
-use crate::graph::{CommandNode, PositionalSpec, ValueSpec};
+use super::{
+    arguments::append_arguments,
+    paths::{command_name, command_path},
+    rows::{aliases, description_is_link, description_text, signature},
+};
+use crate::graph::CommandNode;
 
 pub(super) fn parse(row: &Row, root: &CommandNode, path: &[String]) -> Option<CommandNode> {
     let signature = signature(row);
@@ -29,32 +34,6 @@ pub(super) fn parse(row: &Row, root: &CommandNode, path: &[String]) -> Option<Co
     append_arguments(leaf, &tokens, argument_start);
     append_children(leaf, &row.children);
     Some(command)
-}
-
-fn command_path(
-    value: &str,
-    root: &str,
-    path: &[String],
-    allow_colon: bool,
-) -> Option<(Vec<String>, usize)> {
-    let tokens = value.split_whitespace().collect::<Vec<_>>();
-    let start = command_prefix(&tokens, root, path)?;
-    let mut names = Vec::new();
-    for token in tokens.iter().skip(start) {
-        if option::placeholder(token) || token.starts_with('-') || *token == "..." {
-            break;
-        }
-        let name = token.trim_matches([',', '.', '<', '>', '[', ']', ':']);
-        if name.is_empty() || manual_reference(name) || name.ends_with(':') {
-            break;
-        }
-        if !allow_colon && value.trim().ends_with([':', '.']) {
-            break;
-        }
-        names.push(name.to_string());
-    }
-    let end = start + names.len();
-    (!names.is_empty()).then_some((names, end))
 }
 
 fn append_command_path(command: &mut CommandNode, names: &[String]) {
@@ -141,116 +120,6 @@ fn enrich_positional(command: &mut CommandNode, row: &Row) -> bool {
     true
 }
 
-fn append_arguments(command: &mut CommandNode, tokens: &[String], start: usize) {
-    let mut index = start;
-    while index < tokens.len() {
-        let (token, next) = argument_token(tokens, index);
-        if option::placeholder(&token) {
-            let name = clean_placeholder(&token);
-            if !name.is_empty() {
-                command.positionals.push(PositionalSpec {
-                    value: ValueSpec::named(&name),
-                    name,
-                    description: None,
-                    optional: token.starts_with('['),
-                    repeatable: token.contains("...") || token.contains(".."),
-                });
-            }
-        }
-        index = next;
-    }
-}
-
-fn argument_token(tokens: &[String], start: usize) -> (String, usize) {
-    let mut token = tokens[start].clone();
-    let close = if token.starts_with('[') {
-        Some(']')
-    } else if token.starts_with('<') {
-        Some('>')
-    } else {
-        None
-    };
-    let mut index = start + 1;
-    while let Some(close) = close {
-        if token.ends_with(close) || index >= tokens.len() {
-            break;
-        }
-        token.push(' ');
-        token.push_str(&tokens[index]);
-        index += 1;
-    }
-    (token, index)
-}
-
-fn signature(row: &Row) -> String {
-    let Some(first) = row.columns.first() else {
-        return row.left.clone();
-    };
-    let mut fields = vec![first.clone()];
-    for column in row.columns.iter().skip(1) {
-        if argument_column(column) {
-            fields.push(column.clone());
-        } else {
-            break;
-        }
-    }
-    fields.join(" ")
-}
-
-fn argument_column(value: &str) -> bool {
-    let first = value.split_whitespace().next().unwrap_or_default();
-    first.starts_with(['<', '[', '{', '-']) || first == "..."
-}
-
-fn description_text(row: &Row) -> String {
-    if row.columns.len() > 2
-        && row
-            .columns
-            .last()
-            .is_some_and(|value| metadata_column(value))
-    {
-        return row.columns[1..].join(" ");
-    }
-    row.description.clone()
-}
-
-fn metadata_column(value: &str) -> bool {
-    value.starts_with('[') && value.ends_with(']')
-}
-
-fn aliases(description: &str) -> Vec<String> {
-    let lower = description.to_ascii_lowercase();
-    let Some(start) = lower.find("[aliases:") else {
-        return Vec::new();
-    };
-    let start = start + "[aliases:".len();
-    let end = description[start..]
-        .find(']')
-        .map_or(description.len(), |offset| start + offset);
-    description[start..end]
-        .split([',', '|', ' '])
-        .map(str::trim)
-        .filter(|alias| !alias.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-pub(super) fn positional(row: &Row) -> Option<PositionalSpec> {
-    let signature = signature(row);
-    let token = signature.split_whitespace().next()?;
-    if token.starts_with('-') || (token.starts_with('{') && token.ends_with('}')) {
-        return None;
-    }
-    let name = clean_placeholder(token);
-    Some(PositionalSpec {
-        value: ValueSpec::named(&name),
-        name,
-        description: option::clean_description(&description_text(row)),
-        optional: token.starts_with('['),
-        repeatable: token.ends_with("...") || token.contains(".."),
-    })
-}
-
 pub(super) fn positional_command(row: &Row, choices: &[String]) -> Option<CommandNode> {
     let signature = signature(row);
     let tokens = signature.split_whitespace().collect::<Vec<_>>();
@@ -267,99 +136,4 @@ pub(super) fn positional_command(row: &Row, choices: &[String]) -> Option<Comman
     append_arguments(&mut command, &tokens, 1);
     append_children(&mut command, &row.children);
     Some(command)
-}
-
-pub(super) fn choice_names(left: &str) -> Vec<String> {
-    let Some(start) = left.find('{') else {
-        return Vec::new();
-    };
-    let Some(end) = left[start + 1..].find('}') else {
-        return Vec::new();
-    };
-    left[start + 1..start + 1 + end]
-        .split([',', '|'])
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-fn command_name(value: &str, root: &str, path: &[String], allow_colon: bool) -> Option<String> {
-    let tokens = value.split_whitespace().collect::<Vec<_>>();
-    let start = command_prefix(&tokens, root, path)?;
-    tokens
-        .get(start..)?
-        .iter()
-        .find(|token| !option::placeholder(token) && !token.starts_with('-'))
-        .map(|token| {
-            token
-                .trim_matches([',', '.', '<', '>', '[', ']', ':'])
-                .to_string()
-        })
-        .filter(|name| {
-            !name.is_empty()
-                && name != "..."
-                && name
-                    .chars()
-                    .any(|character| character.is_ascii_alphanumeric())
-                && !name.ends_with(':')
-                && !manual_reference(name)
-                && (allow_colon || !value.trim().ends_with([':', '.']))
-        })
-}
-
-fn command_prefix(tokens: &[&str], root: &str, path: &[String]) -> Option<usize> {
-    if tokens.first().is_none_or(|token| *token != root) {
-        let matches_path = tokens
-            .iter()
-            .zip(path.iter().map(String::as_str))
-            .all(|(actual, expected)| *actual == expected)
-            && tokens.len() > path.len();
-        if matches_path {
-            return Some(path.len());
-        }
-        return Some(0);
-    }
-    let expected = std::iter::once(root).chain(path.iter().map(String::as_str));
-    let matches = tokens
-        .iter()
-        .zip(expected)
-        .all(|(actual, expected)| *actual == expected)
-        && tokens.len() > path.len();
-    matches.then_some(path.len() + 1)
-}
-
-fn description_is_link(value: &str) -> bool {
-    value
-        .split_whitespace()
-        .any(|token| token.starts_with("http://") || token.starts_with("https://"))
-}
-
-fn manual_reference(name: &str) -> bool {
-    let Some(start) = name.rfind('(') else {
-        return false;
-    };
-    let Some(section) = name.get(start + 1..name.len().saturating_sub(1)) else {
-        return false;
-    };
-    name.ends_with(')')
-        && !name[..start].is_empty()
-        && !section.is_empty()
-        && section
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric())
-}
-
-fn clean_placeholder(value: &str) -> String {
-    let value = value.trim();
-    if value.starts_with(['<', '[']) {
-        value
-            .trim_matches(['<', '>', '[', ']'])
-            .trim()
-            .trim_end_matches("...")
-            .trim()
-            .to_string()
-    } else {
-        value.trim_end_matches("...").trim().to_string()
-    }
 }

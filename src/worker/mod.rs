@@ -75,7 +75,7 @@ fn dispatch(
             connection.stream.flush()?;
         }
         server::Operation::Control(command) => {
-            let result = session.control(*command);
+            let result = session.control(command.clone());
             let next = if *command == crate::control::Command::Restart && result.is_ok() {
                 Next::Restart
             } else {

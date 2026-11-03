@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Synopsis {
     Sequence(Vec<Synopsis>),
     Optional(Vec<Synopsis>),

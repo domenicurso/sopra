@@ -1,11 +1,17 @@
+pub mod cache;
 mod commands;
+mod discovery_response;
 mod engine;
 mod filesystem;
 mod graph;
+pub mod inspection;
+mod inspection_candidates;
+mod literal;
 mod model;
 mod parser;
 mod path;
 mod prefetch;
+mod providers;
 pub mod ranking;
 mod response;
 mod shell;
@@ -40,7 +46,7 @@ use std::{
 pub struct CompletionEngine {
     response_tx: Sender<CompletionResponse>,
     responses: Receiver<CompletionResponse>,
-    help_requests: Sender<parser::HelpRequest>,
+    help_requests: parser::schedule::Dispatcher,
     help_responses: Receiver<parser::HelpResponse>,
     help_pending: HashSet<String>,
     help_latest: HashMap<String, Request>,
@@ -49,6 +55,8 @@ pub struct CompletionEngine {
     prefetch_inflight: Option<String>,
     generation: u64,
     local: engine::LocalCompletion,
+    filesystem_request: Option<Request>,
+    providers: providers::Worker,
 }
 
 impl CompletionEngine {
@@ -66,15 +74,21 @@ impl CompletionEngine {
             prefetch_keys: HashSet::new(),
             prefetch_inflight: None,
             generation: 0,
-            local: engine::LocalCompletion::new(),
+            local: engine::LocalCompletion::interactive(),
+            filesystem_request: None,
+            providers: providers::Worker::spawn()?,
         })
     }
 
     /// Start a new edit without discarding discovered command graphs.
     pub fn begin_edit(&mut self) -> u64 {
         self.generation = self.generation.wrapping_add(1);
+        self.filesystem_request = None;
+        self.help_requests.cancel();
+        self.providers.cancel();
         self.help_latest.clear();
         self.help_prefetch.clear();
+        self.prefetch_keys.clear();
         self.generation
     }
 
@@ -99,47 +113,6 @@ impl CompletionEngine {
             self.prefetch_argument_context(line, cursor, cwd);
         }
     }
-
-    pub fn poll(&mut self) -> impl Iterator<Item = CompletionResponse> {
-        let mut responses = Vec::new();
-        while let Ok(response) = self.help_responses.try_recv() {
-            let parser::HelpResponse {
-                id,
-                key,
-                path,
-                request: response_request,
-                graph,
-                elapsed,
-            } = response;
-            self.help_pending.remove(&id);
-            if self.prefetch_inflight.as_deref() == Some(id.as_str()) {
-                self.prefetch_inflight = None;
-            }
-            let request = self.help_latest.remove(&id).unwrap_or(response_request);
-            let child_paths = self.local.cache_graph(key, path, graph);
-            if let Some(invocation) = parser::invocation(&request) {
-                for (path, discover) in child_paths {
-                    self.queue_prefetch(parser::request_for_path(
-                        &request,
-                        &invocation,
-                        path,
-                        discover,
-                    ));
-                }
-            }
-            let result = self.local.complete(&request);
-            if let Some(help) = result.help {
-                self.enqueue_help(help);
-            }
-            let items = result.items;
-            responses.push(self.local_response(&request, items, elapsed));
-            self.pump_prefetch();
-        }
-        while let Ok(response) = self.responses.try_recv() {
-            responses.push(response);
-        }
-        responses.into_iter()
-    }
 }
 
 fn active_range(line: &str, cursor: usize) -> Range<usize> {
@@ -160,3 +133,9 @@ pub fn rebind(items: &[CompletionItem], replace: Range<usize>) -> Vec<Completion
 
 #[cfg(test)]
 mod tests;
+
+impl CompletionEngine {
+    pub fn provider_configuration() -> Result<String, String> {
+        providers::inspect()
+    }
+}

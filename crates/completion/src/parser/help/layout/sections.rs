@@ -13,7 +13,10 @@ pub(super) fn usage_line(line: &str) -> Option<&str> {
         .or_else(|| trimmed.strip_prefix("usage:"))
         .or_else(|| trimmed.strip_prefix("SYNOPSIS:"))
         .or_else(|| trimmed.strip_prefix("Synopsis:"))
-        .or_else(|| trimmed.eq_ignore_ascii_case("synopsis").then_some(""))
+        .or_else(|| {
+            (trimmed.eq_ignore_ascii_case("synopsis") || trimmed.eq_ignore_ascii_case("usage"))
+                .then_some("")
+        })
 }
 
 pub(super) fn looks_like_usage(line: &str) -> bool {
@@ -78,7 +81,11 @@ fn known_heading(name: &str) -> bool {
 }
 
 fn option_section(name: &str) -> bool {
-    matches!(name, "options" | "flags" | "switches")
+    (section_qualifier(name)
+        && name
+            .split_whitespace()
+            .any(|word| matches!(word, "options" | "flags")))
+        || matches!(name, "options" | "flags" | "switches")
         || name.ends_with(" options")
         || name.ends_with(" flags")
 }
@@ -94,7 +101,7 @@ fn command_section(name: &str) -> bool {
     matches!(
         name,
         "commands" | "all commands" | "available commands" | "subcommands"
-    ) || name.contains(" commands")
+    ) || name.ends_with(" commands")
 }
 
 fn semantic_heading(name: &str) -> bool {
@@ -139,7 +146,9 @@ fn uppercase_heading(value: &str) -> bool {
             has_letter = true;
             true
         } else {
-            character.is_ascii_whitespace() || matches!(character, '-' | '_')
+            character.is_ascii_whitespace()
+                || character.is_ascii_digit()
+                || matches!(character, '-' | '_' | '(' | ')')
         }
     }) && has_letter
 }

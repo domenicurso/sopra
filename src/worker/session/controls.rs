@@ -18,10 +18,20 @@ impl Session {
                 Config::read_from(&self.config_path)?;
                 Ok("Restarting Sopra.\n".into())
             }
+            Command::CacheStatus => sopra_completion::cache::status(),
+            Command::CacheClear(command) => self.clear_cache(command.as_deref()),
             Command::ConfigShow => Ok(self.config.effective()),
             Command::WidgetsList => inspection::list(&self.config.widgets, self.widgets.as_ref()),
             Command::Ping => Err(io::Error::other("health requests belong to the listener")),
         }
+    }
+
+    fn clear_cache(&mut self, command: Option<&str>) -> io::Result<String> {
+        // Joining discovery before deletion prevents an old probe from restoring cleared files.
+        drop(self.completion.take());
+        let result = sopra_completion::cache::clear(command);
+        self.completion = self.config.completion.then(CompletionEngine::new).flatten();
+        result.map(|report| format!("{report}Worker completion memory reset.\n"))
     }
 
     fn refresh(&mut self) -> io::Result<()> {

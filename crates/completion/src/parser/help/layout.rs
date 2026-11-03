@@ -1,3 +1,5 @@
+mod append;
+mod entries;
 mod options;
 mod parse;
 mod rows;

@@ -2,6 +2,9 @@ use super::parse;
 use crate::graph::{ValueAttachment, ValueKind};
 
 mod corpus;
+mod discovery;
+mod java_style;
+mod layout_boundaries;
 
 #[test]
 fn parses_nested_grep_synopsis_details() {
