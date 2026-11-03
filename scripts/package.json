@@ -9,7 +9,8 @@
     "test:prompt-config": "python3 terminal-prompt-config-test.py && python3 terminal-prompt-startup-test.py",
     "test:history": "python3 terminal-history-test.py && python3 terminal-history-search-test.py && python3 terminal-history-persistence-test.py",
     "test:worker": "python3 terminal-worker-test.py",
-    "test:mouse": "python3 terminal-mouse-test.py && python3 terminal-native-scrollback-test.py"
+    "test:mouse": "python3 terminal-mouse-test.py && python3 terminal-native-scrollback-test.py",
+    "test:completions": "python3 terminal-completion-test.py && python3 terminal-graph-test.py && python3 completion-audit.py"
   },
   "devDependencies": {
     "@xterm/headless": "6.0.0"
