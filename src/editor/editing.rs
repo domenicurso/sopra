@@ -68,15 +68,20 @@ impl EditorState {
     }
 
     fn complete_tab(&mut self) -> Option<RunResult> {
+        // Missing or pending candidates must not invoke Zsh expansion, which can mutate
+        // the buffer and tear down the terminal session on every repeated Tab.
+        if self.completions.engine.is_none() {
+            return Some(self.result(ExitReason::DelegateTab));
+        }
         if self.completions.focus.selected().is_none() {
             if !self.arm_first_completion() {
-                return Some(self.result(ExitReason::DelegateTab));
+                return None;
             }
-            if self.completions.items.len() == 1 && !self.apply_selected() {
-                return Some(self.result(ExitReason::DelegateTab));
+            if self.completions.items.len() == 1 {
+                self.apply_selected();
             }
-        } else if !self.apply_selected() {
-            return Some(self.result(ExitReason::DelegateTab));
+        } else {
+            self.apply_selected();
         }
         None
     }

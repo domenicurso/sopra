@@ -109,18 +109,11 @@ fn eof_deletes_a_character_and_delegates_on_an_empty_line() {
 }
 
 #[test]
-fn empty_history_navigation_keeps_the_buffer_and_tab_can_delegate() {
+fn empty_history_navigation_keeps_the_buffer() {
     let mut state = editor("");
     assert!(state.handle_key(Action::Up).is_none());
     assert!(state.handle_key(Action::Down).is_none());
     assert_eq!(state.buffer(), "");
-    assert_eq!(
-        editor("")
-            .handle_key(Action::Tab)
-            .expect("completion result")
-            .reason,
-        ExitReason::DelegateTab
-    );
 }
 
 #[test]

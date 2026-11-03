@@ -1,6 +1,44 @@
 use super::*;
 
 #[test]
+fn repeated_tabs_without_candidates_preserve_the_edit_session() {
+    for buffer in ["", "   ", "sopra-no-such-command-94815"] {
+        let mut state = editor(buffer);
+        state.set_completion_source_for_test(Vec::new());
+        for _ in 0..20 {
+            assert!(state.handle_key(Action::Tab).is_none());
+            assert_eq!(state.buffer(), buffer);
+            assert_eq!(state.cursor, buffer.len());
+        }
+    }
+}
+
+#[test]
+fn tab_waits_for_candidates_and_can_accept_when_they_arrive() {
+    let mut state = editor("git st");
+    state.set_completion_source_for_test(Vec::new());
+    assert!(state.handle_key(Action::Tab).is_none());
+    state.set_completion_source_for_test(vec![sopra_completion::CompletionItem::new(
+        "status",
+        "",
+        "status",
+        sopra_completion::CompletionKind::Subcommand,
+    )]);
+    assert!(state.handle_key(Action::Tab).is_none());
+    assert_eq!(state.buffer(), "git status ");
+}
+
+#[test]
+fn tab_delegates_when_the_completion_engine_is_disabled() {
+    let mut state = editor("");
+    state.completions.engine = None;
+    assert_eq!(
+        state.handle_key(Action::Tab).map(|result| result.reason),
+        Some(ExitReason::DelegateTab)
+    );
+}
+
+#[test]
 fn whitespace_only_input_keeps_the_completion_menu_empty() {
     let state = editor("   ");
     assert!(state.visible_items().is_empty());

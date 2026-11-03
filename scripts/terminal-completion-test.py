@@ -53,6 +53,24 @@ def own_commands(terminal: TerminalSession) -> None:
     wait_screen(terminal, "$ sopra widgets list")
 
 
+def repeated_tabs(terminal: TerminalSession) -> None:
+    for line in ("", "   ", "sopra-no-such-command-94815"):
+        terminal.key("CTRL-C")
+        terminal.paste(line)
+        terminal.read(0.5)
+        before = terminal.screen.text(trim=False)
+        cursor = (terminal.screen.row, terminal.screen.column)
+        output_start = len(terminal.output)
+        for _ in range(20):
+            terminal.key("TAB")
+            terminal.read(0.03)
+        terminal.read(0.3)
+        assert terminal.screen.text(trim=False) == before, terminal.screen.text()
+        assert (terminal.screen.row, terminal.screen.column) == cursor, terminal.screen.text()
+        # Restoring the native cursor means Tab exited the editor and handed off to ZLE.
+        assert b"\x1b[?25h" not in terminal.output[output_start:]
+
+
 def nested_commands(terminal: TerminalSession) -> None:
     show(terminal, "demo-cli gro", "Manage fixtures")
     terminal.key("TAB")
@@ -108,6 +126,7 @@ def main() -> None:
         with TerminalSession(("zsh", "-di"), cwd=str(directory),
                              rows=32, columns=140, env=env) as terminal:
             terminal.wait_for("$ ", timeout=30)
+            repeated_tabs(terminal)
             own_commands(terminal)
             nested_commands(terminal)
             cache_freshness(terminal, executable, directory)
